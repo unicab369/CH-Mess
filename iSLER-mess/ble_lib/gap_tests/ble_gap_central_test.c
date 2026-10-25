@@ -2971,22 +2971,22 @@ static void test_periodic_sync_transfer_receive(void) {
 
 static void test_connection_timing_updates(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    assert(!gap_conn_update(48, 0, 300));
+    assert(!gap_conn_update(conn, 48, 0, 300));
     start_test_central_link();
-    assert(!gap_conn_update(5, 0, 300));
-    assert(!gap_conn_update(3201, 0, 300));
-    assert(!gap_conn_update(48, 500, 300));
-    assert(!gap_conn_update(48, 0, 9));
-    assert(!gap_conn_update(48, 0, 3201));
-    assert(!gap_conn_update(40, 0, 10)); // Timeout equals 2 intervals.
+    assert(!gap_conn_update(conn, 5, 0, 300));
+    assert(!gap_conn_update(conn, 3201, 0, 300));
+    assert(!gap_conn_update(conn, 48, 500, 300));
+    assert(!gap_conn_update(conn, 48, 0, 9));
+    assert(!gap_conn_update(conn, 48, 0, 3201));
+    assert(!gap_conn_update(conn, 40, 0, 10)); // Timeout equals 2 intervals.
     conn->is_central = 0;
-    assert(!gap_conn_update(48, 0, 300));
+    assert(!gap_conn_update(conn, 48, 0, 300));
     conn->is_central = 1;
     conn->procedure_state.procedure_flags |= GAP_PENDING_CHANNEL_MAP;
-    assert(!gap_conn_update(48, 0, 300));
+    assert(!gap_conn_update(conn, 48, 0, 300));
     conn->procedure_state.procedure_flags &= (uint8_t)~GAP_PENDING_CHANNEL_MAP;
-    assert(gap_conn_update(48, 1, 300));
-    assert(!gap_conn_update(48, 1, 300));
+    assert(gap_conn_update(conn, 48, 1, 300));
+    assert(!gap_conn_update(conn, 48, 1, 300));
     assert(conn->central.local_update && !(conn->procedure_state.procedure_flags & GAP_PENDING_TIMING_UPDATE));
     // Do not overwrite a previous packet while it waits for acknowledgement.
     receive_test_link_packet(0);
@@ -3023,7 +3023,7 @@ static void test_connection_timing_updates(void) {
     conn->link_state.event_replied = 0;
     conn->link_state.rx_armed = 0;
     conn->link_layer.next_ticks = (uint64_t)now_ms * 1000;
-    assert(gap_conn_update(72, 0, 300));
+    assert(gap_conn_update(conn, 72, 0, 300));
     gap_conn_poll();
     assert((conn->procedure_state.procedure_flags & GAP_PENDING_TIMING_UPDATE) && !conn->central.local_update);
     assert((uint16_t)(conn->update_instant - conn->link_layer.event_counter) == 25);
@@ -3037,7 +3037,7 @@ static void test_connection_timing_updates(void) {
 
     start_test_central_link();
     assert(gap_disconnect(0x13));
-    assert(!gap_conn_update(48, 0, 300));
+    assert(!gap_conn_update(conn, 48, 0, 300));
     gap_conn_end();
 }
 
@@ -3069,7 +3069,7 @@ static void test_connection_parameter_requests(void) {
     assert(!gap_conn_request(40, 40, 0, 10));
     assert(gap_conn_request(48, 60, 1, 300));
     assert(conn->connection_status == GAP_CONNECTION_PENDING);
-    assert(!gap_conn_update(48, 1, 300));
+    assert(!gap_conn_update(conn, 48, 1, 300));
     assert(!gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
     assert(conn->c_features.request_pending && conn->tx_frame[2] == 0x08);
@@ -3306,7 +3306,7 @@ static void test_channel_map_updates(void) {
     assert(gap_channel_map_set(channels));
     assert(conn->connection_status == GAP_CONNECTION_PENDING);
     assert(!gap_channel_map_set(channels));
-    assert(!gap_conn_update(48, 0, 200));
+    assert(!gap_conn_update(conn, 48, 0, 200));
     assert(!gap_conn_request(48, 60, 0, 200));
     assert(!gap_data_length_set(27));
     // Earlier unacknowledged packets delay construction of the map PDU.
@@ -3380,7 +3380,7 @@ static void test_phy_updates(void) {
     assert(conn->phy_state.current.tx == 1 && conn->phy_state.current.rx == 1);
     assert(!gap_phy_set(0, 2) && !gap_phy_set(4, 4));
     assert(gap_phy_set(2, 2));
-    assert(!gap_conn_update(48, 0, 200));
+    assert(!gap_conn_update(conn, 48, 0, 200));
     assert(!gap_channel_map_set((uint8_t[5]){3}));
     assert(!gap_data_length_set(27));
     receive_test_link_packet(0);
@@ -3623,8 +3623,8 @@ static void test_connection_subrating(void) {
     // progression; continuation events remain active between subrated events.
     start_test_central_link();
     conn->schedule.factor = 5;
-    assert(!gap_conn_update(TEST_INTERVAL_1P25MS(conn), 0, 10));
-    assert(gap_conn_update(TEST_INTERVAL_1P25MS(conn) + 1, 0, 10));
+    assert(!gap_conn_update(conn, TEST_INTERVAL_1P25MS(conn), 0, 10));
+    assert(gap_conn_update(conn, TEST_INTERVAL_1P25MS(conn) + 1, 0, 10));
     gap_conn_end();
 
     start_test_central_link();

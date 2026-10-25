@@ -1968,8 +1968,9 @@ static uint8_t gap_conn_timing_busy(const gap_conn_context *conn) {
 // Queue a Central timing update. Interval uses 1.25 ms units (6..3200),
 // latency counts skipped events (0..499), timeout uses 10 ms units (10..3200).
 // Both devices apply it at the Instant carried by LL_CONNECTION_UPDATE_IND.
-int gap_conn_update(uint16_t interval, uint16_t latency, uint16_t timeout) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+int gap_conn_update(
+    gap_conn_context *conn, uint16_t interval, uint16_t latency, uint16_t timeout
+) {
     uint32_t interval_125us = (uint32_t)interval * 10;
     uint16_t factor = 1;
 

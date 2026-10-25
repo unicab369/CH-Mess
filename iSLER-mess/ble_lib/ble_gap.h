@@ -1968,7 +1968,9 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 
                     // GAP may be busy with another procedure. Leave
                     // this request pending and retry on the next poll.
-                    if (gap_conn_update(interval, l2cap->periph_update_latency,l2cap->periph_update_timeout)) {
+                    if (gap_conn_update(conn, interval, l2cap->periph_update_latency,
+                                                        l2cap->periph_update_timeout)
+                    ) {
                         peer->update_applied = 1;
 
                         if (l2cap_update_reply(l2cap, 1)) {

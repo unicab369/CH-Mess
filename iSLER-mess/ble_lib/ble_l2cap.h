@@ -171,7 +171,9 @@ static inline int l2cap_output_configured(const l2cap_ops *ops) {
            ops->tx_queue->capacity >= 4;
 }
 
+// Per-connection L2CAP state used by both Central and Peripheral roles.
 typedef struct l2cap_connection {
+    // Shared L2CAP channels, signaling, and pending operation state.
     l2cap_ops ops;
     l2cap_psm_registry *psm_registry;
     l2cap_channel_handler fixed[2];
@@ -184,10 +186,23 @@ typedef struct l2cap_connection {
     uint16_t pending_mps;
     uint8_t pending_count, pending_id;
     uint8_t pending_code;
+
+    // Peer Peripheral's requested parameters. The Central applies the update;
+    // the local Peripheral rejects the request.
     uint8_t periph_update_pending, periph_update_id;
-    uint16_t periph_update_min, periph_update_max;
-    uint16_t periph_update_latency, periph_update_timeout;
+
+    // Requested interval bounds; the Central selects one within them.
+    // Even without application data, devices follow the connection schedule.
+    // The Central may send an Empty PDU (header with no payload) to let the
+    // Peripheral respond. If no valid packet is received before the supervision
+    // timeout expires, the connection is considered lost.
+    uint16_t periph_update_min;         // Peer-requested minimum: 6..3200 (7.5 ms..4 s), in 1.25 ms units.
+    uint16_t periph_update_max;         // Peer-requested maximum: min..3200 (up to 4 s), in 1.25 ms units.
+    uint16_t periph_update_latency;     // Peripheral latency: 0..499 connection events.
+    uint16_t periph_update_timeout;     // Supervision timeout: 10..3200 in 10 ms units; > 2 * (latency + 1) * max interval.
     uint32_t periph_update_due_ms;
+
+    // Shared receive and timeout bookkeeping.
     uint16_t pending_local_cid[L2CAP_CHANNEL_MAX];
     uint32_t now_ms;
     uint32_t pending_deadline_ms;
