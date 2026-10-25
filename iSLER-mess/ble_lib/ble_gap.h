@@ -1814,7 +1814,7 @@ typedef struct {
 } ble_gap_l2cap_peer;
 
 static ble_gap_l2cap_peer ble_gap_l2cap_peers[GAP_CONNECTION_COUNT];
-static l2cap_service_registry *ble_gap_l2cap_services;
+static l2cap_service_registry ble_gap_l2cap_services;
 static l2cap_ops ble_gap_l2cap_upper;
 
 static inline int ble_gap_l2cap_accept_service_id(void *context, uint16_t service_id) {
@@ -1823,13 +1823,11 @@ static inline int ble_gap_l2cap_accept_service_id(void *context, uint16_t servic
 }
 
 // Application-facing
-static inline int ble_gap_l2cap_init(
-    const l2cap_ops *upper, l2cap_service_registry *services
-) {
+static inline int ble_gap_l2cap_init(const l2cap_ops *upper) {
     memset(ble_gap_l2cap_peers, 0, sizeof(ble_gap_l2cap_peers));
+    memset(&ble_gap_l2cap_services, 0, sizeof(ble_gap_l2cap_services));
     memset(&ble_gap_l2cap_upper, 0, sizeof(ble_gap_l2cap_upper));
     if (upper) ble_gap_l2cap_upper = *upper;
-    ble_gap_l2cap_services = services;
     return 1;
 }
 
@@ -1862,7 +1860,7 @@ static inline int ble_gap_l2cap_poll(void) {
             peer->upper = ble_gap_l2cap_upper;
             peer->connection = &conn->l2cap;
             peer->tx_queue = &conn->l2cap_tx_queue;
-            peer->connection->service_registry = ble_gap_l2cap_services;
+            peer->connection->service_registry = &ble_gap_l2cap_services;
             peer->connection->ops.accept_service_id = ble_gap_l2cap_accept_service_id;
             peer->connection->ops.context = peer;
 
