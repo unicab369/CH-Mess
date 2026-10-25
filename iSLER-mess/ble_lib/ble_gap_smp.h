@@ -1486,8 +1486,8 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
         !pairing->user_notified &&
         gap_smp_user_request_callback
     ) {
-        uint8_t action = pairing->passkey_action == GAP_PASSKEY_DISPLAY ?
-                        SMP_USER_PASSKEY_DISPLAY : SMP_USER_PASSKEY_INPUT;
+        uint8_t action = (pairing->passkey_action == GAP_PASSKEY_DISPLAY) ? SMP_USER_PASSKEY_DISPLAY
+                                                                        : SMP_USER_PASSKEY_INPUT;
         uint32_t passkey = ble_read_u32_le(conn->smp.pairing.tk);
         uint32_t value = (action == SMP_USER_PASSKEY_DISPLAY ? passkey : 0);
 
@@ -1501,10 +1501,10 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
 
     if (pairing->phase == SMP_PHASE_SC_USER) {
         if (!pairing->numeric_notified && gap_smp_user_request_callback) {
-            int decision = gap_smp_user_request_callback(
-                            gap_smp_user_request_context, SMP_USER_NUMERIC_COMPARISON,
-                            conn->smp.secure.numeric_value);
+            int decision = gap_smp_user_request_callback( gap_smp_user_request_context,
+                                SMP_USER_NUMERIC_COMPARISON, conn->smp.secure.numeric_value);
             pairing->numeric_notified = 1;
+
             if (decision < 0)
                 conn->smp.secure.numeric_reply = 2;
             else if (decision > 0)
@@ -1606,9 +1606,8 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
                 uint8_t irk[16] = {0}, address[7] = {0};
                 int available = gap_smp_local_identity(irk, address);
                 gap_wipe(irk, sizeof(irk));
-                if (!available || !gap_smp_queue(&conn->smp, SMP_ID_ADDRESS_INFO,
-                                                address, sizeof(address))
-                ) {
+
+                if (!available || !gap_smp_queue(&conn->smp, SMP_ID_ADDRESS_INFO, address, sizeof(address))) {
                     gap_wipe(address, sizeof(address));
                     gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED); return;
                 }
@@ -1631,6 +1630,7 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
             else if (!conn->is_central && pairing->bond_tx_step >= 32) {
                 pairing->phase = SMP_PHASE_BOND_RX;
                 pairing->bond_rx_step = pairing->secure_connections ? 20 : 0;
+
                 if (!pairing->response[5])
                     smp_bond_rx_complete(conn);
                 return;
@@ -1661,7 +1661,6 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
             conn->smp.bond_tx_waiting = 1;
             gap_wipe(conn->smp.tx_queue->data, conn->smp.tx_queue->capacity);
         }
-
         return;
     }
 
@@ -1672,10 +1671,9 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
         size_t max_len = conn->data_length.tx_octets;
         size_t time_len = conn->data_length.tx_time / 8;
         time_len = (size_t)subtract_clamp0_64(time_len,
-                                    10 + (conn->security.tx_enabled ? 4 : 0));
+                                10 + (conn->security.tx_enabled ? 4 : 0));
         max_len = MIN(max_len, time_len);
-        max_len = MIN(max_len, conn->smp.tx_queue->length -
-                                conn->smp.tx_queue->offset);
+        max_len = MIN(max_len, conn->smp.tx_queue->length - conn->smp.tx_queue->offset);
 
         if (!max_len || !gap_send_data(conn->smp.tx_queue->offset ? 1 : 2,
                 conn->smp.tx_queue->data + conn->smp.tx_queue->offset, max_len)
@@ -1817,7 +1815,6 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
                         gap_wipe(&bond_data, sizeof(bond_data));
                         return;
                     }
-
                     nonzero = 0;
 
                     for (unsigned i = 0; i < sizeof(bond_data.rand); i++)
@@ -1854,25 +1851,24 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
         }
 
         // Completed encryption returns above; handle failure or start it here.
-        if (conn->smp.encryption_started) {
-            if (!conn->security.phase && conn->security.status) {
-                gap_smp_finish(conn, SMP_FAIL_UNSPECIFIED);
-                return;
-            }
+        if (conn->smp.encryption_started && !conn->security.phase &&
+            conn->security.status
+        ) {
+            gap_smp_finish(conn, SMP_FAIL_UNSPECIFIED);
+            return;
         }
 
-        if (conn->is_central) {
-            if (!conn->smp.encryption_started && !conn->security.phase) {
-                if (!gap_encrypt(conn->smp.key.stk, (const uint8_t[8]){0}, 0)) {
-                    gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
-                    return;
-                }
-                conn->smp.encryption_started = 1;
+        if (conn->is_central && !conn->smp.encryption_started &&
+            !conn->security.phase
+        ) {
+            if (!gap_encrypt(conn->smp.key.stk, (const uint8_t[8]){0}, 0)) {
+                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
+                return;
             }
+            conn->smp.encryption_started = 1;
         }
-        else if (gap_key_request(NULL, NULL)) {
-            uint8_t zero = (uint8_t)conn->security.ediv |
-                            (uint8_t)(conn->security.ediv >> 8);
+        else if (!conn->is_central && gap_key_request(NULL, NULL)) {
+            uint8_t zero = conn->security.ediv != 0;
             // Check every byte so timing does not reveal where nonzero key data appears.
             for (unsigned i = 0; i < 8; i++)
                 zero |= conn->security.random[i];
