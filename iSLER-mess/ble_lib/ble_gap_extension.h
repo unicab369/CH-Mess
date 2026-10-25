@@ -387,15 +387,15 @@ int gap_pawr_set(
 // Application facing
 // Configure how many response slots the advertiser listens to per subevent.
 // PRTI advertises their timing; the slot count is local product configuration.
-int gap_pawr_slots_set(
-    uint8_t set_id, uint8_t count
-) {
+int gap_pawr_slots_set(uint8_t set_id, uint8_t count) {
     if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
+
     gap_extended_adv_set *set = &gap_ext_adv[set_id];
     if (!set->pawr.enabled || !count) return 0;
 
-    uint32_t subevent_units = set->pawr.subevents > 1 ?
-                            set->pawr.subevent_int : set->periodic.params.interval;
+    uint32_t subevent_units = set->periodic.params.interval;
+    if (set->pawr.subevents > 1)
+        subevent_units = set->pawr.subevent_int;
 
     if ((uint32_t)count * set->pawr.resp_spacing >
         (subevent_units - set->pawr.resp_delay) * 10
@@ -445,10 +445,7 @@ int gap_periodic_adv_update(
     if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
     gap_extended_adv_set *set = &gap_ext_adv[set_id];
 
-    if (!set->periodic.enabled ||
-        (set->pawr.enabled && len > GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 3) ||
-        !gap_ext_data_valid(data, len)
-    )
+    if (!set->periodic.enabled || !gap_ext_data_valid(data, len))
         return 0;
 
     uint32_t airtime_us = gap_periodic_tx_us(len, set->aux_phy);
@@ -456,8 +453,13 @@ int gap_periodic_adv_update(
         return 0;
 
     if (set->pawr.enabled) {
-        uint16_t subevent_interval = set->pawr.subevents > 1 ?
-                                set->pawr.subevent_int : set->periodic.params.interval;
+        if (len > GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 3)
+            return 0;
+
+        uint16_t subevent_interval = set->periodic.params.interval;
+        if (set->pawr.subevents > 1)
+            subevent_interval = set->pawr.subevent_int;
+
         if (airtime_us >= (uint32_t)subevent_interval * 1250 ||
             airtime_us + 150 >= (uint32_t)set->pawr.resp_delay * 1250
         ) return 0;
@@ -497,6 +499,7 @@ int gap_ext_adv_start_phy(
 #if GAP_CENTRAL_SUPPORT
     if (gap_initiator.active) return 0;
 #endif
+
 #if GAP_LEGACY_ADV_SUPPORT
     if (gap_adv.enabled) return 0;
 #endif
@@ -511,7 +514,6 @@ int gap_ext_adv_start_phy(
     ) return 0;
 
     set->did = gap_ext_did_next(set->did, set->periodic.did);
-
     if (len) memcpy(set->data, data, len);
     set->data_len = (uint16_t)len;
     set->scan_resp_len = 0;
