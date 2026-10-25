@@ -2453,7 +2453,7 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
             pairing->response[1] = gap_pair_cfg.io;
             pairing->response[2] = conn->smp.secure.oob_active ? local_oob_flag : 0;
             pairing->response[3] = ((pairing->authenticated || gap_pair_cfg.authenticated) ? 4 : 0) |
-                                    (pairing->bond_requested ? 1 : 0) |
+                                    pairing->bond_requested |
                                     (pairing->secure_connections ? 8 : 0) |
                                     (pairing->keypress_active ? 0x10 : 0);
             pairing->response[4] = 16;
@@ -2466,7 +2466,7 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
 
                 for (uint8_t coordinate = 0; coordinate < 2; coordinate++) {
                     gap_bytes_reverse(public_key + 32 * coordinate,
-                                    conn->smp.secure.public_key + 32 * coordinate, 32);
+                                conn->smp.secure.public_key + 32 * coordinate, 32);
                 }
                 gap_smp_queue(&conn->smp, SMP_PAIRING_PUBLIC_KEY, public_key, sizeof(public_key));
             }
@@ -2511,6 +2511,7 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
 
         if (conn->smp.secure.oob_active && conn->smp.secure.oob_peer_present) {
             uint8_t confirm[16], difference = 0;
+
             gap_sc_confirm_value(&conn->smp, conn->smp.secure.peer_public_key,
                                  conn->smp.secure.peer_public_key,
                                  conn->smp.oob_peer.random, confirm);
@@ -2606,6 +2607,7 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
     if (op == SMP_PAIRING_RANDOM) {
         if (pairing->phase == SMP_PHASE_SC_RANDOM && pairing->secure_connections) {
             uint8_t confirm[16], difference = 0;
+
             gap_sc_confirm_value(&conn->smp, conn->smp.secure.peer_public_key,
                                  conn->smp.secure.public_key, pdu + 1, confirm);
 
@@ -2644,6 +2646,7 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
                 }
 
                 conn->smp.secure.passkey_round++;
+                pairing->phase = SMP_PHASE_SC_PASSKEY;
 
                 if (conn->is_central) {
                     uint8_t confirm[16];
@@ -2652,9 +2655,6 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
                                          conn->smp.random, confirm);
                     gap_smp_queue(&conn->smp, SMP_PAIRING_CONFIRM, confirm, sizeof(confirm));
                     pairing->phase = SMP_PHASE_SC_CONFIRM;
-                }
-                else {
-                    pairing->phase = SMP_PHASE_SC_PASSKEY;
                 }
                 return;
             }
@@ -2701,6 +2701,7 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
             uint8_t s1_random[16];
             const uint8_t *first_random = pdu + 1;
             const uint8_t *second_random = conn->smp.random;
+
             if (conn->is_central) {
                 first_random = conn->smp.random;
                 second_random = pdu + 1;
