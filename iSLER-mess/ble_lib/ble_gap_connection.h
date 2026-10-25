@@ -369,8 +369,7 @@ static void gap_conn_update_apply(
 // Advance one connection event, including events skipped by subrating. The
 // event counter and channel hop still advance for every connection interval.
 static void gap_conn_event_advance(gap_conn_context *conn) {
-    uint8_t subrated =
-        // schedule
+    if (// schedule
         (conn->schedule.factor &&
          ((int32_t)conn->link_layer.event_counter -
           (int32_t)conn->schedule.base_event) % conn->schedule.factor == 0) ||
@@ -379,9 +378,8 @@ static void gap_conn_event_advance(gap_conn_context *conn) {
         // next_schedule
          conn->next_schedule.factor &&
          ((int32_t)conn->link_layer.event_counter -
-          (int32_t)conn->next_schedule.base_event) % conn->next_schedule.factor == 0);
-
-    if (subrated) {
+          (int32_t)conn->next_schedule.base_event) % conn->next_schedule.factor == 0)
+    ) {
 #if GAP_PERIPHERAL_SUPPORT
         if (!conn->is_central) {
             if (conn->c_subrate.event_received)
@@ -492,8 +490,8 @@ static void gap_send_feature_request(gap_conn_context *conn) {
     conn->tx_frame[4] = ((supported_phys & GAP_PHY_2M) ? 0x01 : 0) |
                         ((supported_phys & GAP_PHY_CODED) ? 0x08 : 0);
     conn->tx_frame[7] =   GAP_LL_FEATURES_SUBRATING |
-                            GAP_LL_FEATURES_SUBRATING_HOST |
-                            GAP_LL_FEATURES_CH_CLASS;
+                        GAP_LL_FEATURES_SUBRATING_HOST |
+                        GAP_LL_FEATURES_CH_CLASS;
     conn->tx_frame[10] = GAP_LL_FEATURES_EXTENDED;
 }
 
@@ -531,9 +529,8 @@ static void gap_send_rate_ind(
         // Core timing equation:
         // Δt = (new_interval - ((Instant - reference_event) * old_interval)
         //       % new_interval + Offset0) % new_interval.
-        int32_t event_delta = (int16_t)(conn->next_schedule.instant - reference_event);
-        int32_t old_phase = (event_delta * conn->schedule.interval_125us) %
-                            conn->next_schedule.interval_125us;
+        int32_t old_phase = ((int16_t)(conn->next_schedule.instant - reference_event) *
+                        conn->schedule.interval_125us) % conn->next_schedule.interval_125us;
         if (old_phase < 0)
             old_phase += conn->next_schedule.interval_125us;
 
@@ -648,34 +645,36 @@ static uint8_t gap_schedule_parameters_valid(
     uint16_t min_factor, uint16_t max_factor, uint16_t max_latency,
     uint16_t continuation, uint16_t timeout
 ) {
-    return min_factor >= 1 && min_factor <= max_factor && max_factor <= 500 &&
-        max_latency <= 499 && timeout >= 10 && timeout <= 3200 &&
-        continuation < min_factor &&
-        max_factor * (max_latency + 1) <= 500;
+    return IN_RANGE_INCLUSIVE(min_factor, 1, max_factor) &&
+            IN_RANGE_INCLUSIVE(timeout, 10, 3200) &&
+            max_factor <= 500 &&
+            max_latency <= 499 &&
+            continuation < min_factor &&
+            max_factor * (max_latency + 1) <= 500;
 }
 
 static uint8_t gap_rate_parameters_valid(
     uint16_t interval, uint16_t factor, uint16_t latency,
     uint16_t continuation, uint16_t timeout
 ) {
-    return interval >= 3 && interval <= 32000 &&
+    return IN_RANGE_INCLUSIVE(interval, 3, 32000) &&
         gap_schedule_parameters_valid(factor, factor, latency, continuation, timeout) &&
         (uint64_t)timeout * 80 > 2ull * interval * factor * (latency + 1);
 }
 
 static uint16_t gap_conn_min_interval(const gap_conn_context *conn) {
     uint32_t rx_time = conn->data_length.rx_time;
-    uint32_t coded_limit = (uint32_t)conn->data_length.rx_octets * 64 + 976;
     uint8_t periph_tx_phy = conn->phy_state.current.tx;
-    if (conn->is_central) periph_tx_phy = conn->phy_state.current.rx;
+    if (conn->is_central)
+        periph_tx_phy = conn->phy_state.current.rx;
 
     // Coded PHY needs at least 2704 us, subject to the RX-octet limit.
     if (periph_tx_phy == GAP_PHY_CODED && rx_time < 2704)
         rx_time = 2704;
-    rx_time = MIN(rx_time, coded_limit);
 
-    uint32_t required = 300 + rx_time + ((conn->phy_state.current.tx == GAP_PHY_CODED ||
-                                        conn->phy_state.current.rx == GAP_PHY_CODED) ? 2704 : 328);
+    uint32_t required = 300 + MIN(rx_time, (uint32_t)conn->data_length.rx_octets * 64 + 976) +
+                            ((conn->phy_state.current.tx == GAP_PHY_CODED ||
+                            conn->phy_state.current.rx == GAP_PHY_CODED) ? 2704 : 328);
     return (uint16_t)((required + 124) / 125);
 }
 
@@ -873,8 +872,9 @@ static uint8_t gap_conn_control(
             uint16_t timeout = ble_read_u16_le(frame + 10);
             uint16_t instant = ble_read_u16_le(frame + 12);
             uint32_t interval_125us = (uint32_t)interval * 10;
-            uint16_t factor = interval_125us == conn->schedule.interval_125us ?
-                                conn->schedule.factor : 1;
+            uint16_t factor = 1;
+            if (interval_125us == conn->schedule.interval_125us)
+                factor = conn->schedule.factor;
 
             if (IN_RANGE_INCLUSIVE(win_size, 1, 8) &&
                 ble_timing_valid(interval, interval, latency, timeout) &&
@@ -1003,15 +1003,16 @@ static uint8_t gap_conn_control(
         if (frame[2] == LL_CONNECTION_PARAM_RSP) {
             minimum = MAX(minimum, conn->params_request.min_intvl_1p25ms);
             maximum = MIN(maximum, conn->params_request.max_intvl_1p25ms);
-
             error = GAP_LL_ERR_UNSUPPORTED_PARAM; // Unsupported LL parameter value.
+
             if (minimum > maximum)
                 return gap_conn_reject_resp(conn, frame[2], error);
         }
 
         if (conn->is_central) {
             uint16_t interval = ((conn->schedule.interval_125us + 9) / 10);
-            interval = IN_RANGE_INCLUSIVE(interval, minimum, maximum) ? interval : minimum;
+            if (!IN_RANGE_INCLUSIVE(interval, minimum, maximum))
+                interval = minimum;
 
             if (frame[11] && minimum != maximum) {
                 uint16_t preferred = (uint16_t) ((minimum + frame[11] - 1) / frame[11]) * frame[11];
@@ -1020,8 +1021,9 @@ static uint8_t gap_conn_control(
             }
 
             uint32_t interval_125us = (uint32_t)interval * 10;
-            uint16_t factor = (interval_125us == conn->schedule.interval_125us) ?
-                                conn->schedule.factor : 1;
+            uint16_t factor = 1;
+            if (interval_125us == conn->schedule.interval_125us)
+                factor = conn->schedule.factor;
 
             error = GAP_LL_ERR_UNSUPPORTED_PARAM;
             if ((uint32_t)timeout * 80 <= 2ull * (uint32_t)(latency + 1) * interval_125us * factor)
@@ -1144,7 +1146,11 @@ static uint8_t gap_conn_control(
         if (frame[1] != 3)
             return gap_conn_unknown_resp(conn, frame[2]);
 
-        if ((frame[3] == LL_FEATURE_EXT_REQ || frame[3] == LL_FEATURE_EXT_RSP) &&
+        if (frame[3] == LL_CONNECTION_RATE_IND && conn->c_rate.update_pending) {
+            conn->c_rate.update_pending = 0;
+            conn->connection_status = frame[4];
+        }
+        else if ((frame[3] == LL_FEATURE_EXT_REQ || frame[3] == LL_FEATURE_EXT_RSP) &&
             conn->c_features.ext_pending
         ) {
             conn->c_features.ext_pending = 0;
@@ -1153,9 +1159,8 @@ static uint8_t gap_conn_control(
             conn->connection_status = frame[4];
             memset(conn->c_features.peer_page1, 0, sizeof(conn->c_features.peer_page1));
         }
-
 #if GAP_PERIPHERAL_SUPPORT
-        if (frame[3] == LL_CONNECTION_RATE_REQ && !conn->is_central &&
+        else if (frame[3] == LL_CONNECTION_RATE_REQ && !conn->is_central &&
             conn->peripheral.rate_req_pending
         ) {
             conn->peripheral.rate_req_pending = 0;
@@ -1163,15 +1168,9 @@ static uint8_t gap_conn_control(
         }
 #endif
 
-        if (frame[3] == LL_CONNECTION_RATE_IND && conn->c_rate.update_pending) {
-            conn->c_rate.update_pending = 0;
-            conn->connection_status = frame[4];
-        }
-
 #if GAP_SECURITY_SUPPORT >= 1
-        if (frame[3] == LL_ENC_REQ &&
-            (conn->security.phase == GAP_ENC_WAIT_RSP ||
-             conn->security.phase == GAP_ENC_WAIT_START)
+        else if (frame[3] == LL_ENC_REQ &&
+            (conn->security.phase == GAP_ENC_WAIT_RSP || conn->security.phase == GAP_ENC_WAIT_START)
         ) {
             conn->security.status = frame[4];
             if (conn->security.refreshing) {
@@ -1184,33 +1183,26 @@ static uint8_t gap_conn_control(
             gap_wipe(conn->security.session_key, sizeof(conn->security.session_key));
         }
 #endif
-
-        if (frame[3] == LL_PHY_REQ && conn->procedure_state.phy_request) {
+        else if (frame[3] == LL_PHY_REQ && conn->procedure_state.phy_request) {
             conn->procedure_state.phy_request = 0;
             conn->phy_state.status = frame[4];
         }
-
-        if (frame[3] == LL_LENGTH_REQ && conn->procedure_state.length) {
+        else if (frame[3] == LL_LENGTH_REQ && conn->procedure_state.length) {
             conn->procedure_state.length = 0;
             conn->length_status = frame[4];
         }
 
-        if (frame[3] == LL_SUBRATE_REQ &&
-            conn->c_subrate.procedure_state == GAP_SUBRATE_REQUEST_PENDING
-        ) {
-            conn->c_subrate.procedure_state = GAP_SUBRATE_IDLE;
-            conn->c_subrate.status = frame[4];
-        }
-
-        if (frame[3] == LL_SUBRATE_IND &&
-            conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING
+        else if ((frame[3] == LL_SUBRATE_REQ &&
+                  conn->c_subrate.procedure_state == GAP_SUBRATE_REQUEST_PENDING) ||
+                 (frame[3] == LL_SUBRATE_IND &&
+                  conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING)
         ) {
             conn->c_subrate.procedure_state = GAP_SUBRATE_IDLE;
             conn->c_subrate.status = frame[4];
         }
 
 #if GAP_CENTRAL_SUPPORT
-        if (frame[3] == LL_CHANNEL_REPORTING_IND && conn->central.channel_report_pending) {
+        else if (frame[3] == LL_CHANNEL_REPORTING_IND && conn->central.channel_report_pending) {
             conn->central.channel_report_pending = 0;
             conn->central.channel_report_queued = 0;
             conn->connection_status = frame[4];
@@ -1295,8 +1287,16 @@ static uint8_t gap_conn_control(
             conn->central.channel_report_queued = 0;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
-#endif
 #if GAP_PERIPHERAL_SUPPORT
+        else if (frame[3] == LL_CONNECTION_RATE_REQ && !conn->is_central &&
+            conn->peripheral.rate_req_pending
+        ) {
+            conn->peripheral.rate_req_pending = 0;
+            conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
+        }
+#endif
+
+#elif GAP_PERIPHERAL_SUPPORT
         if (frame[3] == LL_CONNECTION_RATE_REQ && !conn->is_central &&
             conn->peripheral.rate_req_pending
         ) {
@@ -1305,7 +1305,12 @@ static uint8_t gap_conn_control(
         }
 #endif
 
-        if ((frame[3] == LL_FEATURE_REQ || frame[3] == LL_PERIPHERAL_FEATURE_REQ) &&
+        if (frame[3] == LL_CONNECTION_RATE_IND && conn->c_rate.update_pending) {
+            conn->c_rate.update_pending = 0;
+            conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
+        }
+
+        else if ((frame[3] == LL_FEATURE_REQ || frame[3] == LL_PERIPHERAL_FEATURE_REQ) &&
             conn->c_features.request_pending
         ) {
             conn->c_features.request_pending = 0;
@@ -1317,8 +1322,7 @@ static uint8_t gap_conn_control(
             conn->c_rate.queued_flags = 0;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
-
-        if (frame[3] == LL_FEATURE_EXT_REQ && conn->c_features.ext_pending) {
+        else if (frame[3] == LL_FEATURE_EXT_REQ && conn->c_features.ext_pending) {
             conn->c_features.ext_pending = 0;
             conn->c_features.page1_known = 1;
             memset(conn->c_features.peer_page1, 0, sizeof(conn->c_features.peer_page1));
@@ -1326,13 +1330,8 @@ static uint8_t gap_conn_control(
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
 
-        if (frame[3] == LL_CONNECTION_RATE_IND && conn->c_rate.update_pending) {
-            conn->c_rate.update_pending = 0;
-            conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
-        }
-
 #if GAP_SECURITY_SUPPORT >= 1
-        if (frame[3] == LL_ENC_REQ && (conn->security.phase == GAP_ENC_WAIT_RSP ||
+        else if (frame[3] == LL_ENC_REQ && (conn->security.phase == GAP_ENC_WAIT_RSP ||
             conn->security.phase == GAP_ENC_WAIT_START)
         ) {
             conn->security.status = GAP_LL_ERR_REMOTE_FEATURE;
@@ -1347,31 +1346,23 @@ static uint8_t gap_conn_control(
         }
 #endif
 
-        if (frame[3] == LL_PHY_REQ && conn->procedure_state.phy_request) {
+        else if (frame[3] == LL_PHY_REQ && conn->procedure_state.phy_request) {
             conn->procedure_state.phy_request = 0;
             conn->phy_state.status = GAP_LL_ERR_REMOTE_FEATURE;
         }
-
-        if (frame[3] == LL_LENGTH_REQ && conn->procedure_state.length) {
+        else if (frame[3] == LL_LENGTH_REQ && conn->procedure_state.length) {
             conn->procedure_state.length = 0;
             conn->length_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
-
-        if (frame[3] == LL_SUBRATE_REQ &&
-            conn->c_subrate.procedure_state == GAP_SUBRATE_REQUEST_PENDING
+        else if ((frame[3] == LL_SUBRATE_REQ &&
+                  conn->c_subrate.procedure_state == GAP_SUBRATE_REQUEST_PENDING) ||
+                 (frame[3] == LL_SUBRATE_IND &&
+                  conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING)
         ) {
             conn->c_subrate.procedure_state = GAP_SUBRATE_IDLE;
             conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
         }
-
-        if (frame[3] == LL_SUBRATE_IND &&
-            conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING
-        ) {
-            conn->c_subrate.procedure_state = GAP_SUBRATE_IDLE;
-            conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
-        }
-
-        if ((frame[3] == LL_CONNECTION_PARAM_REQ &&
+        else if ((frame[3] == LL_CONNECTION_PARAM_REQ &&
              conn->procedure_state.params_state == GAP_CONN_PARAMS_LOCAL) ||
             ((frame[3] == LL_FEATURE_REQ || frame[3] == LL_PERIPHERAL_FEATURE_REQ) &&
              conn->c_features.request_pending)
@@ -1419,9 +1410,7 @@ static uint8_t gap_conn_control(
         ) return gap_conn_unknown_resp(conn, frame[2]);
 
         uint8_t page = frame[4];
-
-        if (page != 1)
-            return gap_conn_unknown_resp(conn, frame[2]);
+        if (page != 1) return gap_conn_unknown_resp(conn, frame[2]);
 
         if (frame[2] == LL_FEATURE_EXT_REQ) {
             conn->tx_frame[1] = 11;
@@ -1992,8 +1981,9 @@ static uint8_t gap_conn_timing_busy(const gap_conn_context *conn) {
 int gap_conn_update(uint16_t interval, uint16_t latency, uint16_t timeout) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint32_t interval_125us = (uint32_t)interval * 10;
-    uint16_t factor = (interval_125us == conn->schedule.interval_125us) ?
-                                                conn->schedule.factor : 1;
+    uint16_t factor = 1;
+    if (interval_125us == conn->schedule.interval_125us)
+        factor = conn->schedule.factor;
 
     if (gap_conn_timing_busy(conn) || !conn->is_central ||
         !ble_timing_valid(interval, interval, latency, timeout) ||
