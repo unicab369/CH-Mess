@@ -534,11 +534,12 @@ static int smp_tx_pending(const gap_smp_context *smp) {
             smp->tx_queue->data[3] == 0;
 }
 
+// key and output must point to 16 bytes; input may be null only when len is zero.
 int smp_port_cmac(
     const uint8_t key[16],
     const uint8_t *input, size_t len, uint8_t output[16]
 ) {
-    if (!key || (!input && len) || !output) return 0;
+    if (!input && len) return 0;
     aes_cmac(key, input, len, output);
     return 1;
 }
@@ -976,11 +977,12 @@ int gap_secure_connections_set(uint8_t enabled) {
 
 // Application facing
 // Generate fresh OOB data tied to the P-256 key used by the next OOB pairing.
-// The application must deliver both values to the peer over its OOB channel.
+// The application must deliver both values to the peer over its OOB channel;
+// out must point to a writable gap_oob_data.
 int gap_sc_oob_get(gap_oob_data *out) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (!out || !gap_pair_cfg.enabled || !gap_pair_cfg.secure_connections ||
+    if (!gap_pair_cfg.enabled || !gap_pair_cfg.secure_connections ||
         !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->link_layer.first_event) ||
         gap_encrypted() || conn->smp.pairing.phase ||
@@ -1031,6 +1033,7 @@ int gap_sc_oob_set_peer(const gap_oob_data *peer) {
 // Application facing
 // Return DISPLAY (render all six digits, including leading zeros), INPUT, or 0.
 // A display value is generated anew for each pairing; never cache/reuse it.
+// value must point to writable storage when DISPLAY is returned.
 uint8_t gap_passkey(uint32_t *value) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (conn->smp.pairing.passkey_action == GAP_PASSKEY_DISPLAY && value) {
@@ -1091,7 +1094,7 @@ int gap_passkey_keypress(uint8_t notification_type) {
 // Show all six digits on both devices and ask the user whether they match.
 int gap_numeric_get(uint32_t *value) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!value || conn->smp.pairing.phase != SMP_PHASE_SC_USER ||
+    if (conn->smp.pairing.phase != SMP_PHASE_SC_USER ||
         conn->smp.secure.numeric_reply
     ) return 0;
 
