@@ -262,17 +262,17 @@ typedef struct l2cap_connection {
     uint8_t signaling_id;
 
     // State for the outstanding signaling request.
+    uint32_t pending_deadline_ms;
+    uint16_t pending_local_cid[L2CAP_CHANNEL_MAX];
     uint8_t pending_id;                  // Identifier of the request; zero means none.
     uint8_t pending_count;               // Number of channels in the request (1 for a single channel).
     uint8_t pending_code;                // Command code of the outstanding request.
     l2cap_connection_bytes pending_max_sdu_size; // Proposed local SDU limit until reconfiguration is accepted.
     l2cap_connection_bytes pending_max_pdu_payload; // Proposed local PDU payload limit until accepted.
-    uint16_t pending_local_cid[L2CAP_CHANNEL_MAX];
-    uint32_t pending_deadline_ms;
 
     // Peer Peripheral's requested parameters. The Central applies the update;
     // the local Peripheral rejects the request.
-    uint8_t periph_update_pending, periph_update_id;
+    uint32_t periph_update_due_ms;
 
     // Requested interval bounds; the Central selects one within them.
     // Even without application data, devices follow the connection schedule.
@@ -283,7 +283,7 @@ typedef struct l2cap_connection {
     uint16_t periph_update_max;         // Peer-requested maximum: min..3200 (up to 4 s), in 1.25 ms units.
     uint16_t periph_update_latency;     // Peripheral latency: 0..499 connection events.
     uint16_t periph_update_timeout;     // Supervision timeout: 10..3200 in 10 ms units; > 2 * (latency + 1) * max interval.
-    uint32_t periph_update_due_ms;
+    uint8_t periph_update_pending, periph_update_id;
 
     // Shared timer bookkeeping.
     uint32_t now_ms;
