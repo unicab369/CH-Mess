@@ -1771,18 +1771,15 @@ static int gap_conn_accept(
                                             .rx_time = 328, .tx_time = 328 };
     conn->remote_data_length = conn->data_length;
 
-    conn->link_layer.access_address = (uint32_t)frame[14] |
-                                (uint32_t)frame[15] << 8 |
-                                (uint32_t)frame[16] << 16 |
-                                (uint32_t)frame[17] << 24;
+    conn->link_layer.access_address = ble_read_u32_le(frame + 14);
     conn->link_layer.crc_init = (uint32_t)frame[18] |
                             (uint32_t)frame[19] << 8 |
                             (uint32_t)frame[20] << 16;
 
     static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
     conn->link_layer.peer_sca_ppm = sca_ppm[frame[35] >> 5];
-    conn->link_layer.next_ticks = received_ticks + (uint64_t)ble_read_u16_le(frame + 22) *
-                                                    unit_ticks + delay_ticks;
+    conn->link_layer.next_ticks = received_ticks + delay_ticks +
+                                unit_ticks * ble_read_u16_le(frame + 22);
     conn->link_layer.used_count = count;
     conn->link_layer.hop = frame[35] & 0x1f;
     conn->link_layer.last_rx_ms = GET_MILLIS();
@@ -1849,8 +1846,9 @@ static inline int ble_gap_l2cap_init(
     ble_gap_l2cap *manager, const l2cap_ops *upper,
     uint16_t mtu, uint16_t mps, uint16_t initial_credits
 ) {
-    if (!manager || mtu < 23 || mtu > L2CAP_CHANNEL_MTU_MAX ||
-        mps < 23 || mps > L2CAP_CHANNEL_MPS_MAX
+    if (!manager ||
+        !IN_RANGE_INCLUSIVE(mtu, 23, L2CAP_CHANNEL_MTU_MAX) ||
+        !IN_RANGE_INCLUSIVE(mps, 23, L2CAP_CHANNEL_MPS_MAX)
     ) return 0;
 
     memset(manager, 0, sizeof(*manager));
@@ -1980,29 +1978,27 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
                     if (l2cap_connection_update_reply(l2cap, 0))
                         result = 1;
                 }
+                else if (peer->update_applied) {
+                    if (l2cap_connection_update_reply(l2cap, 1)) {
+                        peer->update_applied = 0;
+                        result = 1;
+                    }
+                }
                 else {
-                    if (peer->update_applied) {
+                    uint16_t current = (uint16_t)(conn->schedule.interval_125us / 10u);
+                    uint16_t interval = IN_RANGE_INCLUSIVE(current, l2cap->remote_update_min,
+                                        l2cap->remote_update_max) ? current : l2cap->remote_update_min;
+
+                    // GAP may be busy with another procedure. Leave
+                    // this request pending and retry on the next poll.
+                    if (gap_conn_update(interval, l2cap->remote_update_latency,
+                                        l2cap->remote_update_timeout)
+                    ) {
+                        peer->update_applied = 1;
+
                         if (l2cap_connection_update_reply(l2cap, 1)) {
                             peer->update_applied = 0;
                             result = 1;
-                        }
-                    }
-                    else {
-                        uint16_t current = (uint16_t)(conn->schedule.interval_125us / 10u);
-                        uint16_t interval = IN_RANGE_INCLUSIVE(current,
-                            l2cap->remote_update_min, l2cap->remote_update_max) ?
-                            current : l2cap->remote_update_min;
-
-                        // GAP may be busy with another procedure. Leave
-                        // this request pending and retry on the next poll.
-                        if (gap_conn_update(interval, l2cap->remote_update_latency,
-                                            l2cap->remote_update_timeout)) {
-                            peer->update_applied = 1;
-
-                            if (l2cap_connection_update_reply(l2cap, 1)) {
-                                peer->update_applied = 0;
-                                result = 1;
-                            }
                         }
                     }
                 }
