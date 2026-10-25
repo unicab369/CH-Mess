@@ -1736,7 +1736,8 @@ static int gap_conn_accept(
 #endif
 
     if (!l2cap_conn_init(&conn->l2cap, &l2cap_ops, NULL,
-            L2CAP_CHANNEL_MTU_MAX, L2CAP_CHANNEL_MPS_MAX, 0)
+            L2CAP_CHANNEL_MTU_MAX, L2CAP_CHANNEL_MPS_MAX,
+            L2CAP_INITIAL_CREDITS)
     ) return 0;
 
 #if GAP_SECURITY_SUPPORT >= 2
@@ -1812,12 +1813,9 @@ typedef struct {
     l2cap_tx_queue *tx_queue;
 } ble_gap_l2cap_peer;
 
-typedef struct {
-    ble_gap_l2cap_peer peers[GAP_CONNECTION_COUNT];
-    l2cap_service_registry service_registry;
-    l2cap_ops upper;
-    uint16_t local_max_sdu_size, local_max_pdu_payload, initial_credits;
-} ble_gap_l2cap;
+static ble_gap_l2cap_peer ble_gap_l2cap_peers[GAP_CONNECTION_COUNT];
+static l2cap_service_registry *ble_gap_l2cap_services;
+static l2cap_ops ble_gap_l2cap_upper;
 
 static inline int ble_gap_l2cap_accept_service_id(void *context, uint16_t service_id) {
     ble_gap_l2cap_peer *peer = context;
@@ -1826,28 +1824,18 @@ static inline int ble_gap_l2cap_accept_service_id(void *context, uint16_t servic
 
 // Application-facing
 static inline int ble_gap_l2cap_init(
-    ble_gap_l2cap *manager, const l2cap_ops *upper,
-    uint16_t local_max_sdu_size, uint16_t local_max_pdu_payload,
-    uint16_t initial_credits
+    const l2cap_ops *upper, l2cap_service_registry *services
 ) {
-    if (!manager ||
-        !IN_RANGE_INCLUSIVE(local_max_sdu_size, 23, L2CAP_CHANNEL_MTU_MAX) ||
-        !IN_RANGE_INCLUSIVE(local_max_pdu_payload, 23, L2CAP_CHANNEL_MPS_MAX)
-    ) return 0;
-
-    memset(manager, 0, sizeof(*manager));
-    if (upper) manager->upper = *upper;
-    manager->local_max_sdu_size = local_max_sdu_size;
-    manager->local_max_pdu_payload = local_max_pdu_payload;
-    manager->initial_credits = initial_credits;
+    memset(ble_gap_l2cap_peers, 0, sizeof(ble_gap_l2cap_peers));
+    memset(&ble_gap_l2cap_upper, 0, sizeof(ble_gap_l2cap_upper));
+    if (upper) ble_gap_l2cap_upper = *upper;
+    ble_gap_l2cap_services = services;
     return 1;
 }
 
 // Application-facing
 // Poll each live connection; GAP supplies its LL data directly.
-static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
-    if (!manager) return -1;
-
+static inline int ble_gap_l2cap_poll(void) {
     uint8_t previous_slot = gap_conn_slot;
     uint8_t seen[GAP_CONNECTION_COUNT] = {0};
     int work = 0;
@@ -1858,7 +1846,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             continue;
 
         gap_conn_context *conn = &gap_conn_ctx[slot];
-        ble_gap_l2cap_peer *peer = &manager->peers[slot];
+        ble_gap_l2cap_peer *peer = &ble_gap_l2cap_peers[slot];
         handle.slot = slot;
         handle.generation = gap_conn_generations[slot];
         seen[slot] = 1;
@@ -1871,13 +1859,10 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 
             memset(peer, 0, sizeof(*peer));
             peer->handle = handle;
-            peer->upper = manager->upper;
+            peer->upper = ble_gap_l2cap_upper;
             peer->connection = &conn->l2cap;
             peer->tx_queue = &conn->l2cap_tx_queue;
-            peer->connection->local_max_sdu_size = manager->local_max_sdu_size;
-            peer->connection->local_max_pdu_payload = manager->local_max_pdu_payload;
-            peer->connection->initial_credits = manager->initial_credits;
-            peer->connection->service_registry = &manager->service_registry;
+            peer->connection->service_registry = ble_gap_l2cap_services;
             peer->connection->ops.accept_service_id = ble_gap_l2cap_accept_service_id;
             peer->connection->ops.context = peer;
 
@@ -2006,7 +1991,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
     }
 
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
-        ble_gap_l2cap_peer *peer = &manager->peers[slot];
+        ble_gap_l2cap_peer *peer = &ble_gap_l2cap_peers[slot];
         if (!peer->initialized || seen[slot])
             continue;
 
@@ -2019,22 +2004,20 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 }
 
 // Application-facing
-// Return a live connection's L2CAP instance to inspect channels/read SDUs or
-// accept/reject a pending peer parameter request.
+// Return a live connection's L2CAP instance to inspect channels/read SDUs,
+// accept/reject a pending peer parameter request, or configure per-link limits
+// and starting credits before opening credit-based channels.
 static inline l2cap_connection *ble_gap_l2cap_for(
-    ble_gap_l2cap *manager, gap_conn_handle handle
+    gap_conn_handle handle
 ) {
-    if (!manager || handle.slot >= GAP_CONNECTION_COUNT)
-        return NULL;
-
-    ble_gap_l2cap_peer *peer = &manager->peers[handle.slot];
-    if (!peer->initialized || peer->handle.generation != handle.generation)
+    if (handle.slot >= GAP_CONNECTION_COUNT)
         return NULL;
 
     uint8_t previous_slot = gap_conn_slot;
     int valid = gap_conn_select(handle);
+    l2cap_connection *connection = valid ? &gap_conn_ctx[handle.slot].l2cap : NULL;
     gap_conn_slot = previous_slot;
-    return valid ? peer->connection : NULL;
+    return connection;
 }
 
 #endif // GAP_H

@@ -566,8 +566,8 @@ ATT transport and SMP use that same connection, so fixed and dynamic channels
 share channel state and outgoing L2CAP traffic is serialized per link. GAP leaves
 the dynamic PSM registry unset. With EATT enabled, each bound GATT peer supplies
 its own registry when `ble_gap_gatt_poll()` attaches the transport. Fixed ATT
-needs no registry. A separate `ble_gap_l2cap` manager supplies one registry
-shared across its links.
+needs no registry. The standalone GAP L2CAP adapter uses a service registry
+supplied to `ble_gap_l2cap_init()`.
 
 ```c
 #include "gatt_services/ble_gatt_services.h"
