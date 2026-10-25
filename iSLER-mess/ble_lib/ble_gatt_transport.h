@@ -629,8 +629,7 @@ static inline int gatt_transport_eatt_open_channel(
     ) return 0;
 
     int slot = gatt_eatt_free_slot(&transport->eatt);
-    if (slot < 0 || !l2cap_ecfc_open_many(transport->l2cap_link, service_id,
-                                          &cid, 1))
+    if (slot < 0 || !l2cap_ecfc_open(transport->l2cap_link, service_id, &cid, 1))
         return 0;
 
     transport->eatt.bearers[slot].cid = cid;
