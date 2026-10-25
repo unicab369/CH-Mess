@@ -37,6 +37,7 @@ static inline uint64_t subtract_clamp0_64(uint64_t value, uint64_t amount) {
 #error "L2CAP_SDU_MAX must leave room for the 4-byte L2CAP header"
 #endif
 
+// Counters include the 4-byte header; 8-bit mode supports SDUs up to 251 bytes.
 #ifndef L2CAP_REASSEMBLER_USE_8BIT
     #define L2CAP_REASSEMBLER_USE_8BIT 1
 #endif
@@ -183,10 +184,10 @@ typedef struct l2cap_connection {
     uint16_t pending_mps;
     uint8_t pending_count, pending_id;
     uint8_t pending_code;
-    uint8_t remote_update_pending, remote_update_id;
-    uint16_t remote_update_min, remote_update_max;
-    uint16_t remote_update_latency, remote_update_timeout;
-    uint32_t remote_update_due_ms;
+    uint8_t periph_update_pending, periph_update_id;
+    uint16_t periph_update_min, periph_update_max;
+    uint16_t periph_update_latency, periph_update_timeout;
+    uint32_t periph_update_due_ms;
     uint16_t pending_local_cid[L2CAP_CHANNEL_MAX];
     uint32_t now_ms;
     uint32_t pending_deadline_ms;
@@ -829,17 +830,17 @@ static inline int l2cap_update_req(
 
 // Application facing
 static inline int l2cap_update_reply(l2cap_connection *conn, int accept) {
-    if (!conn || !conn->remote_update_pending) return 0;
+    if (!conn || !conn->periph_update_pending) return 0;
 
     uint8_t result[2];
     write_u16_le(result, accept ? 0 : 1);
     if (!l2cap_send_signal(conn, L2CAP_CONN_PARAM_UPDATE_RESP,
-            conn->remote_update_id, result, sizeof(result))
+            conn->periph_update_id, result, sizeof(result))
     ) return 0;
 
-    conn->remote_update_pending = 0;
-    conn->remote_update_id = 0;
-    conn->remote_update_due_ms = 0;
+    conn->periph_update_pending = 0;
+    conn->periph_update_id = 0;
+    conn->periph_update_due_ms = 0;
     return 1;
 }
 
@@ -850,8 +851,8 @@ static inline void l2cap_conn_reset(l2cap_connection *conn, int reason) {
             l2cap_channel_clear(conn, i, reason);
     conn->pending_id = conn->pending_count = conn->pending_code = 0;
     conn->pending_deadline_ms = 0;
-    conn->remote_update_pending = conn->remote_update_id = 0;
-    conn->remote_update_due_ms = 0;
+    conn->periph_update_pending = conn->periph_update_id = 0;
+    conn->periph_update_due_ms = 0;
 }
 
 // Advance signaling/channel timers using a monotonic millisecond clock.
@@ -879,8 +880,8 @@ static inline int l2cap_conn_tick(l2cap_connection *conn, uint32_t now_ms) {
         expired++;
     }
 
-    if (conn->remote_update_pending && conn->remote_update_due_ms &&
-        (int32_t)(now_ms - conn->remote_update_due_ms) >= 0
+    if (conn->periph_update_pending && conn->periph_update_due_ms &&
+        (int32_t)(now_ms - conn->periph_update_due_ms) >= 0
     ) {
         if (l2cap_update_reply(conn, 0))
             expired++;
@@ -1486,7 +1487,7 @@ static inline int l2cap_receive(
 
                     if (!ble_timing_valid(interval_min, interval_max, latency, timeout) ||
                         (uint32_t)timeout * 8u <= 2u * (uint32_t)(latency + 1u) * interval_max ||
-                        conn->remote_update_pending
+                        conn->periph_update_pending
                     ) {
                         uint8_t response[2] = {1, 0};
                         if (!l2cap_send_signal(conn, L2CAP_CONN_PARAM_UPDATE_RESP, identifier,
@@ -1494,13 +1495,13 @@ static inline int l2cap_receive(
                         ) return 0;
                     }
                     else {
-                        conn->remote_update_pending = 1;
-                        conn->remote_update_id = identifier;
-                        conn->remote_update_min = interval_min;
-                        conn->remote_update_max = interval_max;
-                        conn->remote_update_latency = latency;
-                        conn->remote_update_timeout = timeout;
-                        conn->remote_update_due_ms = conn->now_ms + L2CAP_SIGNAL_TIMEOUT_MS;
+                        conn->periph_update_pending = 1;
+                        conn->periph_update_id = identifier;
+                        conn->periph_update_min = interval_min;
+                        conn->periph_update_max = interval_max;
+                        conn->periph_update_latency = latency;
+                        conn->periph_update_timeout = timeout;
+                        conn->periph_update_due_ms = conn->now_ms + L2CAP_SIGNAL_TIMEOUT_MS;
                     }
                 }
                 break;

@@ -38,6 +38,9 @@
 #if GAP_SECURITY_SUPPORT < 0 || GAP_SECURITY_SUPPORT > 2
 #error "GAP_SECURITY_SUPPORT must be 0, 1, or 2"
 #endif
+#if GAP_SECURITY_SUPPORT >= 2 && L2CAP_SDU_MAX < 65
+#error "L2CAP_SDU_MAX must be at least 65 when Secure Connections is enabled"
+#endif
 
 // Set either role to 0 to reject procedures that establish that local role.
 #ifndef GAP_CENTRAL_SUPPORT
@@ -1943,10 +1946,10 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 
         l2cap_connection *l2cap = peer->connection;
 
-        if (l2cap->remote_update_pending) {
+        if (l2cap->periph_update_pending) {
             if (peer->update_applied ||
-                !l2cap->remote_update_due_ms ||
-                (int32_t)(GET_MILLIS() - l2cap->remote_update_due_ms) < 0
+                !l2cap->periph_update_due_ms ||
+                (int32_t)(GET_MILLIS() - l2cap->periph_update_due_ms) < 0
             ) {
                 if (!conn->is_central) {
                     if (l2cap_update_reply(l2cap, 0))
@@ -1960,14 +1963,12 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
                 }
                 else {
                     uint16_t current = (uint16_t)(conn->schedule.interval_125us / 10u);
-                    uint16_t interval = IN_RANGE_INCLUSIVE(current, l2cap->remote_update_min,
-                                        l2cap->remote_update_max) ? current : l2cap->remote_update_min;
+                    uint16_t interval = IN_RANGE_INCLUSIVE(current, l2cap->periph_update_min,
+                                        l2cap->periph_update_max) ? current : l2cap->periph_update_min;
 
                     // GAP may be busy with another procedure. Leave
                     // this request pending and retry on the next poll.
-                    if (gap_conn_update(interval, l2cap->remote_update_latency,
-                                        l2cap->remote_update_timeout)
-                    ) {
+                    if (gap_conn_update(interval, l2cap->periph_update_latency,l2cap->periph_update_timeout)) {
                         peer->update_applied = 1;
 
                         if (l2cap_update_reply(l2cap, 1)) {

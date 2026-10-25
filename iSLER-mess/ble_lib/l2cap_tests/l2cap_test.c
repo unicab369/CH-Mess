@@ -242,9 +242,9 @@ int main(void) {
         24, 0, 40, 0, 0, 0, 100, 0};
     assert(fake_receive(&fake, &conn, L2CAP_CID_LE_SIGNALING,
         peer_update, sizeof(peer_update)));
-    assert(conn.remote_update_pending && conn.remote_update_min == 24 &&
-           conn.remote_update_max == 40 && !conn.remote_update_latency &&
-           conn.remote_update_timeout == 100 && !fake.len);
+    assert(conn.periph_update_pending && conn.periph_update_min == 24 &&
+           conn.periph_update_max == 40 && !conn.periph_update_latency &&
+           conn.periph_update_timeout == 100 && !fake.len);
     assert(l2cap_update_reply(&conn, 1));
     assert(fake_output_take(&fake));
     assert(fake.pdu[0] == L2CAP_CONN_PARAM_UPDATE_RESP &&
