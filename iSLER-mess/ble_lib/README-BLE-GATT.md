@@ -563,11 +563,10 @@ call `ble_gap_l2cap_poll()` for the same links.
 
 GAP owns one L2CAP connection and transmit queue per live link. The attached
 ATT transport and SMP use that same connection, so fixed and dynamic channels
-share channel state and outgoing L2CAP traffic is serialized per link. GAP leaves
-the dynamic PSM registry unset. With EATT enabled, each bound GATT peer supplies
-its own registry when `ble_gap_gatt_poll()` attaches the transport. Fixed ATT
-needs no registry. The standalone GAP L2CAP adapter owns a shared service
-registry in `ble_gap_l2cap_services`.
+share channel state and outgoing L2CAP traffic is serialized per link. L2CAP
+provides one shared dynamic service registry. EATT-enabled peers register SPSM
+`0x0027` there, while the per-link authorization callback enforces EATT
+encryption and channel availability. Fixed ATT needs no registry entry.
 
 ```c
 #include "gatt_services/ble_gatt_services.h"

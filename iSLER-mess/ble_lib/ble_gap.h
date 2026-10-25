@@ -1735,7 +1735,7 @@ static int gap_conn_accept(
     memcpy(conn->responder.address, frame + 8, 6);
 #endif
 
-    if (!l2cap_conn_init(&conn->l2cap, &l2cap_ops, NULL,
+    if (!l2cap_conn_init(&conn->l2cap, &l2cap_ops,
             L2CAP_CHANNEL_MTU_MAX, L2CAP_CHANNEL_MPS_MAX,
             L2CAP_INITIAL_CREDITS)
     ) return 0;
@@ -1814,7 +1814,6 @@ typedef struct {
 } ble_gap_l2cap_peer;
 
 static ble_gap_l2cap_peer ble_gap_l2cap_peers[GAP_CONNECTION_COUNT];
-static l2cap_service_registry ble_gap_l2cap_services;
 static l2cap_ops ble_gap_l2cap_upper;
 
 static inline int ble_gap_l2cap_accept_service_id(void *context, uint16_t service_id) {
@@ -1825,7 +1824,6 @@ static inline int ble_gap_l2cap_accept_service_id(void *context, uint16_t servic
 // Application-facing
 static inline int ble_gap_l2cap_init(const l2cap_ops *upper) {
     memset(ble_gap_l2cap_peers, 0, sizeof(ble_gap_l2cap_peers));
-    memset(&ble_gap_l2cap_services, 0, sizeof(ble_gap_l2cap_services));
     memset(&ble_gap_l2cap_upper, 0, sizeof(ble_gap_l2cap_upper));
     if (upper) ble_gap_l2cap_upper = *upper;
     return 1;
@@ -1860,7 +1858,6 @@ static inline int ble_gap_l2cap_poll(void) {
             peer->upper = ble_gap_l2cap_upper;
             peer->connection = &conn->l2cap;
             peer->tx_queue = &conn->l2cap_tx_queue;
-            peer->connection->service_registry = &ble_gap_l2cap_services;
             peer->connection->ops.accept_service_id = ble_gap_l2cap_accept_service_id;
             peer->connection->ops.context = peer;
 

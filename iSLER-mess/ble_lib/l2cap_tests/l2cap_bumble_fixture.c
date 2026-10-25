@@ -48,12 +48,11 @@ static int receive_frame(
 }
 
 int main(void) {
-    l2cap_service_registry service_registry = {0};
     l2cap_ops ops = {0};
     ops.tx_queue = &tx_queue;
     ops.accept_service_id = accept_service_id;
-    if (!l2cap_conn_init(&connection, &ops, &service_registry, 100, 40, 2) ||
-        !l2cap_service_register(&service_registry, 0x0027)
+    if (!l2cap_conn_init(&connection, &ops, 100, 40, 2) ||
+        !l2cap_service_register(0x0027)
     ) return 1;
 
     uint8_t frame[L2CAP_SDU_MAX + 4];

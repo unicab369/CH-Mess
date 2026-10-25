@@ -183,12 +183,14 @@ typedef struct {
     void *context;
 } l2cap_ops;
 
-// Local services supported by one L2CAP manager, shared by its connections.
+// Local services supported by this L2CAP stack, shared by all connections.
 typedef struct {
     // Registration rejects PSMs above 0x00ff, so each entry fits in one byte.
     uint8_t service_ids[L2CAP_SERVICE_REGISTRY_MAX];
     uint8_t count;
 } l2cap_service_registry;
+
+static l2cap_service_registry l2cap_services;
 
 static inline int l2cap_output_configured(const l2cap_ops *ops) {
     return ops && ops->tx_queue && ops->tx_queue->data &&
@@ -199,7 +201,6 @@ static inline int l2cap_output_configured(const l2cap_ops *ops) {
 typedef struct l2cap_connection {
     // Shared L2CAP channels, signaling, and pending operation state.
     l2cap_ops ops;
-    l2cap_service_registry *service_registry;
     l2cap_channel_handler fixed[2];
     l2cap_channel channels[L2CAP_CHANNEL_MAX];
     l2cap_connection_bytes local_max_sdu_size;    // max total message size after chunks are combined.
@@ -310,7 +311,7 @@ static inline int ble_timing_valid(
 
 // Application facing
 static inline int l2cap_conn_init(
-    l2cap_connection *conn, const l2cap_ops *ops, l2cap_service_registry *service_registry,
+    l2cap_connection *conn, const l2cap_ops *ops,
     uint16_t max_sdu_size, uint16_t max_pdu_payload, uint16_t initial_credits
 ) {
     if (!conn || !l2cap_output_configured(ops) ||
@@ -321,7 +322,6 @@ static inline int l2cap_conn_init(
 
     memset(conn, 0, sizeof(*conn));
     conn->ops = *ops;
-    conn->service_registry = service_registry;
     conn->local_max_sdu_size = max_sdu_size;
     conn->local_max_pdu_payload = max_pdu_payload;
     conn->initial_credits = initial_credits;
@@ -349,18 +349,16 @@ static inline void l2cap_channel_clear(
 }
 
 // Application facing
-static inline int l2cap_service_register(
-    l2cap_service_registry *registry, uint16_t service_id
-) {
-    if (!registry || !service_id || service_id > 0x00ffu) return 0;
+static inline int l2cap_service_register(uint16_t service_id) {
+    if (!service_id || service_id > 0x00ffu) return 0;
 
-    for (uint8_t i = 0; i < registry->count; i++)
-        if (registry->service_ids[i] == service_id)
+    for (uint8_t i = 0; i < l2cap_services.count; i++)
+        if (l2cap_services.service_ids[i] == service_id)
             return 1;
 
-    if (registry->count >= L2CAP_SERVICE_REGISTRY_MAX)
+    if (l2cap_services.count >= L2CAP_SERVICE_REGISTRY_MAX)
         return 0;
-    registry->service_ids[registry->count++] = service_id;
+    l2cap_services.service_ids[l2cap_services.count++] = service_id;
     return 1;
 }
 
@@ -388,29 +386,25 @@ static inline uint8_t l2cap_id_alloc(l2cap_connection *conn) {
 }
 
 // Application facing
-static inline int l2cap_service_unregister(
-    l2cap_service_registry *registry, uint16_t service_id
-) {
-    if (!registry || !service_id) return 0;
-    for (uint8_t i = 0; i < registry->count; i++) {
-        if (registry->service_ids[i] != service_id)
+static inline int l2cap_service_unregister(uint16_t service_id) {
+    if (!service_id) return 0;
+    for (uint8_t i = 0; i < l2cap_services.count; i++) {
+        if (l2cap_services.service_ids[i] != service_id)
             continue;
 
-        for (uint8_t j = i + 1; j < registry->count; j++)
-            registry->service_ids[j - 1] = registry->service_ids[j];
-        registry->count--;
+        for (uint8_t j = i + 1; j < l2cap_services.count; j++)
+            l2cap_services.service_ids[j - 1] = l2cap_services.service_ids[j];
+        l2cap_services.count--;
         return 1;
     }
     return 0;
 }
 
 // Application facing
-static inline int l2cap_service_is_registered(
-    const l2cap_service_registry *registry, uint16_t service_id
-) {
-    if (!registry || !service_id) return 0;
-    for (uint8_t i = 0; i < registry->count; i++)
-        if (registry->service_ids[i] == service_id)
+static inline int l2cap_service_is_registered(uint16_t service_id) {
+    if (!service_id) return 0;
+    for (uint8_t i = 0; i < l2cap_services.count; i++)
+        if (l2cap_services.service_ids[i] == service_id)
             return 1;
     return 0;
 }
@@ -418,7 +412,7 @@ static inline int l2cap_service_is_registered(
 static inline uint16_t l2cap_service_authorize(
     l2cap_connection *conn, uint16_t service_id
 ) {
-    if (!l2cap_service_is_registered(conn->service_registry, service_id))
+    if (!l2cap_service_is_registered(service_id))
         return 2;
 
     if (conn->ops.authorize_service_id) {
