@@ -1699,10 +1699,9 @@ static int gap_conn_accept(
     const uint8_t frame[36], uint64_t received_ticks,
     uint64_t unit_ticks, uint64_t delay_ticks
 ) {
-    if (!gap_conn_request_valid(frame))
-        return 0;
-
-    if (MIN(GAP_HW_DATA_MAX, GAP_CONN_DATA_MAX) < 27) return 0;
+    if (!gap_conn_request_valid(frame) ||
+        MIN(GAP_HW_DATA_MAX, GAP_CONN_DATA_MAX) < 27
+    ) return 0;
 
     int free_slot = gap_conn_free_slot();
     if (free_slot < 0) return 0;

@@ -51,9 +51,12 @@ typedef uint8_t l2cap_reassembly_bytes;
 typedef uint16_t l2cap_reassembly_bytes;
 #endif
 
-#define L2CAP_CID_ATT 0x0004u
-#define L2CAP_CID_LE_SIGNALING 0x0005u
-#define L2CAP_CID_SMP 0x0006u
+enum {
+    L2CAP_CID_ATT = 0x0004,
+    L2CAP_CID_LE_SIGNALING = 0x0005,
+    L2CAP_CID_SMP = 0x0006
+};
+
 #define L2CAP_SIGNALING_MTU 23u
 #define L2CAP_DYNAMIC_CID_MIN 0x0040u
 #define L2CAP_DYNAMIC_CID_MAX 0x007fu
@@ -156,15 +159,6 @@ enum {
 // =============================================================================
 // Connection and channel state
 // =============================================================================
-typedef int (*l2cap_sdu_fn)(void *context, uint16_t cid,
-                                const uint8_t *sdu, uint16_t len);
-
-typedef struct {
-    uint16_t cid;
-    l2cap_sdu_fn receive;
-    void *context;
-} l2cap_channel_handler;
-
 // One-packet output slot owned and drained by the transport poller.
 typedef struct {
     uint8_t *data;
@@ -252,7 +246,14 @@ static inline int l2cap_output_configured(const l2cap_ops *ops) {
 typedef struct l2cap_connection {
     // Shared L2CAP channels, signaling, and pending operation state.
     l2cap_ops ops;
-    l2cap_channel_handler fixed[2];
+
+    // One handler each for ATT and SMP; L2CAP handles LE signaling internally.
+    struct {
+        uint16_t cid;
+        int (*receive_cb)(void *context, uint16_t cid, const uint8_t *sdu, uint16_t len);
+        void *context;
+    } channel_handlers[2];
+
     l2cap_channel channels[L2CAP_CHANNEL_MAX];
     uint16_t next_cid;                   // Next dynamic channel ID to allocate.
 
@@ -456,16 +457,18 @@ static inline uint16_t l2cap_service_authorize(
 }
 
 static inline int l2cap_fixed_register(
-    l2cap_connection *conn, uint16_t cid, l2cap_sdu_fn receive, void *context
+    l2cap_connection *conn, uint16_t cid,
+    int (*receive_cb)(void *context, uint16_t cid, const uint8_t *sdu, uint16_t len),
+    void *context
 ) {
-    if (!conn || !receive ||
+    if (!conn || !receive_cb ||
         (cid != L2CAP_CID_ATT && cid != L2CAP_CID_SMP)
     ) return 0;
 
     uint8_t slot = cid == L2CAP_CID_ATT ? 0 : 1;
-    conn->fixed[slot].cid = cid;
-    conn->fixed[slot].receive = receive;
-    conn->fixed[slot].context = context;
+    conn->channel_handlers[slot].cid = cid;
+    conn->channel_handlers[slot].receive_cb = receive_cb;
+    conn->channel_handlers[slot].context = context;
     return 1;
 }
 
@@ -1780,8 +1783,8 @@ static inline int l2cap_receive(
     }
 
     for (size_t i = 0; i < 2; i++) {
-        if (conn->fixed[i].cid == cid && conn->fixed[i].receive)
-            return conn->fixed[i].receive(conn->fixed[i].context, cid, sdu, len);
+        if (conn->channel_handlers[i].cid == cid && conn->channel_handlers[i].receive_cb)
+            return conn->channel_handlers[i].receive_cb(conn->channel_handlers[i].context, cid, sdu, len);
     }
     return 0;
 }

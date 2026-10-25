@@ -40,7 +40,7 @@
 #ifndef L2CAP_SDU_MAX
 #define L2CAP_SDU_MAX BLE_GATT_TRANSPORT_MTU_MAX
 #endif
-#define BLE_GATT_TRANSPORT_ATT_CID L2CAP_CID_ATT
+
 #if BLE_GATT_ENABLE_EATT
 
 // =============================================================================
@@ -1028,7 +1028,7 @@ static inline int gatt_transport_receive_att(
     if (has_response < 0) return -1;
 
     if (!dispatched_to_client && has_response > 0)
-        (void)l2cap_tx_queue_pdu(transport->l2cap_link, BLE_GATT_TRANSPORT_ATT_CID,
+        (void)l2cap_tx_queue_pdu(transport->l2cap_link, L2CAP_CID_ATT,
                                 response, response_len);
     return 1;
 }
@@ -1057,9 +1057,8 @@ static inline int gatt_transport_init(
     if (l2cap) {
         l2cap->ops.tx_queue = tx_queue;
         l2cap->ops.context = transport;
-        if (!l2cap_fixed_register(
-            transport->l2cap_link, BLE_GATT_TRANSPORT_ATT_CID,
-            gatt_transport_receive_att, transport
+        if (!l2cap_fixed_register(transport->l2cap_link, L2CAP_CID_ATT,
+                                gatt_transport_receive_att, transport
         )) return 0;
     }
 
@@ -1174,7 +1173,7 @@ static inline int gatt_transport_send_client(
                          transport->server->local_mtu)
     ) return 0;
 
-    if (!l2cap_tx_queue_pdu(transport->l2cap_link, BLE_GATT_TRANSPORT_ATT_CID, att, att_len))
+    if (!l2cap_tx_queue_pdu(transport->l2cap_link, L2CAP_CID_ATT, att, att_len))
         return 0;
     transport->tx_client_request = 1;
     return 1;
@@ -1576,7 +1575,7 @@ static inline int gatt_transport_poll(
                                    sizeof(event), &event_len) : 0;
 
     if (event_result == 1)
-        (void)l2cap_tx_queue_pdu(transport->l2cap_link, BLE_GATT_TRANSPORT_ATT_CID,
+        (void)l2cap_tx_queue_pdu(transport->l2cap_link, L2CAP_CID_ATT,
                                 event, event_len);
 
     if (event_result < 0)
@@ -1679,8 +1678,7 @@ static inline int ble_gap_gatt_poll(
             }
         }
 #endif
-        if (!l2cap_fixed_register(l2cap, BLE_GATT_TRANSPORT_ATT_CID,
-                                  gatt_transport_receive_att, transport)) {
+        if (!l2cap_fixed_register(l2cap, L2CAP_CID_ATT, gatt_transport_receive_att, transport)) {
             (void)gap_disconnect(0x13);
             failed = 1;
             continue;
