@@ -33,6 +33,9 @@ static inline uint64_t subtract_clamp0_64(uint64_t value, uint64_t amount) {
 // SMP Secure Connections public keys are 65-byte PDUs.
 #define L2CAP_SDU_MAX 65
 #endif
+#if L2CAP_SDU_MAX > 65531u
+#error "L2CAP_SDU_MAX must leave room for the 4-byte L2CAP header"
+#endif
 
 #define L2CAP_CID_ATT 0x0004u
 #define L2CAP_CID_LE_SIGNALING 0x0005u
@@ -177,10 +180,10 @@ typedef struct l2cap_connection {
 } l2cap_connection;
 
 typedef struct {
-    uint16_t expected, used;
-    uint32_t discard_remaining;
-    uint16_t cid;
-    uint8_t data[L2CAP_SDU_MAX];
+    uint16_t bytes_expected;        // Total bytes expected, including the L2CAP header.
+    uint16_t bytes_received;        // Bytes already received, including the L2CAP header.
+    uint16_t cid;                   // L2CAP channel identifier of the current SDU.
+    uint8_t received_buffer[L2CAP_SDU_MAX + 4]; // SDU payload plus its L2CAP header.
 } l2cap_reassembler;
 
 // =============================================================================
@@ -1664,7 +1667,7 @@ static inline int l2cap_reassembler_feed(
         return -1;
 
     if (llid == 2) {
-        rx->expected = rx->used = rx->discard_remaining = 0;
+        rx->bytes_expected = rx->bytes_received = 0;
         if (len < 4) return -1;
 
         uint16_t payload_len = read_u16_le(fragment);
@@ -1675,36 +1678,31 @@ static inline int l2cap_reassembler_feed(
             if (len > (uint32_t)payload_len + 4u)
                 return -1;
 
-            rx->discard_remaining = subtract_clamp0_32((uint32_t)payload_len + 4, len);
             return 0;
         }
 
-        rx->expected = (uint16_t)(payload_len + 4);
+        rx->bytes_expected = (uint16_t)(payload_len + 4u);
     }
-    else if (rx->discard_remaining) {
-        rx->discard_remaining = (uint32_t)subtract_clamp0_64(rx->discard_remaining, len);
-        return 0;
-    }
-    else if (!rx->expected) {
+    else if (!rx->bytes_expected) {
         return 0;
     }
 
-    uint16_t remaining = (uint16_t)(rx->expected - rx->used);
+    uint16_t remaining = (uint16_t)(rx->bytes_expected - rx->bytes_received);
     if (len > remaining) {
-        rx->expected = 0;
-        rx->used = 0;
+        rx->bytes_expected = 0;
+        rx->bytes_received = 0;
         return -1;
     }
 
-    memcpy(rx->data + rx->used, fragment, len);
-    rx->used = (uint16_t)(rx->used + len);
-    if (rx->used != rx->expected)
+    memcpy(rx->received_buffer + rx->bytes_received, fragment, len);
+    rx->bytes_received = (uint16_t)(rx->bytes_received + len);
+    if (rx->bytes_received != rx->bytes_expected)
         return 0;
 
     if (cid) *cid = rx->cid;
-    if (sdu) *sdu = rx->data + 4;
-    if (sdu_len) *sdu_len = (uint16_t)(rx->expected - 4);
-    rx->expected = rx->used = 0;
+    if (sdu) *sdu = rx->received_buffer + 4;
+    if (sdu_len) *sdu_len = (uint16_t)(rx->bytes_expected - 4);
+    rx->bytes_expected = rx->bytes_received = 0;
     return 1;
 }
 
