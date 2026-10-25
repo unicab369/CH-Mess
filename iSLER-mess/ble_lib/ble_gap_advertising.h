@@ -127,11 +127,11 @@ static uint8_t gap_sync_started_scan;
 #endif
 
 // Application facing
-// Start building AD structures in caller-owned storage.
+// Start building AD structures in caller-owned storage. builder and data must
+// point to valid objects, including when capacity is zero.
 int gap_ad_builder_init(
     gap_ad_builder *builder, uint8_t *data, size_t capacity
 ) {
-    if (!builder || !data) return 0;
     builder->data = data;
     builder->capacity = capacity;
     builder->len = 0;
@@ -140,11 +140,12 @@ int gap_ad_builder_init(
 
 // Application facing
 // Append one length-type-value AD structure. Values are stored in BLE byte order.
+// builder must be valid and initialized; value must be valid when value_len is nonzero.
 int gap_ad_append(
     gap_ad_builder *builder, uint8_t type,
     const uint8_t *value, size_t value_len
 ) {
-    if (!builder || !builder->data || (!value && value_len) ||
+    if (!builder->data || (!value && value_len) ||
         value_len > 254 || builder->len > builder->capacity ||
         value_len + 2 > builder->capacity - builder->len
     ) return 0;
@@ -179,7 +180,8 @@ int gap_ad_uuid16_list(
     gap_ad_builder *builder, const uint16_t *uuids,
     size_t count, uint8_t complete
 ) {
-    if ((!uuids && count) || count > 254 / 2) return 0;
+    // builder must be valid and initialized; uuids must contain count entries.
+    if (count > 254 / 2) return 0;
     uint8_t type = complete ? GAP_AD_UUID16_COMPLETE : GAP_AD_UUID16_INCOMPLETE;
     size_t value_len = count * 2;
 
@@ -200,7 +202,8 @@ int gap_ad_uuid32_list(
     gap_ad_builder *builder, const uint32_t *uuids,
     size_t count, uint8_t complete
 ) {
-    if ((!uuids && count) || count > 252 / 4) return 0;
+    // builder must be valid and initialized; uuids must contain count entries.
+    if (count > 252 / 4) return 0;
     uint8_t type = complete ? GAP_AD_UUID32_COMPLETE : GAP_AD_UUID32_INCOMPLETE;
     size_t value_len = count * 4;
 
@@ -233,6 +236,7 @@ int gap_ad_tx_power(gap_ad_builder *builder, int8_t dbm) {
 }
 
 // Application facing
+// builder and uuid must be valid; data must be valid when len is nonzero.
 // Append service data with a 16-, 32-, or 128-bit UUID already encoded in
 // Bluetooth little-endian byte order.
 int gap_ad_service_data(
@@ -247,7 +251,7 @@ int gap_ad_service_data(
         default: return 0;
     }
 
-    if (!builder || !builder->data || !uuid || (!data && len) ||
+    if (!builder->data || (!data && len) ||
         len > 254 - uuid_len ||
         builder->len > builder->capacity ||
         uuid_len + len + 2 > builder->capacity - builder->len
@@ -267,15 +271,14 @@ int gap_ad_service_data(
 }
 
 // Application facing
+// All output pointers must be valid. data may be null only when len is zero.
 // Parse the next AD structure: 1 means a value was returned, 0 means end,
 // and -1 means malformed input. A zero length byte terminates padded data.
 int gap_ad_parse_next(
     const uint8_t *data, size_t len, size_t *offset, uint8_t *type,
     const uint8_t **value, size_t *value_len
 ) {
-    if ((!data && len) || !offset || !type ||
-        !value || !value_len || *offset > len
-    ) return -1;
+    if ((!data && len) || *offset > len) return -1;
 
     if (*offset == len) return 0;
     uint8_t field_len = data[*offset];
@@ -307,8 +310,6 @@ int gap_ad_parse_next(
 // from a secure application source; key and IV are consumed as byte strings in
 // CCM key and nonce order, respectively.
 int gap_ead_key_set(const uint8_t session_key[16], const uint8_t iv[8]) {
-    if (!session_key || !iv) return 0;
-
     uint8_t key_bits = 0;
     for (size_t i = 0; i < GAP_EAD_KEY_LEN; i++)
         key_bits |= session_key[i];
@@ -324,7 +325,7 @@ int gap_ead_key_set(const uint8_t session_key[16], const uint8_t iv[8]) {
 // Application facing
 // Copy the current EAD session key and IV for application key distribution.
 int gap_ead_key_get(uint8_t out[24]) {
-    if (!out || !gap_ead_key.set) return 0;
+    if (!gap_ead_key.set) return 0;
     memcpy(out, gap_ead_key.session_key, GAP_EAD_KEY_LEN);
     memcpy(out + GAP_EAD_KEY_LEN, gap_ead_key.iv, GAP_EAD_IV_LEN);
     return 1;
@@ -358,7 +359,7 @@ int gap_ead_encrypt(
     const uint8_t *plaintext, size_t plaintext_len,
     uint8_t *out, size_t out_capacity, size_t *out_len
 ) {
-    if (!gap_ead_key.set || !out || !out_len ||
+    if (!gap_ead_key.set ||
         !gap_ead_plaintext_valid(plaintext, plaintext_len) ||
         plaintext_len + 11 > out_capacity
     ) return 0;
@@ -397,7 +398,7 @@ int gap_ead_decrypt(
     const uint8_t *ead, size_t ead_len,
     uint8_t *out, size_t out_capacity, size_t *out_len
 ) {
-    if (!gap_ead_key.set || !ead || !out || !out_len ||
+    if (!gap_ead_key.set ||
         ead_len < 13 || ead[1] != GAP_AD_ENCRYPTED_DATA ||
         (size_t)ead[0] + 1 != ead_len ||
         ead_len > GAP_EAD_AD_STRUCTURE_MAX
@@ -522,7 +523,7 @@ int gap_adv_start_directed(const gap_address *peer, uint16_t interval_ms) {
 #if GAP_CENTRAL_SUPPORT
     if (gap_initiator.active) return 0;
 #endif
-    if (!peer || peer->type > 1 ||
+    if (peer->type > 1 ||
         interval_ms < GAP_ADV_INTERVAL_MIN_MS ||
         interval_ms > GAP_ADV_INTERVAL_MAX_MS
     ) return 0;
@@ -721,7 +722,7 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
 // Initiate a legacy LE connection to one specified advertiser.
 // Uses a conservative fixed 30 ms interval, zero latency, and 2 s timeout.
 int gap_conn_start(const gap_address *peer) {
-    if (!peer || peer->type > 1 || gap_conn_free_slot() < 0 ||
+    if (peer->type > 1 || gap_conn_free_slot() < 0 ||
         (gap_scanner.scanning || gap_initiator.active)
     ) return 0;
 
@@ -747,7 +748,7 @@ void gap_conn_cancel(void) {
 // Application facing
 // Return 1 with a report, 0 when empty. Reports are copied out of a bounded FIFO.
 int gap_scan_poll(gap_scan_report *report) {
-    if (!report || !gap_scan.count) return 0;
+    if (!gap_scan.count) return 0;
     *report = gap_scan_reports[gap_scan.head];
     gap_scan.head = (gap_scan.head + 1) % GAP_SCAN_REPORT_COUNT;
     gap_scan.count--;
@@ -892,7 +893,6 @@ int gap_scan_take_ad(
     const uint8_t *types, size_t type_count,
     uint8_t *ad, size_t *len, int8_t *rssi
 ) {
-    if (!types || !ad || !len) return 0;
     if (gap_adv_scan.ready) {
         gap_receive_report(gap_adv_scan.frame, gap_adv_scan.frame[1], gap_adv_scan.rssi);
         gap_adv_scan.ready = 0;
