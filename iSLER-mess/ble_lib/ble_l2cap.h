@@ -326,10 +326,11 @@ static inline void write_u32_le(uint8_t *p, uint32_t value) {
     p[3] = (uint8_t)(value >> 24);
 }
 
+// payload must point to len bytes; empty PDU payloads are rejected.
 static inline int l2cap_tx_queue_pdu(
     l2cap_connection *conn, uint16_t cid, const uint8_t *payload, uint16_t len
 ) {
-    if (!conn || !payload || !len) return 0;
+    if (!len) return 0;
 
     l2cap_tx_queue *queue = conn->ops.tx_queue;
     if (!queue || !queue->data ||
@@ -359,7 +360,7 @@ static inline int ble_timing_valid(
 static inline int l2cap_conn_init(
     l2cap_connection *conn, const l2cap_ops *ops
 ) {
-    if (!conn || !l2cap_output_configured(ops)) return 0;
+    if (!l2cap_output_configured(ops)) return 0;
 
     memset(conn, 0, sizeof(*conn));
     conn->ops = *ops;
@@ -370,7 +371,7 @@ static inline int l2cap_conn_init(
 static inline void l2cap_channel_clear(
     l2cap_connection *conn, uint8_t slot, int reason
 ) {
-    if (!conn || slot >= L2CAP_CHANNEL_MAX) return;
+    if (slot >= L2CAP_CHANNEL_MAX) return;
     l2cap_channel *chann = &conn->channels[slot];
 
     if (chann->local_cid) {
@@ -387,8 +388,6 @@ static inline void l2cap_channel_clear(
 // Allocate identifiers without colliding with the one response-bearing local
 // procedure or any still-open disconnect transaction.
 static inline uint8_t l2cap_id_alloc(l2cap_connection *conn) {
-    if (!conn) return 0;
-
     for (uint16_t attempt = 0; attempt < 255; attempt++) {
         uint8_t id = ++conn->signaling_id;
         if (!id) id = ++conn->signaling_id;
@@ -475,8 +474,7 @@ static inline int l2cap_fixed_register(
 }
 
 static inline int l2cap_local_slot(const l2cap_connection *conn, uint16_t cid) {
-    if (!conn ||
-        cid < L2CAP_DYNAMIC_CID_MIN ||
+    if (cid < L2CAP_DYNAMIC_CID_MIN ||
         cid > L2CAP_DYNAMIC_CID_MAX
     ) return -1;
 
@@ -489,8 +487,7 @@ static inline int l2cap_local_slot(const l2cap_connection *conn, uint16_t cid) {
 }
 
 static inline int l2cap_remote_slot(const l2cap_connection *conn, uint16_t cid) {
-    if (!conn ||
-        cid < L2CAP_DYNAMIC_CID_MIN ||
+    if (cid < L2CAP_DYNAMIC_CID_MIN ||
         cid > L2CAP_DYNAMIC_CID_MAX
     ) return -1;
 
@@ -502,15 +499,13 @@ static inline int l2cap_remote_slot(const l2cap_connection *conn, uint16_t cid) 
     return -1;
 }
 
+// payload must point to payload_len bytes when payload_len is nonzero.
 static inline int l2cap_send_signal(
     l2cap_connection *conn, uint8_t code, uint8_t identifier,
     const uint8_t *payload, uint16_t payload_len
 ) {
     uint8_t packet[L2CAP_SIGNALING_MTU];
-    if (!conn || !identifier ||
-        payload_len > sizeof(packet) - 4 ||
-        (payload_len && !payload)
-    ) return 0;
+    if (!identifier || payload_len > sizeof(packet) - 4) return 0;
 
     packet[0] = code;
     packet[1] = identifier;
@@ -522,7 +517,7 @@ static inline int l2cap_send_signal(
 
 static inline int l2cap_credit_flush(l2cap_connection *conn, l2cap_channel *chann) {
     uint8_t payload[4];
-    if (!conn || !chann || !chann->rx_credit_pending ||
+    if (!chann || !chann->rx_credit_pending ||
         chann->rx_credit_pending > 65535u - chann->rx_credits
     ) return 0;
 
@@ -547,7 +542,7 @@ static inline int l2cap_channel_closed_get(
     const l2cap_connection *conn, uint8_t slot, uint16_t *service_id,
     uint16_t *local_cid, uint16_t *remote_cid, uint16_t *reason
 ) {
-    if (!conn || slot >= L2CAP_CHANNEL_MAX ||
+    if (slot >= L2CAP_CHANNEL_MAX ||
         !conn->channels[slot].closed_pending
     ) return 0;
 
@@ -563,7 +558,7 @@ static inline int l2cap_channel_closed_get(
 static inline int l2cap_channel_closed_ack(
     l2cap_connection *conn, uint8_t slot
 ) {
-    if (!conn || slot >= L2CAP_CHANNEL_MAX ||
+    if (slot >= L2CAP_CHANNEL_MAX ||
         !conn->channels[slot].closed_pending
     ) return 0;
 
@@ -607,8 +602,6 @@ static inline int l2cap_channel_rx_consume(
 }
 
 static inline uint16_t l2cap_cid_alloc(l2cap_connection *conn) {
-    if (!conn) return 0;
-
     for (uint16_t attempt = 0; attempt <=
          L2CAP_DYNAMIC_CID_MAX - L2CAP_DYNAMIC_CID_MIN; attempt++
     ) {
@@ -642,7 +635,7 @@ static inline int l2cap_ecfc_open(
     l2cap_connection *conn, uint16_t service_id,
     uint16_t *local_cids_out, uint8_t count
 ) {
-    if (!conn || !local_cids_out ||
+    if (!local_cids_out ||
         !service_id || service_id > 0x00ffu ||
         !count || count > L2CAP_ECFC_CHANNELS_MAX ||
         count > L2CAP_CHANNEL_MAX || conn->pending_id ||
@@ -730,7 +723,7 @@ static inline int l2cap_le_credit_open(
     l2cap_connection *conn, uint16_t service_id,
     uint16_t *local_cid_out
 ) {
-    if (!conn || !service_id || service_id > 0x00ffu ||
+    if (!service_id || service_id > 0x00ffu ||
         !l2cap_output_configured(&conn->ops) || conn->pending_id
     ) return 0;
 
@@ -837,7 +830,7 @@ static inline int l2cap_ecfc_reconfig(
     l2cap_connection *conn, const uint16_t *local_cids,
     uint8_t count, uint16_t max_sdu_size, uint16_t max_pdu_payload
 ) {
-    if (!conn || !local_cids ||
+    if (!local_cids ||
         conn->pending_id ||
         !IN_RANGE_INCLUSIVE(count, 1, L2CAP_ECFC_CHANNELS_MAX) ||
         !IN_RANGE_INCLUSIVE(max_sdu_size, L2CAP_ECFC_MTU_MIN, L2CAP_CHANNEL_MTU_MAX) ||
@@ -892,7 +885,7 @@ static inline int l2cap_update_req(
     l2cap_connection *conn, uint16_t interval_min, uint16_t interval_max,
     uint16_t latency, uint16_t timeout
 ) {
-    if (!conn || conn->pending_id ||
+    if (conn->pending_id ||
         !ble_timing_valid(interval_min, interval_max, latency, timeout) ||
         (uint32_t)timeout * 8u <= 2u * (uint32_t)(latency + 1u) * interval_max
     ) return 0;
@@ -916,7 +909,7 @@ static inline int l2cap_update_req(
 
 // Application facing
 static inline int l2cap_update_reply(l2cap_connection *conn, int accept) {
-    if (!conn || !conn->periph_update_pending) return 0;
+    if (!conn->periph_update_pending) return 0;
 
     uint8_t result[2];
     write_u16_le(result, accept ? 0 : 1);
@@ -931,7 +924,6 @@ static inline int l2cap_update_reply(l2cap_connection *conn, int accept) {
 }
 
 static inline void l2cap_conn_reset(l2cap_connection *conn, int reason) {
-    if (!conn) return;
     for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++)
         if (conn->channels[i].state != L2CAP_CHANNEL_CLOSED)
             l2cap_channel_clear(conn, i, reason);
@@ -947,7 +939,6 @@ static inline void l2cap_conn_reset(l2cap_connection *conn, int reason) {
 // Advance signaling/channel timers using a monotonic millisecond clock.
 // Returns the number of pending procedures or channels expired.
 static inline int l2cap_conn_tick(l2cap_connection *conn, uint32_t now_ms) {
-    if (!conn) return 0;
     conn->now_ms = now_ms;
     int expired = 0;
 
@@ -992,8 +983,6 @@ static inline int l2cap_conn_tick(l2cap_connection *conn, uint32_t now_ms) {
 }
 
 static inline int l2cap_ecfc_pump(l2cap_connection *conn) {
-    if (!conn) return 0;
-
     for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++) {
         l2cap_channel *chann = &conn->channels[i];
 
@@ -1048,7 +1037,7 @@ static inline int l2cap_receive(
     l2cap_connection *conn, uint16_t cid,
     const uint8_t *sdu, uint16_t len
 ) {
-    if (!conn || !sdu || !len) return 0;
+    if (!sdu || !len) return 0;
 
     if (cid == L2CAP_CID_LE_SIGNALING) {
         uint8_t reject_reason[2] = {0, 0};
@@ -1085,6 +1074,7 @@ static inline int l2cap_receive(
                 if (!l2cap_send_signal(conn, L2CAP_COMMAND_REJECT,
                         identifier, reject_reason, sizeof(reject_reason))
                 ) return 0;
+
                 offset = (uint16_t)(offset + command_len);
                 continue;
             }
@@ -1484,9 +1474,6 @@ static inline int l2cap_receive(
                 ) return 0;
 
                 {
-                    uint16_t max_sdu_size = read_u16_le(p);
-                    uint16_t max_pdu_payload = read_u16_le(p + 2);
-                    uint16_t credits = read_u16_le(p + 4);
                     uint16_t result = read_u16_le(p + 6);
 
                     if (result != 0 && result != 2 &&
@@ -1510,8 +1497,13 @@ static inline int l2cap_receive(
                         }
                     }
                     else {
+                        uint16_t max_sdu_size = read_u16_le(p);
+                        uint16_t max_pdu_payload = read_u16_le(p + 2);
+                        uint16_t credits = read_u16_le(p + 4);
+
                         if (command_len != 8 + conn->pending_count * 2 ||
-                            max_sdu_size < L2CAP_ECFC_MTU_MIN || max_pdu_payload < L2CAP_ECFC_MPS_MIN || !credits
+                            max_sdu_size < L2CAP_ECFC_MTU_MIN ||
+                            max_pdu_payload < L2CAP_ECFC_MPS_MIN || !credits
                         ) return 0;
 
                         uint8_t invalid = 0;
@@ -1609,7 +1601,7 @@ static inline int l2cap_receive(
                     ) {
                         uint8_t response[2] = {1, 0};
                         if (!l2cap_send_signal(conn, L2CAP_CONN_PARAM_UPDATE_RESP, identifier,
-                                            response, sizeof(response))
+                                                response, sizeof(response))
                         ) return 0;
                     }
                     else {
@@ -1635,7 +1627,7 @@ static inline int l2cap_receive(
                         return 0;
 
                     if (!l2cap_send_signal(conn, L2CAP_DISCONNECTION_RESPONSE,
-                                        identifier, p, command_len)
+                                            identifier, p, command_len)
                     ) return 0;
 
                     l2cap_channel_clear(conn, (uint8_t)slot, 0);
@@ -1654,7 +1646,9 @@ static inline int l2cap_receive(
                         if (chann->state == L2CAP_CHANNEL_CLOSING &&
                             chann->disconnect_id == identifier &&
                             chann->remote_cid == remote
-                        ) l2cap_channel_clear(conn, (uint8_t)slot, 0);
+                        ) {
+                            l2cap_channel_clear(conn, (uint8_t)slot, 0);
+                        }
                     }
                 }
                 break;
