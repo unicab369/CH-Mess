@@ -132,7 +132,7 @@ int main(void) {
     assert(l2cap_service_register(0x0028));
     assert(!l2cap_service_register(0x0100));
     uint16_t local_cid;
-    assert(l2cap_ecfc_open_many(&conn, 0x0027, NULL, &local_cid, 1));
+    assert(l2cap_ecfc_open_many(&conn, 0x0027, &local_cid, 1));
     assert(fake_output_take(&fake));
     assert(fake.cid == L2CAP_CID_LE_SIGNALING && fake.pdu[0] ==
            L2CAP_ECFC_CONNECTION_REQUEST);
@@ -281,7 +281,7 @@ int main(void) {
            read_u16_le(partial_fake.pdu + 14) != 0 &&
            open_channel_count(&partial_server) == 1);
     uint16_t multi_cids[2];
-    assert(l2cap_ecfc_open_many(&multi, 0x0027, NULL, multi_cids, 2));
+    assert(l2cap_ecfc_open_many(&multi, 0x0027, multi_cids, 2));
     assert(fake_output_take(&multi_fake));
     assert(multi_fake.pdu[0] == L2CAP_ECFC_CONNECTION_REQUEST &&
            read_u16_le(multi_fake.pdu + 2) == 12);
@@ -293,7 +293,7 @@ int main(void) {
     assert(open_channel_count(&multi) == 2 &&
            l2cap_local_slot(&multi, multi_cids[1]) >= 0);
     uint16_t partial_cids[2];
-    assert(l2cap_ecfc_open_many(&multi, 0x0027, NULL, partial_cids, 2));
+    assert(l2cap_ecfc_open_many(&multi, 0x0027, partial_cids, 2));
     assert(fake_output_take(&multi_fake));
     uint8_t partial_response[] = {L2CAP_ECFC_CONNECTION_RESPONSE,
         multi_fake.pdu[1], 12, 0, 80, 0, 64, 0, 1, 0, 9, 0,
@@ -342,7 +342,7 @@ int main(void) {
     l2cap_connection legacy;
     assert(l2cap_conn_init(&legacy, &ops));
     uint16_t legacy_cid;
-    assert(l2cap_le_credit_open(&legacy, 0x0027, NULL, &legacy_cid));
+    assert(l2cap_le_credit_open(&legacy, 0x0027, &legacy_cid));
     assert(fake_output_take(&legacy_fake));
     uint8_t legacy_response[] = {L2CAP_LE_CREDIT_CONN_RESP,
         legacy_fake.pdu[1], 10, 0, 0x46, 0, 80, 0, 30, 0, 5, 0, 0, 0};
@@ -350,7 +350,7 @@ int main(void) {
         L2CAP_CID_LE_SIGNALING, legacy_response, sizeof(legacy_response)));
     assert(l2cap_local_slot(&legacy, legacy_cid) >= 0);
     uint16_t timeout_cid;
-    assert(l2cap_ecfc_open_many(&legacy, 0x0027, NULL, &timeout_cid, 1));
+    assert(l2cap_ecfc_open_many(&legacy, 0x0027, &timeout_cid, 1));
     assert(fake_output_take(&legacy_fake));
     assert(l2cap_conn_tick(&legacy,
         L2CAP_SIGNAL_TIMEOUT_MS - 1) == 0);
@@ -364,7 +364,7 @@ int main(void) {
     ops.context = &zero_fake;
     l2cap_connection zero_credit;
     assert(l2cap_conn_init(&zero_credit, &ops));
-    assert(l2cap_le_credit_open(&zero_credit, 0x0027, NULL, &local_cid));
+    assert(l2cap_le_credit_open(&zero_credit, 0x0027, &local_cid));
     assert(fake_output_take(&zero_fake));
     uint8_t colliding_open[] = {L2CAP_LE_CREDIT_CONN_REQ,
         zero_fake.pdu[1], 10, 0, 0x27, 0, 0x48, 0, 80, 0, 40, 0, 0, 0};

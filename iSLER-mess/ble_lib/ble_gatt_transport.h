@@ -629,14 +629,8 @@ static inline int gatt_transport_eatt_open_channel(
     ) return 0;
 
     int slot = gatt_eatt_free_slot(&transport->eatt);
-    l2cap_channel_config channel_config = {
-        .max_sdu_size = mtu,
-        .max_pdu_payload = L2CAP_LOCAL_MAX_PDU_PAYLOAD,
-        .initial_credits = L2CAP_INITIAL_CREDITS
-    };
-
     if (slot < 0 || !l2cap_ecfc_open_many(transport->l2cap_link, service_id,
-                                          &channel_config, &cid, 1))
+                                          &cid, 1))
         return 0;
 
     transport->eatt.bearers[slot].cid = cid;

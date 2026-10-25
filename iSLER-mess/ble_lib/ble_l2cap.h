@@ -87,7 +87,7 @@ typedef uint16_t l2cap_reassembly_bytes;
 #define L2CAP_CHANNEL_MPS_MAX 251
 #endif
 
-// Stack-wide defaults advertised for channels unless a channel overrides them.
+// Device-wide local settings advertised and used for every credit-based channel.
 #ifndef L2CAP_INITIAL_CREDITS
 #define L2CAP_INITIAL_CREDITS 8
 #endif
@@ -199,13 +199,6 @@ typedef struct {
     uint16_t (*authorize_service_id)(void *context, uint16_t service_id);
     void *context;
 } l2cap_ops;
-
-// Optional per-channel receive settings; NULL selects the stack-wide defaults.
-typedef struct {
-    uint16_t max_sdu_size;     // Maximum complete SDU this endpoint receives.
-    uint16_t max_pdu_payload;  // Maximum PDU payload this endpoint receives.
-    uint16_t initial_credits;  // Initial K-frames granted to the peer.
-} l2cap_channel_config;
 
 // Local services supported by this L2CAP stack, shared by all connections.
 typedef struct {
@@ -625,8 +618,7 @@ static inline uint16_t l2cap_cid_alloc(l2cap_connection *conn) {
 // Application facing
 static inline int l2cap_ecfc_open_many(
     l2cap_connection *conn,
-    uint16_t service_id, const l2cap_channel_config *config,
-    uint16_t *local_cids_out, uint8_t count
+    uint16_t service_id, uint16_t *local_cids_out, uint8_t count
 ) {
     if (!conn || !local_cids_out ||
         !service_id || service_id > 0x00ffu ||
@@ -634,12 +626,10 @@ static inline int l2cap_ecfc_open_many(
         count > L2CAP_CHANNEL_MAX
     ) return 0;
 
-    uint16_t max_sdu_size = config ? config->max_sdu_size :
-                            L2CAP_LOCAL_MAX_SDU_SIZE;
-    uint16_t max_pdu_payload = config ? config->max_pdu_payload :
-                               L2CAP_LOCAL_MAX_PDU_PAYLOAD;
-    uint16_t initial_credits = config ? config->initial_credits :
-                               L2CAP_INITIAL_CREDITS;
+    // Send the device-wide local settings to the peer and track them on the channel.
+    uint16_t max_sdu_size = L2CAP_LOCAL_MAX_SDU_SIZE;
+    uint16_t max_pdu_payload = L2CAP_LOCAL_MAX_PDU_PAYLOAD;
+    uint16_t initial_credits = L2CAP_INITIAL_CREDITS;
     if (conn->pending_id || !l2cap_output_configured(&conn->ops) ||
         !IN_RANGE_INCLUSIVE(max_sdu_size, 23, L2CAP_CHANNEL_MTU_MAX) ||
         !IN_RANGE_INCLUSIVE(max_pdu_payload, 23, L2CAP_CHANNEL_MPS_MAX) ||
@@ -711,18 +701,16 @@ static inline int l2cap_ecfc_open_many(
 // Legacy LE Credit Based Connection Request (one channel per request).
 static inline int l2cap_le_credit_open(
     l2cap_connection *conn, uint16_t service_id,
-    const l2cap_channel_config *config, uint16_t *local_cid_out
+    uint16_t *local_cid_out
 ) {
     if (!conn || !service_id || service_id > 0x00ffu ||
         !l2cap_output_configured(&conn->ops) || conn->pending_id
     ) return 0;
 
-    uint16_t max_sdu_size = config ? config->max_sdu_size :
-                            L2CAP_LOCAL_MAX_SDU_SIZE;
-    uint16_t max_pdu_payload = config ? config->max_pdu_payload :
-                               L2CAP_LOCAL_MAX_PDU_PAYLOAD;
-    uint16_t initial_credits = config ? config->initial_credits :
-                               L2CAP_INITIAL_CREDITS;
+    // Send the device-wide local settings to the peer and track them on the channel.
+    uint16_t max_sdu_size = L2CAP_LOCAL_MAX_SDU_SIZE;
+    uint16_t max_pdu_payload = L2CAP_LOCAL_MAX_PDU_PAYLOAD;
+    uint16_t initial_credits = L2CAP_INITIAL_CREDITS;
     if (!IN_RANGE_INCLUSIVE(max_sdu_size, 23, L2CAP_CHANNEL_MTU_MAX) ||
         !IN_RANGE_INCLUSIVE(max_pdu_payload, 23, L2CAP_CHANNEL_MPS_MAX) ||
         !initial_credits
@@ -1254,13 +1242,18 @@ static inline int l2cap_receive(
                         max_pdu_payload < L2CAP_ECFC_MPS_MIN ||
                         count > L2CAP_ECFC_CHANNELS_MAX
                     ) result = 0x000b;
-                    else if (L2CAP_LOCAL_MAX_SDU_SIZE < L2CAP_ECFC_MTU_MIN ||
-                             L2CAP_LOCAL_MAX_PDU_PAYLOAD < L2CAP_ECFC_MPS_MIN)
-                        result = 0x000b;
-                    else if (count > L2CAP_CHANNEL_MAX || !L2CAP_INITIAL_CREDITS)
+                    else if (count > L2CAP_CHANNEL_MAX)
                         result = 4;
                     else result = l2cap_service_authorize(conn, service_id);
                 }
+
+                if (!result &&
+                    (!IN_RANGE_INCLUSIVE(L2CAP_LOCAL_MAX_SDU_SIZE, L2CAP_ECFC_MTU_MIN,
+                                                                    L2CAP_CHANNEL_MTU_MAX) ||
+                     !IN_RANGE_INCLUSIVE(L2CAP_LOCAL_MAX_PDU_PAYLOAD, L2CAP_ECFC_MPS_MIN,
+                                                                    L2CAP_CHANNEL_MPS_MAX) ||
+                     !L2CAP_INITIAL_CREDITS)
+                ) result = 0x000b;
 
                 // ECFC permits a partial result for per-channel CID/resource
                 // failures. Keep a zero destination CID for each refused channel
@@ -1343,9 +1336,7 @@ static inline int l2cap_receive(
                     response_len = (uint16_t)(8 + count * 2);
 
                     for (uint8_t i = 0; i < count; i++) {
-                        write_u16_le(response + 8 + i * 2,
-                            channel_result[i] ? 0 : local_cids[i]);
-
+                        write_u16_le(response + 8 + i * 2, channel_result[i] ? 0 : local_cids[i]);
                         if (channel_result[i])
                             continue;
 
@@ -1363,19 +1354,16 @@ static inline int l2cap_receive(
                 else {
                     memset(response, 0, sizeof(response));
                     write_u16_le(response + 6, result);
-                    // Release any partially reserved local slots.
-                    for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++)
-                        if (slots[i] >= 0) {
-                            memset(chann[i], 0, sizeof(*chann[i]));
-                        }
                 }
                 int sent = l2cap_send_signal(conn, L2CAP_ECFC_CONNECTION_RESPONSE,
                                             identifier, response, response_len);
-                if (!sent && !result)
-                    for (uint8_t i = 0; i < count; i++)
-                        if (slots[i] >= 0) {
+                if (result || !sent) {
+                    // Release any slots reserved for a rejected request or an
+                    // unsent success response.
+                    for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++)
+                        if (slots[i] >= 0)
                             memset(chann[i], 0, sizeof(*chann[i]));
-                        }
+                }
 
                 if (!sent) return 0;
                 break;
