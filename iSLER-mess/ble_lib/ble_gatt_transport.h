@@ -1029,10 +1029,8 @@ static inline int gatt_transport_receive_att(
     if (has_response < 0) return -1;
 
     if (!dispatched_to_client && has_response > 0)
-        (void)l2cap_tx_queue_pdu(
-            transport->l2cap_link, BLE_GATT_TRANSPORT_ATT_CID,
-            response, response_len
-        );
+        (void)l2cap_tx_queue_pdu(transport->l2cap_link, BLE_GATT_TRANSPORT_ATT_CID,
+                                response, response_len);
     return 1;
 }
 
@@ -1177,9 +1175,8 @@ static inline int gatt_transport_send_client(
                          transport->server->local_mtu)
     ) return 0;
 
-    if (!l2cap_tx_queue_pdu(
-            transport->l2cap_link, BLE_GATT_TRANSPORT_ATT_CID, att, att_len
-        )) return 0;
+    if (!l2cap_tx_queue_pdu(transport->l2cap_link, BLE_GATT_TRANSPORT_ATT_CID, att, att_len))
+        return 0;
     transport->tx_client_request = 1;
     return 1;
 }
@@ -1580,10 +1577,8 @@ static inline int gatt_transport_poll(
                                    sizeof(event), &event_len) : 0;
 
     if (event_result == 1)
-        (void)l2cap_tx_queue_pdu(
-            transport->l2cap_link, BLE_GATT_TRANSPORT_ATT_CID,
-            event, event_len
-        );
+        (void)l2cap_tx_queue_pdu(transport->l2cap_link, BLE_GATT_TRANSPORT_ATT_CID,
+                                event, event_len);
 
     if (event_result < 0)
         return gatt_transport_fail_bearer(transport);

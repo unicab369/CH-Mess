@@ -1812,7 +1812,7 @@ typedef struct {
 static ble_gap_l2cap_peer ble_gap_l2cap_peers[GAP_CONNECTION_COUNT];
 static l2cap_ops ble_gap_l2cap_upper;
 
-static inline int ble_gap_l2cap_accept_service_id(void *context, uint16_t service_id) {
+static inline int gap_accept_service_id_cb(void *context, uint16_t service_id) {
     (void)context;
     return !ble_gap_l2cap_upper.accept_service_id ||
         ble_gap_l2cap_upper.accept_service_id(ble_gap_l2cap_upper.context, service_id);
@@ -1863,7 +1863,7 @@ static inline int ble_gap_l2cap_poll(void) {
             peer->handle = handle;
             peer->connection = &conn->l2cap;
             peer->tx_queue = &conn->l2cap_tx_queue;
-            peer->connection->ops.accept_service_id = ble_gap_l2cap_accept_service_id;
+            peer->connection->ops.accept_service_id = gap_accept_service_id_cb;
             peer->connection->ops.configure_channel = gap_configure_channel_cb;
             peer->connection->ops.context = NULL;
 
