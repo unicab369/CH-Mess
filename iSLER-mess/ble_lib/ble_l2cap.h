@@ -106,7 +106,7 @@ typedef uint16_t l2cap_reassembly_bytes;
 
 #if L2CAP_CONNECTION_USE_8BIT
     #if L2CAP_CHANNEL_MTU_MAX > 255u || L2CAP_CHANNEL_MPS_MAX > 255u
-        #error "Disable L2CAP_CONNECTION_USE_8BIT when channel MTU or MPS exceeds 255"
+        #error "Disable L2CAP_CONNECTION_USE_8BIT when chann MTU or MPS exceeds 255"
     #endif
 typedef uint8_t l2cap_connection_bytes;
 #else
@@ -204,12 +204,12 @@ typedef struct l2cap_connection {
     l2cap_channel channels[L2CAP_CHANNEL_MAX];
     l2cap_connection_bytes local_max_sdu_size;    // max total message size after chunks are combined.
     l2cap_connection_bytes local_max_pdu_payload; // max chunk size in each credit-based packet.
+    l2cap_connection_bytes pending_max_sdu_size; // Maximum SDU size associated with the pending request.
+    l2cap_connection_bytes pending_max_pdu_payload; // Maximum PDU payload requested by an outstanding reconfiguration.
     uint16_t next_cid;                   // Next dynamic channel ID to allocate.
     uint16_t local_credits;              // Incoming PDUs the peer may send before we grant more credits.
     uint8_t signaling_id;                // Last locally allocated signaling command identifier.
     uint16_t pending_psm;                // PSM (Protocol/Service Multiplexer) for the pending channel request.
-    l2cap_connection_bytes pending_max_sdu_size; // Maximum SDU size associated with the pending request.
-    l2cap_connection_bytes pending_max_pdu_payload; // Maximum PDU payload requested by an outstanding reconfiguration.
     uint8_t pending_count;               // Number of channels in the outstanding request (1 for a single channel).
     uint8_t pending_id;                  // Identifier of the outstanding signaling command; zero means none.
     uint8_t pending_code;                // Command code of the outstanding signaling request.
@@ -327,18 +327,18 @@ static inline void l2cap_channel_clear(
     l2cap_connection *conn, uint8_t slot, int reason
 ) {
     if (!conn || slot >= L2CAP_CHANNEL_MAX) return;
-    l2cap_channel *ch = &conn->channels[slot];
-    uint16_t psm = ch->psm;
-    uint16_t local_cid = ch->local_cid;
-    uint16_t remote_cid = ch->remote_cid;
-    memset(ch, 0, sizeof(*ch));
+    l2cap_channel *chann = &conn->channels[slot];
+    uint16_t psm = chann->psm;
+    uint16_t local_cid = chann->local_cid;
+    uint16_t remote_cid = chann->remote_cid;
+    memset(chann, 0, sizeof(*chann));
 
     if (local_cid) {
-        ch->psm = psm;
-        ch->local_cid = local_cid;
-        ch->remote_cid = remote_cid;
-        ch->close_reason = (uint16_t)reason;
-        ch->closed_pending = 1;
+        chann->psm = psm;
+        chann->local_cid = local_cid;
+        chann->remote_cid = remote_cid;
+        chann->close_reason = (uint16_t)reason;
+        chann->closed_pending = 1;
     }
 }
 
@@ -484,23 +484,23 @@ static inline int l2cap_send_signal(
     return l2cap_tx_queue_pdu(conn, L2CAP_CID_LE_SIGNALING, packet, payload_len + 4);
 }
 
-static inline int l2cap_credit_flush(l2cap_connection *conn, l2cap_channel *ch) {
+static inline int l2cap_credit_flush(l2cap_connection *conn, l2cap_channel *chann) {
     uint8_t payload[4];
-    if (!conn || !ch || !ch->rx_credit_pending ||
-        ch->rx_credit_pending > 65535u - ch->rx_credits
+    if (!conn || !chann || !chann->rx_credit_pending ||
+        chann->rx_credit_pending > 65535u - chann->rx_credits
     ) return 0;
 
     // The peer addresses its channel by the source CID it supplied at setup.
-    write_u16_le(payload, ch->remote_cid);
-    write_u16_le(payload + 2, ch->rx_credit_pending);
+    write_u16_le(payload, chann->remote_cid);
+    write_u16_le(payload + 2, chann->rx_credit_pending);
 
     uint8_t id = l2cap_id_alloc(conn);
     if (!id) return 0;
     if (!l2cap_send_signal(conn, L2CAP_FLOW_CONTROL_CREDIT, id, payload, sizeof(payload)))
         return 0;
 
-    ch->rx_credits = (uint16_t)(ch->rx_credits + ch->rx_credit_pending);
-    ch->rx_credit_pending = 0;
+    chann->rx_credits = (uint16_t)(chann->rx_credits + chann->rx_credit_pending);
+    chann->rx_credit_pending = 0;
     return 1;
 }
 
@@ -524,11 +524,11 @@ static inline int l2cap_channel_closed_get(
         !conn->channels[slot].closed_pending
     ) return 0;
 
-    const l2cap_channel *ch = &conn->channels[slot];
-    if (psm) *psm = ch->psm;
-    if (local_cid) *local_cid = ch->local_cid;
-    if (remote_cid) *remote_cid = ch->remote_cid;
-    if (reason) *reason = ch->close_reason;
+    const l2cap_channel *chann = &conn->channels[slot];
+    if (psm) *psm = chann->psm;
+    if (local_cid) *local_cid = chann->local_cid;
+    if (remote_cid) *remote_cid = chann->remote_cid;
+    if (reason) *reason = chann->close_reason;
     return 1;
 }
 
@@ -568,12 +568,14 @@ static inline int l2cap_channel_rx_consume(
     if (slot < 0 || !conn->channels[slot].rx_ready)
         return 0;
 
-    l2cap_channel *ch = &conn->channels[slot];
-    uint32_t pending = (uint32_t)ch->rx_credit_pending + ch->rx_frames;
-    ch->rx_credit_pending = pending > 65535u ? 65535u : (uint16_t)pending;
-    ch->rx_expected = ch->rx_used = ch->rx_frames = 0;
-    ch->rx_ready = 0;
-    (void)l2cap_credit_flush(conn, ch);
+    l2cap_channel *chann = &conn->channels[slot];
+    uint32_t pending = (uint32_t)chann->rx_credit_pending + chann->rx_frames;
+    chann->rx_credit_pending = pending > 65535u ? 65535u : (uint16_t)pending;
+    chann->rx_expected = 0;
+    chann->rx_used = 0;
+    chann->rx_frames = 0;
+    chann->rx_ready = 0;
+    (void)l2cap_credit_flush(conn, chann);
     return 1;
 }
 
@@ -665,14 +667,14 @@ static inline int l2cap_ecfc_open_many(
     ) return 0;
 
     for (uint8_t i = 0; i < count; i++) {
-        l2cap_channel *ch = &conn->channels[slots[i]];
-        memset(ch, 0, sizeof(*ch));
-        ch->psm = psm;
-        ch->local_cid = cids[i];
-        ch->local_max_sdu_size = conn->local_max_sdu_size;
-        ch->local_max_pdu_payload = conn->local_max_pdu_payload;
-        ch->rx_credits = conn->local_credits;
-        ch->state = L2CAP_CHANNEL_OPENING;
+        l2cap_channel *chann = &conn->channels[slots[i]];
+        memset(chann, 0, sizeof(*chann));
+        chann->psm = psm;
+        chann->local_cid = cids[i];
+        chann->local_max_sdu_size = conn->local_max_sdu_size;
+        chann->local_max_pdu_payload = conn->local_max_pdu_payload;
+        chann->rx_credits = conn->local_credits;
+        chann->state = L2CAP_CHANNEL_OPENING;
         local_cids_out[i] = cids[i];
         conn->pending_local_cid[i] = cids[i];
     }
@@ -732,14 +734,14 @@ static inline int l2cap_le_credit_open(
     if (!l2cap_send_signal(conn, L2CAP_LE_CREDIT_CONN_REQ, id, payload, sizeof(payload)))
         return 0;
 
-    l2cap_channel *ch = &conn->channels[slot];
-    memset(ch, 0, sizeof(*ch));
-    ch->psm = psm;
-    ch->local_cid = local_cid;
-    ch->local_max_sdu_size = conn->local_max_sdu_size;
-    ch->local_max_pdu_payload = conn->local_max_pdu_payload;
-    ch->rx_credits = conn->local_credits;
-    ch->state = L2CAP_CHANNEL_OPENING;
+    l2cap_channel *chann = &conn->channels[slot];
+    memset(chann, 0, sizeof(*chann));
+    chann->psm = psm;
+    chann->local_cid = local_cid;
+    chann->local_max_sdu_size = conn->local_max_sdu_size;
+    chann->local_max_pdu_payload = conn->local_max_pdu_payload;
+    chann->rx_credits = conn->local_credits;
+    chann->state = L2CAP_CHANNEL_OPENING;
     conn->pending_id = id;
     conn->pending_psm = psm;
     conn->pending_max_sdu_size = conn->local_max_sdu_size;
@@ -759,14 +761,14 @@ static inline int l2cap_ecfc_send(
     int slot = l2cap_local_slot(conn, local_cid);
     if (slot < 0 || !sdu || !len) return 0;
 
-    l2cap_channel *ch = &conn->channels[slot];
-    if (ch->state != L2CAP_CHANNEL_OPEN || ch->tx_len ||
-        len > ch->peer_max_sdu_size || len > L2CAP_CHANNEL_MTU_MAX
+    l2cap_channel *chann = &conn->channels[slot];
+    if (chann->state != L2CAP_CHANNEL_OPEN || chann->tx_len ||
+        len > chann->peer_max_sdu_size || len > L2CAP_CHANNEL_MTU_MAX
     ) return 0;
 
-    memcpy(ch->tx_data, sdu, len);
-    ch->tx_len = len;
-    ch->tx_offset = 0;
+    memcpy(chann->tx_data, sdu, len);
+    chann->tx_len = len;
+    chann->tx_offset = 0;
     return 1;
 }
 
@@ -814,13 +816,13 @@ static inline int l2cap_ecfc_reconfig(
         int slot = l2cap_local_slot(conn, local_cids[i]);
         if (slot < 0) return 0;
 
-        l2cap_channel *ch = &conn->channels[slot];
-        if (ch->state != L2CAP_CHANNEL_OPEN)
+        l2cap_channel *chann = &conn->channels[slot];
+        if (chann->state != L2CAP_CHANNEL_OPEN)
             return 0;
 
-        write_u16_le(payload + 4 + i * 2, ch->local_cid);
-        if (ch->local_max_sdu_size > largest_sdu_size) largest_sdu_size = ch->local_max_sdu_size;
-        if (ch->local_max_pdu_payload > largest_pdu_payload) largest_pdu_payload = ch->local_max_pdu_payload;
+        write_u16_le(payload + 4 + i * 2, chann->local_cid);
+        largest_sdu_size = MAX(largest_sdu_size, chann->local_max_sdu_size);
+        largest_pdu_payload = MAX(largest_pdu_payload, chann->local_max_pdu_payload);
 
         for (uint8_t j = 0; j < i; j++)
             if (local_cids[j] == local_cids[i])
@@ -935,10 +937,10 @@ static inline int l2cap_conn_tick(l2cap_connection *conn, uint32_t now_ms) {
     }
 
     for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++) {
-        l2cap_channel *ch = &conn->channels[i];
+        l2cap_channel *chann = &conn->channels[i];
 
-        if (ch->state == L2CAP_CHANNEL_CLOSING && ch->deadline_ms &&
-            (int32_t)(now_ms - ch->deadline_ms) >= 0
+        if (chann->state == L2CAP_CHANNEL_CLOSING && chann->deadline_ms &&
+            (int32_t)(now_ms - chann->deadline_ms) >= 0
         ) {
             l2cap_channel_clear(conn, i, 0x0008);
             expired++;
@@ -951,43 +953,43 @@ static inline int l2cap_ecfc_pump(l2cap_connection *conn) {
     if (!conn) return 0;
 
     for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++) {
-        l2cap_channel *ch = &conn->channels[i];
+        l2cap_channel *chann = &conn->channels[i];
 
-        if (ch->state == L2CAP_CHANNEL_OPEN && ch->rx_credit_pending &&
-            l2cap_credit_flush(conn, ch)
+        if (chann->state == L2CAP_CHANNEL_OPEN && chann->rx_credit_pending &&
+            l2cap_credit_flush(conn, chann)
         ) return 1;
 
-        if (ch->state != L2CAP_CHANNEL_OPEN ||
-            !ch->tx_len || !ch->tx_credits
+        if (chann->state != L2CAP_CHANNEL_OPEN ||
+            !chann->tx_len || !chann->tx_credits
         ) continue;
 
         uint8_t frame[L2CAP_CHANNEL_MPS_MAX];
-        uint16_t peer_mps = MIN(ch->peer_max_pdu_payload, L2CAP_CHANNEL_MPS_MAX);
+        uint16_t peer_mps = MIN(chann->peer_max_pdu_payload, L2CAP_CHANNEL_MPS_MAX);
         uint16_t used, header_len;
 
-        if (!ch->tx_offset) {
+        if (!chann->tx_offset) {
             header_len = 2;
-            write_u16_le(frame, ch->tx_len);
-            uint16_t take = MIN(ch->tx_len, peer_mps - 2);
-            memcpy(frame + 2, ch->tx_data, take);
+            write_u16_le(frame, chann->tx_len);
+            uint16_t take = MIN(chann->tx_len, peer_mps - 2);
+            memcpy(frame + 2, chann->tx_data, take);
             used = take + 2;
         }
         else {
             header_len = 0;
-            used = (uint16_t)(ch->tx_len - ch->tx_offset);
+            used = (uint16_t)(chann->tx_len - chann->tx_offset);
             used = MIN(used, peer_mps);
-            memcpy(frame, ch->tx_data + ch->tx_offset, used);
+            memcpy(frame, chann->tx_data + chann->tx_offset, used);
         }
 
-        if (!l2cap_tx_queue_pdu(conn, ch->remote_cid, frame, used))
+        if (!l2cap_tx_queue_pdu(conn, chann->remote_cid, frame, used))
             return 0;
 
-        ch->tx_credits--;
-        ch->tx_offset = (uint16_t)(ch->tx_offset + used - header_len);
+        chann->tx_credits--;
+        chann->tx_offset = (uint16_t)(chann->tx_offset + used - header_len);
 
-        if (ch->tx_offset >= ch->tx_len) {
-            ch->tx_len = 0;
-            ch->tx_offset = 0;
+        if (chann->tx_offset >= chann->tx_len) {
+            chann->tx_len = 0;
+            chann->tx_offset = 0;
         }
         return 1;
     }
@@ -1151,18 +1153,18 @@ static inline int l2cap_receive(
                 ) return 0;
 
                 if (!result) {
-                    l2cap_channel *ch = &conn->channels[slot];
-                    memset(ch, 0, sizeof(*ch));
-                    ch->psm = psm;
-                    ch->peer_max_sdu_size = max_sdu_size;
-                    ch->peer_max_pdu_payload = max_pdu_payload;
-                    ch->remote_cid = remote_cid;
-                    ch->local_cid = local_cid;
-                    ch->local_max_sdu_size = conn->local_max_sdu_size;
-                    ch->local_max_pdu_payload = conn->local_max_pdu_payload;
-                    ch->rx_credits = conn->local_credits;
-                    ch->tx_credits = credits;
-                    ch->state = L2CAP_CHANNEL_OPEN;
+                    l2cap_channel *chann = &conn->channels[slot];
+                    memset(chann, 0, sizeof(*chann));
+                    chann->psm = psm;
+                    chann->peer_max_sdu_size = max_sdu_size;
+                    chann->peer_max_pdu_payload = max_pdu_payload;
+                    chann->remote_cid = remote_cid;
+                    chann->local_cid = local_cid;
+                    chann->local_max_sdu_size = conn->local_max_sdu_size;
+                    chann->local_max_pdu_payload = conn->local_max_pdu_payload;
+                    chann->rx_credits = conn->local_credits;
+                    chann->tx_credits = credits;
+                    chann->state = L2CAP_CHANNEL_OPEN;
                 }
 
                 break;
@@ -1196,12 +1198,12 @@ static inline int l2cap_receive(
                             l2cap_remote_slot(conn, remote) >= 0
                         ) return 0;
 
-                        l2cap_channel *ch = &conn->channels[slot];
-                        ch->remote_cid = remote;
-                        ch->peer_max_sdu_size = max_sdu_size;
-                        ch->peer_max_pdu_payload = max_pdu_payload;
-                        ch->tx_credits = credits;
-                        ch->state = L2CAP_CHANNEL_OPEN;
+                        l2cap_channel *chann = &conn->channels[slot];
+                        chann->remote_cid = remote;
+                        chann->peer_max_sdu_size = max_sdu_size;
+                        chann->peer_max_pdu_payload = max_pdu_payload;
+                        chann->tx_credits = credits;
+                        chann->state = L2CAP_CHANNEL_OPEN;
                     }
                     conn->pending_id = conn->pending_count = conn->pending_code = 0;
                     conn->pending_deadline_ms = 0;
@@ -1236,7 +1238,9 @@ static inline int l2cap_receive(
                 // failures. Keep a zero destination CID for each refused channel
                 // in request order.
                 int slots[L2CAP_CHANNEL_MAX];
+                l2cap_channel *chann[L2CAP_CHANNEL_MAX] = {0};
                 uint16_t channel_result[L2CAP_CHANNEL_MAX] = {0};
+
                 for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++)
                     slots[i] = -1;
 
@@ -1277,19 +1281,19 @@ static inline int l2cap_receive(
                             continue;
                         }
 
-                        l2cap_channel *ch = &conn->channels[slots[i]];
+                        chann[i] = &conn->channels[slots[i]];
                         // Prevent reusing a still-free slot in this request.
-                        ch->state = L2CAP_CHANNEL_OPENING;
+                        chann[i]->state = L2CAP_CHANNEL_OPENING;
                         local_cids[i] = l2cap_cid_alloc(conn);
 
                         if (!local_cids[i]) {
                             channel_result[i] = 4;
-                            memset(ch, 0, sizeof(*ch));
+                            memset(chann[i], 0, sizeof(*chann[i]));
                             slots[i] = -1;
                             continue;
                         }
 
-                        ch->local_cid = local_cids[i];
+                        chann[i]->local_cid = local_cids[i];
                     }
                 }
 
@@ -1317,16 +1321,15 @@ static inline int l2cap_receive(
                         if (channel_result[i])
                             continue;
 
-                        l2cap_channel *ch = &conn->channels[slots[i]];
-                        ch->remote_cid = read_u16_le(p + 8 + i * 2);
-                        ch->psm = psm;
-                        ch->peer_max_sdu_size = max_sdu_size;
-                        ch->peer_max_pdu_payload = max_pdu_payload;
-                        ch->local_max_sdu_size = conn->local_max_sdu_size;
-                        ch->local_max_pdu_payload = conn->local_max_pdu_payload;
-                        ch->rx_credits = conn->local_credits;
-                        ch->tx_credits = credits;
-                        ch->state = L2CAP_CHANNEL_OPEN;
+                        chann[i]->remote_cid = read_u16_le(p + 8 + i * 2);
+                        chann[i]->psm = psm;
+                        chann[i]->peer_max_sdu_size = max_sdu_size;
+                        chann[i]->peer_max_pdu_payload = max_pdu_payload;
+                        chann[i]->local_max_sdu_size = conn->local_max_sdu_size;
+                        chann[i]->local_max_pdu_payload = conn->local_max_pdu_payload;
+                        chann[i]->rx_credits = conn->local_credits;
+                        chann[i]->tx_credits = credits;
+                        chann[i]->state = L2CAP_CHANNEL_OPEN;
                     }
                 }
                 else {
@@ -1335,8 +1338,7 @@ static inline int l2cap_receive(
                     // Release any partially reserved local slots.
                     for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++)
                         if (slots[i] >= 0) {
-                            l2cap_channel *ch = &conn->channels[slots[i]];
-                            memset(ch, 0, sizeof(*ch));
+                            memset(chann[i], 0, sizeof(*chann[i]));
                         }
                 }
                 int sent = l2cap_send_signal(conn, L2CAP_ECFC_CONNECTION_RESPONSE,
@@ -1344,8 +1346,7 @@ static inline int l2cap_receive(
                 if (!sent && !result)
                     for (uint8_t i = 0; i < count; i++)
                         if (slots[i] >= 0) {
-                            l2cap_channel *ch = &conn->channels[slots[i]];
-                            memset(ch, 0, sizeof(*ch));
+                            memset(chann[i], 0, sizeof(*chann[i]));
                         }
 
                 if (!sent) return 0;
@@ -1378,8 +1379,8 @@ static inline int l2cap_receive(
                         result = 3; break;
                     }
 
-                    l2cap_channel *ch = &conn->channels[slots[i]];
-                    if (ch->state != L2CAP_CHANNEL_OPEN) {
+                    l2cap_channel *chann = &conn->channels[slots[i]];
+                    if (chann->state != L2CAP_CHANNEL_OPEN) {
                         result = 3; break;
                     }
 
@@ -1387,8 +1388,8 @@ static inline int l2cap_receive(
                         if (read_u16_le(p + 4 + j * 2) == cid)
                             result = 3;
 
-                    largest_sdu_size = MAX(largest_sdu_size, ch->peer_max_sdu_size);
-                    largest_pdu_payload = MAX(largest_pdu_payload, ch->peer_max_pdu_payload);
+                    largest_sdu_size = MAX(largest_sdu_size, chann->peer_max_sdu_size);
+                    largest_pdu_payload = MAX(largest_pdu_payload, chann->peer_max_pdu_payload);
                 }
 
                 if (!result && max_sdu_size < largest_sdu_size) result = 1;
@@ -1402,9 +1403,9 @@ static inline int l2cap_receive(
 
                 if (!result)
                     for (uint8_t i = 0; i < count; i++) {
-                        l2cap_channel *ch = &conn->channels[slots[i]];
-                        ch->peer_max_sdu_size = max_sdu_size;
-                        ch->peer_max_pdu_payload = max_pdu_payload;
+                        l2cap_channel *chann = &conn->channels[slots[i]];
+                        chann->peer_max_sdu_size = max_sdu_size;
+                        chann->peer_max_pdu_payload = max_pdu_payload;
                     }
                 break;
             }
@@ -1486,18 +1487,18 @@ static inline int l2cap_receive(
                         for (uint8_t i = 0; i < conn->pending_count; i++) {
                             int slot = l2cap_local_slot(conn, conn->pending_local_cid[i]);
                             uint16_t remote = read_u16_le(p + 8 + i * 2);
-                            l2cap_channel *ch = &conn->channels[slot];
 
                             if (!remote) {
                                 l2cap_channel_clear(conn, (uint8_t)slot, result);
                                 continue;
                             }
 
-                            ch->remote_cid = remote;
-                            ch->peer_max_sdu_size = max_sdu_size;
-                            ch->peer_max_pdu_payload = max_pdu_payload;
-                            ch->tx_credits = credits;
-                            ch->state = L2CAP_CHANNEL_OPEN;
+                            l2cap_channel *chann = &conn->channels[slot];
+                            chann->remote_cid = remote;
+                            chann->peer_max_sdu_size = max_sdu_size;
+                            chann->peer_max_pdu_payload = max_pdu_payload;
+                            chann->tx_credits = credits;
+                            chann->state = L2CAP_CHANNEL_OPEN;
                         }
                     }
                     conn->pending_id = conn->pending_count = conn->pending_code = 0;
@@ -1579,10 +1580,10 @@ static inline int l2cap_receive(
                     int slot = l2cap_local_slot(conn, local);
 
                     if (slot >= 0) {
-                        l2cap_channel *ch = &conn->channels[slot];
-                        if (ch->state == L2CAP_CHANNEL_CLOSING &&
-                            ch->disconnect_id == identifier &&
-                            ch->remote_cid == remote
+                        l2cap_channel *chann = &conn->channels[slot];
+                        if (chann->state == L2CAP_CHANNEL_CLOSING &&
+                            chann->disconnect_id == identifier &&
+                            chann->remote_cid == remote
                         ) l2cap_channel_clear(conn, (uint8_t)slot, 0);
                     }
                 }
@@ -1636,9 +1637,9 @@ static inline int l2cap_receive(
                         int slot = l2cap_local_slot(conn, cid);
                         if (slot < 0) continue;
 
-                        l2cap_channel *ch = &conn->channels[slot];
-                        ch->local_max_sdu_size = conn->pending_max_sdu_size;
-                        ch->local_max_pdu_payload = conn->pending_max_pdu_payload;
+                        l2cap_channel *chann = &conn->channels[slot];
+                        chann->local_max_sdu_size = conn->pending_max_sdu_size;
+                        chann->local_max_pdu_payload = conn->pending_max_pdu_payload;
                     }
                 }
 
@@ -1666,29 +1667,31 @@ static inline int l2cap_receive(
 
     int slot = l2cap_local_slot(conn, cid);
     if (slot >= 0) {
-        l2cap_channel *ch = &conn->channels[slot];
+        l2cap_channel *chann = &conn->channels[slot];
 
-        if (ch->state != L2CAP_CHANNEL_OPEN ||
-            len > ch->local_max_pdu_payload || !ch->rx_credits || ch->rx_ready
+        if (chann->state != L2CAP_CHANNEL_OPEN ||
+            len > chann->local_max_pdu_payload ||
+            !chann->rx_credits || chann->rx_ready
         ) {
             l2cap_channel_clear(conn, (uint8_t)slot, 1);
             return 0;
         }
 
-        ch->rx_credits--;
-        if (ch->rx_frames != 65535u) ch->rx_frames++;
+        chann->rx_credits--;
+        if (chann->rx_frames != 65535u) chann->rx_frames++;
         uint16_t offset = 0;
 
-        if (!ch->rx_expected) {
+        if (!chann->rx_expected) {
             if (len < 3) {
                 l2cap_channel_clear(conn, (uint8_t)slot, 1);
                 return 0;
             }
 
-            ch->rx_expected = read_u16_le(sdu);
+            chann->rx_expected = read_u16_le(sdu);
             offset = 2;
-            if (!ch->rx_expected || ch->rx_expected > ch->local_max_sdu_size ||
-                len - offset > ch->rx_expected
+            if (!chann->rx_expected ||
+                chann->rx_expected > chann->local_max_sdu_size ||
+                len - offset > chann->rx_expected
             ) {
                 l2cap_channel_clear(conn, (uint8_t)slot, 1);
                 return 0;
@@ -1696,15 +1699,15 @@ static inline int l2cap_receive(
         }
 
         uint16_t chunk = (uint16_t)(len - offset);
-        if ((uint32_t)ch->rx_used + chunk > ch->rx_expected) {
+        if ((uint32_t)chann->rx_used + chunk > chann->rx_expected) {
             l2cap_channel_clear(conn, (uint8_t)slot, 1);
             return 0;
         }
 
-        memcpy(ch->rx_data + ch->rx_used, sdu + offset, chunk);
-        ch->rx_used = (uint16_t)(ch->rx_used + chunk);
+        memcpy(chann->rx_data + chann->rx_used, sdu + offset, chunk);
+        chann->rx_used = (uint16_t)(chann->rx_used + chunk);
 
-        if (ch->rx_used == ch->rx_expected) ch->rx_ready = 1;
+        if (chann->rx_used == chann->rx_expected) chann->rx_ready = 1;
         return 1;
     }
 
