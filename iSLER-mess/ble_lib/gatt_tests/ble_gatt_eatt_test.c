@@ -5,7 +5,7 @@
 #include "ble_gatt_transport_test_adapter.h"
 
 typedef struct {
-    uint16_t last_psm, last_mtu, last_cid, sent_len, closed;
+    uint16_t last_service_id, last_mtu, last_cid, sent_len, closed;
     uint8_t received, ready, rejected;
     uint8_t last_pdu[128];
 } fake_ecfc;
@@ -67,8 +67,8 @@ static void eatt_client_result_with_cid(
     fake->last_result_cid = cid;
 }
 
-static int open_channel(void *ctx, uint16_t psm, uint16_t mtu) {
-    fake_ecfc *f = ctx; f->last_psm = psm; f->last_mtu = mtu; return 1;
+static int open_channel(void *ctx, uint16_t service_id, uint16_t mtu) {
+    fake_ecfc *f = ctx; f->last_service_id = service_id; f->last_mtu = mtu; return 1;
 }
 static int accept_channel(void *ctx, uint16_t cid, uint16_t mtu) {
     fake_ecfc *f = ctx; f->last_cid = cid; f->last_mtu = mtu; return 1;
@@ -105,7 +105,7 @@ int main(void) {
     assert(!gatt_eatt_open(&eatt));
     gatt_eatt_set_encrypted(&eatt, 1);
     assert(gatt_eatt_open(&eatt));
-    assert(fake.last_psm == BLE_GATT_EATT_PSM && fake.last_mtu == 100);
+    assert(fake.last_service_id == BLE_GATT_EATT_SERVICE_ID && fake.last_mtu == 100);
     assert(gatt_eatt_open(&eatt));
     assert(!gatt_eatt_open(&eatt));
     assert(gatt_eatt_channel_opened(&eatt, 0x0040, 80, 1, 1));
@@ -174,15 +174,15 @@ int main(void) {
                                        &lower));
     gatt_transport_set_eatt_client_callbacks(&transport, NULL,
         eatt_client_result_with_cid, NULL, NULL, &lower);
-    assert(l2cap_psm_is_registered(transport.l2cap_link->psm_registry,
-                                      BLE_GATT_EATT_PSM));
+    assert(l2cap_service_is_registered(transport.l2cap_link->service_registry,
+                                      BLE_GATT_EATT_SERVICE_ID));
     transport.connected = 1;
-    assert(transport.l2cap_link->ops.authorize_psm(
-        transport.l2cap_link->ops.context, BLE_GATT_EATT_PSM) == 8);
+    assert(transport.l2cap_link->ops.authorize_service_id(
+        transport.l2cap_link->ops.context, BLE_GATT_EATT_SERVICE_ID) == 8);
     lower.encrypted = 1;
     gatt_transport_set_security(&transport, 1, 0, 0);
-    assert(transport.l2cap_link->ops.authorize_psm(
-        transport.l2cap_link->ops.context, BLE_GATT_EATT_PSM) == 0);
+    assert(transport.l2cap_link->ops.authorize_service_id(
+        transport.l2cap_link->ops.context, BLE_GATT_EATT_SERVICE_ID) == 0);
     assert(gatt_transport_eatt_open(&transport));
     uint16_t local_cid = transport.l2cap_link->pending_local_cid[0];
     int channel_slot = l2cap_local_slot(transport.l2cap_link,
@@ -220,7 +220,7 @@ int main(void) {
     // A second EATT channel gets an independent ATT MTU and prepare queue.
     l2cap_channel *second = &transport.l2cap_link->channels[1];
     memset(second, 0, sizeof(*second));
-    second->psm = BLE_GATT_EATT_PSM;
+    second->service_id = BLE_GATT_EATT_SERVICE_ID;
     second->local_cid = 0x0042;
     second->remote_cid = 0x0043;
     second->local_max_sdu_size = 100;

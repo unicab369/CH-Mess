@@ -66,19 +66,19 @@ typedef uint16_t l2cap_reassembly_bytes;
 #endif
 
 #ifndef L2CAP_CHANNEL_MAX
-#define L2CAP_CHANNEL_MAX 2
+#define L2CAP_CHANNEL_MAX 1
 #endif
 
 #if L2CAP_CHANNEL_MAX < 1 || L2CAP_CHANNEL_MAX > 32
 #error "L2CAP_CHANNEL_MAX must be 1..32"
 #endif
 
-#ifndef L2CAP_PSM_MAX
-#define L2CAP_PSM_MAX 4
+#ifndef L2CAP_SERVICE_REGISTRY_MAX
+#define L2CAP_SERVICE_REGISTRY_MAX 4
 #endif
 
 // L2CAP_SDU_MAX limits one packet being reassembled,
-// while L2CAP_CHANNEL_MTU_MAX limits a complete credit-based message. 
+// while L2CAP_CHANNEL_MTU_MAX limits a complete credit-based message.
 #ifndef L2CAP_CHANNEL_MTU_MAX
 #define L2CAP_CHANNEL_MTU_MAX L2CAP_SDU_MAX
 #endif
@@ -156,7 +156,7 @@ typedef struct {
 } l2cap_tx_queue;
 
 typedef struct {
-    uint16_t psm;
+    uint16_t service_id; // Service ID carried in the connection request's PSM/SPSM field.
     uint16_t local_cid, remote_cid;
     l2cap_connection_bytes local_max_sdu_size, peer_max_sdu_size;
     l2cap_connection_bytes local_max_pdu_payload, peer_max_pdu_payload;
@@ -176,19 +176,19 @@ typedef struct {
 
 typedef struct {
     l2cap_tx_queue *tx_queue;
-    int (*accept_psm)(void *context, uint16_t psm);
+    int (*accept_service_id)(void *context, uint16_t service_id);
     // Return 0 to accept or a standardized LE Credit Based Connection result
     // code (2, 4..11) to refuse for a specific security/policy reason.
-    uint16_t (*authorize_psm)(void *context, uint16_t psm);
+    uint16_t (*authorize_service_id)(void *context, uint16_t service_id);
     void *context;
 } l2cap_ops;
 
 // Local services supported by one L2CAP manager, shared by its connections.
 typedef struct {
     // Registration rejects PSMs above 0x00ff, so each entry fits in one byte.
-    uint8_t psm[L2CAP_PSM_MAX];
+    uint8_t service_ids[L2CAP_SERVICE_REGISTRY_MAX];
     uint8_t count;
-} l2cap_psm_registry;
+} l2cap_service_registry;
 
 static inline int l2cap_output_configured(const l2cap_ops *ops) {
     return ops && ops->tx_queue && ops->tx_queue->data &&
@@ -199,20 +199,24 @@ static inline int l2cap_output_configured(const l2cap_ops *ops) {
 typedef struct l2cap_connection {
     // Shared L2CAP channels, signaling, and pending operation state.
     l2cap_ops ops;
-    l2cap_psm_registry *psm_registry;
+    l2cap_service_registry *service_registry;
     l2cap_channel_handler fixed[2];
     l2cap_channel channels[L2CAP_CHANNEL_MAX];
     l2cap_connection_bytes local_max_sdu_size;    // max total message size after chunks are combined.
     l2cap_connection_bytes local_max_pdu_payload; // max chunk size in each credit-based packet.
     uint16_t next_cid;                   // Next dynamic channel ID to allocate.
-    uint16_t local_credits;              // Incoming PDUs the peer may send before we grant more credits.
-    uint8_t signaling_id;                // Last locally allocated signaling command identifier.
+
+    // Starting credits granted to the peer for each channel.
+    uint16_t initial_credits;
+
+    // Rolling counter for outgoing signaling IDs. The allocator skips 0,
+    // the active pending_id, and IDs used by channels that are closing.
+    uint8_t signaling_id;
 
     // State for the outstanding signaling request.
     uint8_t pending_id;                  // Identifier of the request; zero means none.
-    uint8_t pending_code;                // Command code of the outstanding request.
     uint8_t pending_count;               // Number of channels in the request (1 for a single channel).
-    uint16_t pending_psm;                // PSM (Protocol/Service Multiplexer) for the pending channel request.
+    uint8_t pending_code;                // Command code of the outstanding request.
     l2cap_connection_bytes pending_max_sdu_size; // Maximum SDU size associated with the pending request.
     l2cap_connection_bytes pending_max_pdu_payload; // Maximum PDU payload requested by an outstanding reconfiguration.
     uint16_t pending_local_cid[L2CAP_CHANNEL_MAX];
@@ -306,7 +310,7 @@ static inline int ble_timing_valid(
 
 // Application facing
 static inline int l2cap_conn_init(
-    l2cap_connection *conn, const l2cap_ops *ops, l2cap_psm_registry *psm_registry,
+    l2cap_connection *conn, const l2cap_ops *ops, l2cap_service_registry *service_registry,
     uint16_t max_sdu_size, uint16_t max_pdu_payload, uint16_t initial_credits
 ) {
     if (!conn || !l2cap_output_configured(ops) ||
@@ -317,10 +321,10 @@ static inline int l2cap_conn_init(
 
     memset(conn, 0, sizeof(*conn));
     conn->ops = *ops;
-    conn->psm_registry = psm_registry;
+    conn->service_registry = service_registry;
     conn->local_max_sdu_size = max_sdu_size;
     conn->local_max_pdu_payload = max_pdu_payload;
-    conn->local_credits = initial_credits;
+    conn->initial_credits = initial_credits;
     conn->next_cid = 0x0040;
     return 1;
 }
@@ -330,13 +334,13 @@ static inline void l2cap_channel_clear(
 ) {
     if (!conn || slot >= L2CAP_CHANNEL_MAX) return;
     l2cap_channel *chann = &conn->channels[slot];
-    uint16_t psm = chann->psm;
+    uint16_t service_id = chann->service_id;
     uint16_t local_cid = chann->local_cid;
     uint16_t remote_cid = chann->remote_cid;
     memset(chann, 0, sizeof(*chann));
 
     if (local_cid) {
-        chann->psm = psm;
+        chann->service_id = service_id;
         chann->local_cid = local_cid;
         chann->remote_cid = remote_cid;
         chann->close_reason = (uint16_t)reason;
@@ -345,18 +349,18 @@ static inline void l2cap_channel_clear(
 }
 
 // Application facing
-static inline int l2cap_psm_register(
-    l2cap_psm_registry *registry, uint16_t psm
+static inline int l2cap_service_register(
+    l2cap_service_registry *registry, uint16_t service_id
 ) {
-    if (!registry || !psm || psm > 0x00ffu) return 0;
+    if (!registry || !service_id || service_id > 0x00ffu) return 0;
 
     for (uint8_t i = 0; i < registry->count; i++)
-        if (registry->psm[i] == psm)
+        if (registry->service_ids[i] == service_id)
             return 1;
 
-    if (registry->count >= L2CAP_PSM_MAX)
+    if (registry->count >= L2CAP_SERVICE_REGISTRY_MAX)
         return 0;
-    registry->psm[registry->count++] = psm;
+    registry->service_ids[registry->count++] = service_id;
     return 1;
 }
 
@@ -384,16 +388,16 @@ static inline uint8_t l2cap_id_alloc(l2cap_connection *conn) {
 }
 
 // Application facing
-static inline int l2cap_psm_unregister(
-    l2cap_psm_registry *registry, uint16_t psm
+static inline int l2cap_service_unregister(
+    l2cap_service_registry *registry, uint16_t service_id
 ) {
-    if (!registry || !psm) return 0;
+    if (!registry || !service_id) return 0;
     for (uint8_t i = 0; i < registry->count; i++) {
-        if (registry->psm[i] != psm)
+        if (registry->service_ids[i] != service_id)
             continue;
 
         for (uint8_t j = i + 1; j < registry->count; j++)
-            registry->psm[j - 1] = registry->psm[j];
+            registry->service_ids[j - 1] = registry->service_ids[j];
         registry->count--;
         return 1;
     }
@@ -401,31 +405,31 @@ static inline int l2cap_psm_unregister(
 }
 
 // Application facing
-static inline int l2cap_psm_is_registered(
-    const l2cap_psm_registry *registry, uint16_t psm
+static inline int l2cap_service_is_registered(
+    const l2cap_service_registry *registry, uint16_t service_id
 ) {
-    if (!registry || !psm) return 0;
+    if (!registry || !service_id) return 0;
     for (uint8_t i = 0; i < registry->count; i++)
-        if (registry->psm[i] == psm)
+        if (registry->service_ids[i] == service_id)
             return 1;
     return 0;
 }
 
-static inline uint16_t l2cap_psm_authorize(
-    l2cap_connection *conn, uint16_t psm
+static inline uint16_t l2cap_service_authorize(
+    l2cap_connection *conn, uint16_t service_id
 ) {
-    if (!l2cap_psm_is_registered(conn->psm_registry, psm))
+    if (!l2cap_service_is_registered(conn->service_registry, service_id))
         return 2;
 
-    if (conn->ops.authorize_psm) {
-        uint16_t result = conn->ops.authorize_psm(conn->ops.context, psm);
+    if (conn->ops.authorize_service_id) {
+        uint16_t result = conn->ops.authorize_service_id(conn->ops.context, service_id);
         if (result)
             return result == 2 || (result >= 4 && result <= 11) ?
             result : 2;
     }
 
-    return !conn->ops.accept_psm ||
-            conn->ops.accept_psm(conn->ops.context, psm) ? 0 : 2;
+    return !conn->ops.accept_service_id ||
+            conn->ops.accept_service_id(conn->ops.context, service_id) ? 0 : 2;
 }
 
 static inline int l2cap_fixed_register(
@@ -521,7 +525,7 @@ static inline const l2cap_channel *l2cap_channel_at(
 // Read and acknowledge one channel-close record. A closed slot is held until
 // acknowledged, so applications can safely poll after processing link data.
 static inline int l2cap_channel_closed_get(
-    const l2cap_connection *conn, uint8_t slot, uint16_t *psm,
+    const l2cap_connection *conn, uint8_t slot, uint16_t *service_id,
     uint16_t *local_cid, uint16_t *remote_cid, uint16_t *reason
 ) {
     if (!conn || slot >= L2CAP_CHANNEL_MAX ||
@@ -529,7 +533,7 @@ static inline int l2cap_channel_closed_get(
     ) return 0;
 
     const l2cap_channel *chann = &conn->channels[slot];
-    if (psm) *psm = chann->psm;
+    if (service_id) *service_id = chann->service_id;
     if (local_cid) *local_cid = chann->local_cid;
     if (remote_cid) *remote_cid = chann->remote_cid;
     if (reason) *reason = chann->close_reason;
@@ -617,25 +621,25 @@ static inline uint16_t l2cap_cid_alloc(l2cap_connection *conn) {
 // Application facing
 static inline int l2cap_ecfc_open_many(
     l2cap_connection *conn,
-    uint16_t psm, uint16_t *local_cids_out, uint8_t count
+    uint16_t service_id, uint16_t *local_cids_out, uint8_t count
 ) {
     if (!conn || !local_cids_out ||
-        !psm || psm > 0x00ffu ||
+        !service_id || service_id > 0x00ffu ||
         !count || count > L2CAP_ECFC_CHANNELS_MAX ||
         count > L2CAP_CHANNEL_MAX
     ) return 0;
 
-    if (conn->pending_id || !conn->local_credits ||
+    if (conn->pending_id || !conn->initial_credits ||
         !l2cap_output_configured(&conn->ops) ||
         conn->local_max_sdu_size < L2CAP_ECFC_MTU_MIN ||
         conn->local_max_pdu_payload < L2CAP_ECFC_MPS_MIN
     ) return 0;
 
     uint8_t payload[8 + L2CAP_ECFC_CHANNELS_MAX * 2];
-    write_u16_le(payload, psm);
+    write_u16_le(payload, service_id);
     write_u16_le(payload + 2, conn->local_max_sdu_size);
     write_u16_le(payload + 4, conn->local_max_pdu_payload);
-    write_u16_le(payload + 6, conn->local_credits);
+    write_u16_le(payload + 6, conn->initial_credits);
     int slots[L2CAP_ECFC_CHANNELS_MAX];
     uint16_t cids[L2CAP_ECFC_CHANNELS_MAX];
 
@@ -673,18 +677,17 @@ static inline int l2cap_ecfc_open_many(
     for (uint8_t i = 0; i < count; i++) {
         l2cap_channel *chann = &conn->channels[slots[i]];
         memset(chann, 0, sizeof(*chann));
-        chann->psm = psm;
+        chann->service_id = service_id;
         chann->local_cid = cids[i];
         chann->local_max_sdu_size = conn->local_max_sdu_size;
         chann->local_max_pdu_payload = conn->local_max_pdu_payload;
-        chann->rx_credits = conn->local_credits;
+        chann->rx_credits = conn->initial_credits;
         chann->state = L2CAP_CHANNEL_OPENING;
         local_cids_out[i] = cids[i];
         conn->pending_local_cid[i] = cids[i];
     }
 
     conn->pending_id = id;
-    conn->pending_psm = psm;
     conn->pending_max_sdu_size = conn->local_max_sdu_size;
     conn->pending_count = count;
     conn->pending_code = L2CAP_ECFC_CONNECTION_REQUEST;
@@ -696,10 +699,10 @@ static inline int l2cap_ecfc_open_many(
 // Start one Enhanced Credit Based Flow Control channel request. The platform
 // carries emitted signaling PDUs on fixed signaling CID 5.
 static inline int l2cap_ecfc_open(
-    l2cap_connection *conn, uint16_t psm, uint16_t *local_cid_out
+    l2cap_connection *conn, uint16_t service_id, uint16_t *local_cid_out
 ) {
     uint16_t cid;
-    if (!l2cap_ecfc_open_many(conn, psm, &cid, 1)) return 0;
+    if (!l2cap_ecfc_open_many(conn, service_id, &cid, 1)) return 0;
     if (local_cid_out) *local_cid_out = cid;
     return 1;
 }
@@ -707,9 +710,9 @@ static inline int l2cap_ecfc_open(
 // Application facing
 // Legacy LE Credit Based Connection Request (one channel per request).
 static inline int l2cap_le_credit_open(
-    l2cap_connection *conn, uint16_t psm, uint16_t *local_cid_out
+    l2cap_connection *conn, uint16_t service_id, uint16_t *local_cid_out
 ) {
-    if (!conn || !psm || psm > 0x00ffu ||
+    if (!conn || !service_id || service_id > 0x00ffu ||
         !l2cap_output_configured(&conn->ops) || conn->pending_id
     ) return 0;
 
@@ -727,11 +730,11 @@ static inline int l2cap_le_credit_open(
         return 0;
 
     uint8_t payload[10];
-    write_u16_le(payload, psm);
+    write_u16_le(payload, service_id);
     write_u16_le(payload + 2, local_cid);
     write_u16_le(payload + 4, conn->local_max_sdu_size);
     write_u16_le(payload + 6, conn->local_max_pdu_payload);
-    write_u16_le(payload + 8, conn->local_credits);
+    write_u16_le(payload + 8, conn->initial_credits);
     uint8_t id = l2cap_id_alloc(conn);
 
     if (!id) return 0;
@@ -740,14 +743,13 @@ static inline int l2cap_le_credit_open(
 
     l2cap_channel *chann = &conn->channels[slot];
     memset(chann, 0, sizeof(*chann));
-    chann->psm = psm;
+    chann->service_id = service_id;
     chann->local_cid = local_cid;
     chann->local_max_sdu_size = conn->local_max_sdu_size;
     chann->local_max_pdu_payload = conn->local_max_pdu_payload;
-    chann->rx_credits = conn->local_credits;
+    chann->rx_credits = conn->initial_credits;
     chann->state = L2CAP_CHANNEL_OPENING;
     conn->pending_id = id;
-    conn->pending_psm = psm;
     conn->pending_max_sdu_size = conn->local_max_sdu_size;
     conn->pending_count = 1;
     conn->pending_code = L2CAP_LE_CREDIT_CONN_REQ;
@@ -1098,18 +1100,18 @@ static inline int l2cap_receive(
 
             switch (code) {
             case L2CAP_LE_CREDIT_CONN_REQ: {
-                uint16_t result = 0, psm = 0, remote_cid = 0;
+                uint16_t result = 0, service_id = 0, remote_cid = 0;
                 uint16_t max_sdu_size = 0, max_pdu_payload = 0, credits = 0;
                 if (command_len != 10) result = 0x000b;
 
                 if (!result) {
-                    psm = read_u16_le(p);
+                    service_id = read_u16_le(p);
                     remote_cid = read_u16_le(p + 2);
                     max_sdu_size = read_u16_le(p + 4);
                     max_pdu_payload = read_u16_le(p + 6);
                     credits = read_u16_le(p + 8);
 
-                    if (!IN_RANGE_INCLUSIVE(psm, 1, 0x00ffu) ||
+                    if (!IN_RANGE_INCLUSIVE(service_id, 1, 0x00ffu) ||
                         !IN_RANGE_INCLUSIVE(max_sdu_size, 23, UINT16_MAX) ||
                         !IN_RANGE_INCLUSIVE(max_pdu_payload, 23, UINT16_MAX)
                     ) {
@@ -1124,7 +1126,7 @@ static inline int l2cap_receive(
                         result = 10;
                     }
                     else {
-                        result = l2cap_psm_authorize(conn, psm);
+                        result = l2cap_service_authorize(conn, service_id);
                     }
                 }
 
@@ -1149,7 +1151,7 @@ static inline int l2cap_receive(
                     write_u16_le(response, local_cid);
                     write_u16_le(response + 2, conn->local_max_sdu_size);
                     write_u16_le(response + 4, conn->local_max_pdu_payload);
-                    write_u16_le(response + 6, conn->local_credits);
+                    write_u16_le(response + 6, conn->initial_credits);
                     write_u16_le(response + 8, 0);
                 }
                 else {
@@ -1164,14 +1166,14 @@ static inline int l2cap_receive(
                 if (!result) {
                     l2cap_channel *chann = &conn->channels[slot];
                     memset(chann, 0, sizeof(*chann));
-                    chann->psm = psm;
+                    chann->service_id = service_id;
                     chann->peer_max_sdu_size = max_sdu_size;
                     chann->peer_max_pdu_payload = max_pdu_payload;
                     chann->remote_cid = remote_cid;
                     chann->local_cid = local_cid;
                     chann->local_max_sdu_size = conn->local_max_sdu_size;
                     chann->local_max_pdu_payload = conn->local_max_pdu_payload;
-                    chann->rx_credits = conn->local_credits;
+                    chann->rx_credits = conn->initial_credits;
                     chann->tx_credits = credits;
                     chann->state = L2CAP_CHANNEL_OPEN;
                 }
@@ -1221,7 +1223,7 @@ static inline int l2cap_receive(
                 }
                 break;
             case L2CAP_ECFC_CONNECTION_REQUEST: {
-                uint16_t result = 0, psm = 0, max_sdu_size = 0, max_pdu_payload = 0, credits = 0;
+                uint16_t result = 0, service_id = 0, max_sdu_size = 0, max_pdu_payload = 0, credits = 0;
                 uint8_t count = 0;
                 uint16_t local_cids[L2CAP_CHANNEL_MAX];
 
@@ -1229,20 +1231,20 @@ static inline int l2cap_receive(
                     result = 0x000b;
 
                 if (!result) {
-                    psm = read_u16_le(p);
+                    service_id = read_u16_le(p);
                     max_sdu_size = read_u16_le(p + 2);
                     max_pdu_payload = read_u16_le(p + 4);
                     credits = read_u16_le(p + 6);
                     count = (uint8_t)((command_len - 8) / 2);
 
-                    if (!psm || psm > 0x00ffu || !credits ||
+                    if (!service_id || service_id > 0x00ffu || !credits ||
                         max_sdu_size < L2CAP_ECFC_MTU_MIN ||
                         max_pdu_payload < L2CAP_ECFC_MPS_MIN ||
                         count > L2CAP_ECFC_CHANNELS_MAX
                     ) result = 0x000b;
-                    else if (count > L2CAP_CHANNEL_MAX || !conn->local_credits)
+                    else if (count > L2CAP_CHANNEL_MAX || !conn->initial_credits)
                         result = 4;
-                    else result = l2cap_psm_authorize(conn, psm);
+                    else result = l2cap_service_authorize(conn, service_id);
                 }
 
                 // ECFC permits a partial result for per-channel CID/resource
@@ -1321,7 +1323,7 @@ static inline int l2cap_receive(
 
                     write_u16_le(response, conn->local_max_sdu_size);
                     write_u16_le(response + 2, conn->local_max_pdu_payload);
-                    write_u16_le(response + 4, conn->local_credits);
+                    write_u16_le(response + 4, conn->initial_credits);
                     write_u16_le(response + 6, partial_result);
                     response_len = (uint16_t)(8 + count * 2);
 
@@ -1333,12 +1335,12 @@ static inline int l2cap_receive(
                             continue;
 
                         chann[i]->remote_cid = read_u16_le(p + 8 + i * 2);
-                        chann[i]->psm = psm;
+                        chann[i]->service_id = service_id;
                         chann[i]->peer_max_sdu_size = max_sdu_size;
                         chann[i]->peer_max_pdu_payload = max_pdu_payload;
                         chann[i]->local_max_sdu_size = conn->local_max_sdu_size;
                         chann[i]->local_max_pdu_payload = conn->local_max_pdu_payload;
-                        chann[i]->rx_credits = conn->local_credits;
+                        chann[i]->rx_credits = conn->initial_credits;
                         chann[i]->tx_credits = credits;
                         chann[i]->state = L2CAP_CHANNEL_OPEN;
                     }

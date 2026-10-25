@@ -60,7 +60,7 @@
 #error "BLE_GATT_EATT_MTU_MAX must be between 64 and 65535"
 #endif
 
-#define BLE_GATT_EATT_PSM 0x0027u
+#define BLE_GATT_EATT_SERVICE_ID 0x0027u
 #define BLE_GATT_EATT_MIN_MTU 64u
 
 enum {
@@ -78,7 +78,7 @@ typedef struct {
     // Map these callbacks to l2cap_connection's ECFC channel APIs.
     // open requests one EATT channel; accept/reject apply incoming policy.
     // Deliver completed SDUs to receive_att.
-    int (*open)(void *context, uint16_t psm, uint16_t mtu);
+    int (*open)(void *context, uint16_t service_id, uint16_t mtu);
     int (*accept)(void *context, uint16_t cid, uint16_t mtu);
     void (*reject)(void *context, uint16_t cid, uint16_t reason);
     int (*send)(void *context, uint16_t cid, const uint8_t *sdu,
@@ -241,7 +241,7 @@ static inline int gatt_eatt_open(ble_gatt_eatt *eatt) {
 
     if (slot < 0) return 0;
 
-    if (!eatt->ops.open(eatt->ops.context, BLE_GATT_EATT_PSM,
+    if (!eatt->ops.open(eatt->ops.context, BLE_GATT_EATT_SERVICE_ID,
                         eatt->local_mtu)
     ) return 0;
 
@@ -619,18 +619,18 @@ static inline void gatt_transport_eatt_client_init(
 }
 
 static inline int gatt_transport_eatt_open_channel(
-    void *context, uint16_t psm, uint16_t mtu
+    void *context, uint16_t service_id, uint16_t mtu
 ) {
     ble_gatt_transport *transport = context;
     uint16_t cid;
 
     if (!transport || !transport->eatt_enabled ||
-        psm != BLE_GATT_EATT_PSM || mtu != transport->eatt.local_mtu
+        service_id != BLE_GATT_EATT_SERVICE_ID || mtu != transport->eatt.local_mtu
     ) return 0;
 
     int slot = gatt_eatt_free_slot(&transport->eatt);
 
-    if (slot < 0 || !l2cap_ecfc_open(transport->l2cap_link, psm, &cid))
+    if (slot < 0 || !l2cap_ecfc_open(transport->l2cap_link, service_id, &cid))
         return 0;
 
     transport->eatt.bearers[slot].cid = cid;
@@ -735,12 +735,12 @@ static inline int gatt_transport_eatt_receive_att(
     return -1;
 }
 
-static inline uint16_t gatt_transport_authorize_psm(
-    void *context, uint16_t psm
+static inline uint16_t gatt_transport_authorize_service_id(
+    void *context, uint16_t service_id
 ) {
     ble_gatt_transport *transport = context;
     if (!transport || !transport->eatt_enabled ||
-        psm != BLE_GATT_EATT_PSM
+        service_id != BLE_GATT_EATT_SERVICE_ID
     ) return 0;
 
     if (!transport->eatt.encrypted)
@@ -753,12 +753,12 @@ static inline uint16_t gatt_transport_authorize_psm(
 }
 
 static inline void gatt_transport_channel_opened(
-    ble_gatt_transport *transport, uint16_t psm, uint16_t local_cid,
+    ble_gatt_transport *transport, uint16_t service_id, uint16_t local_cid,
     uint16_t remote_cid, uint16_t local_mtu
 ) {
     (void)remote_cid;
 
-    if (!transport || !transport->eatt_enabled || psm != BLE_GATT_EATT_PSM)
+    if (!transport || !transport->eatt_enabled || service_id != BLE_GATT_EATT_SERVICE_ID)
         return;
 
     int slot = l2cap_local_slot(transport->l2cap_link, local_cid);
@@ -804,12 +804,12 @@ static inline void gatt_transport_channel_opened(
 }
 
 static inline void gatt_transport_channel_closed(
-    ble_gatt_transport *transport, uint16_t psm, uint16_t local_cid,
+    ble_gatt_transport *transport, uint16_t service_id, uint16_t local_cid,
     uint16_t remote_cid, uint16_t reason
 ) {
     (void)remote_cid;
 
-    if (transport && transport->eatt_enabled && psm == BLE_GATT_EATT_PSM) {
+    if (transport && transport->eatt_enabled && service_id == BLE_GATT_EATT_SERVICE_ID) {
         if (local_cid) {
             for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
                 ble_gatt_transport_eatt_context *bearer =
@@ -856,12 +856,12 @@ static inline int gatt_transport_sync_l2cap_channels(
         return 0;
 
     for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++) {
-        uint16_t psm, local_cid, remote_cid, reason;
-        if (!l2cap_channel_closed_get(transport->l2cap_link, i, &psm,
+        uint16_t service_id, local_cid, remote_cid, reason;
+        if (!l2cap_channel_closed_get(transport->l2cap_link, i, &service_id,
                 &local_cid, &remote_cid, &reason) ||
-            psm != BLE_GATT_EATT_PSM)
+            service_id != BLE_GATT_EATT_SERVICE_ID)
             continue;
-        gatt_transport_channel_closed(transport, psm, local_cid,
+        gatt_transport_channel_closed(transport, service_id, local_cid,
                                        remote_cid, reason);
         (void)l2cap_channel_closed_ack(transport->l2cap_link, i);
     }
@@ -871,7 +871,7 @@ static inline int gatt_transport_sync_l2cap_channels(
             &transport->eatt_contexts[i];
         if (bearer->cid && l2cap_local_slot(transport->l2cap_link,
                                              bearer->cid) < 0)
-            gatt_transport_channel_closed(transport, BLE_GATT_EATT_PSM,
+            gatt_transport_channel_closed(transport, BLE_GATT_EATT_SERVICE_ID,
                                            bearer->cid, 0, 0);
     }
 
@@ -879,13 +879,13 @@ static inline int gatt_transport_sync_l2cap_channels(
         const l2cap_channel *channel =
             l2cap_channel_at(transport->l2cap_link, i);
         if (!channel || channel->state != L2CAP_CHANNEL_OPEN ||
-            channel->psm != BLE_GATT_EATT_PSM)
+            channel->service_id != BLE_GATT_EATT_SERVICE_ID)
             continue;
 
         int eatt_slot = gatt_eatt_find(&transport->eatt, channel->local_cid);
         if (eatt_slot < 0 || transport->eatt.bearers[eatt_slot].state ==
                                BLE_GATT_EATT_OPENING)
-            gatt_transport_channel_opened(transport, channel->psm,
+            gatt_transport_channel_opened(transport, channel->service_id,
                 channel->local_cid, channel->remote_cid, channel->local_max_sdu_size);
 
         const uint8_t *sdu;
@@ -939,9 +939,9 @@ static inline int gatt_transport_eatt_init(
     transport->eatt_context = context;
 
     if (transport->l2cap_link &&
-        (!transport->l2cap_link->psm_registry ||
-         !l2cap_psm_register(transport->l2cap_link->psm_registry,
-                             BLE_GATT_EATT_PSM))) {
+        (!transport->l2cap_link->service_registry ||
+         !l2cap_service_register(transport->l2cap_link->service_registry,
+                             BLE_GATT_EATT_SERVICE_ID))) {
         memset(&transport->eatt, 0, sizeof(transport->eatt));
         transport->eatt_receive_att = NULL;
         transport->eatt_context = NULL;
@@ -950,8 +950,8 @@ static inline int gatt_transport_eatt_init(
 
     if (transport->l2cap_link) {
         transport->l2cap_link->local_max_sdu_size = transport->eatt.local_mtu;
-        transport->l2cap_link->ops.authorize_psm =
-            gatt_transport_authorize_psm;
+        transport->l2cap_link->ops.authorize_service_id =
+            gatt_transport_authorize_service_id;
     }
     transport->eatt_enabled = 1;
     return 1;
@@ -1597,7 +1597,7 @@ typedef struct {
     uint8_t bound, connected;
 #if BLE_GATT_ENABLE_EATT
     // Per-link dynamic PSMs, including EATT when this transport enables it.
-    l2cap_psm_registry psm_registry;
+    l2cap_service_registry service_registry;
 #endif
 } ble_gap_gatt_peer;
 
@@ -1614,7 +1614,7 @@ static inline int ble_gap_gatt_bind(
     if (!gatt_transport_init(transport, server, NULL, NULL)) return 0;
     if (client) gatt_transport_set_client(transport, client);
 #if BLE_GATT_ENABLE_EATT
-    memset(&peer->psm_registry, 0, sizeof(peer->psm_registry));
+    memset(&peer->service_registry, 0, sizeof(peer->service_registry));
 #endif
     peer->transport = transport;
     peer->bound = 1;
@@ -1652,7 +1652,7 @@ static inline int ble_gap_gatt_poll(
                 peer->connected = 0;
             }
 #if BLE_GATT_ENABLE_EATT
-            memset(&peer->psm_registry, 0, sizeof(peer->psm_registry));
+            memset(&peer->service_registry, 0, sizeof(peer->service_registry));
 #endif
         }
         peer->handle = handle;
@@ -1680,21 +1680,21 @@ static inline int ble_gap_gatt_poll(
         transport->shared_l2cap = 1;
 #if BLE_GATT_ENABLE_EATT
         if (!peer->connected)
-            l2cap->psm_registry = &peer->psm_registry;
+            l2cap->service_registry = &peer->service_registry;
 #endif
         l2cap->ops.tx_queue = tx_queue;
         l2cap->ops.context = transport;
 #if BLE_GATT_ENABLE_EATT
         if (transport->eatt_enabled) {
             if (l2cap->local_max_pdu_payload < L2CAP_ECFC_MPS_MIN ||
-                !l2cap_psm_register(l2cap->psm_registry,
-                                    BLE_GATT_EATT_PSM)) {
+                !l2cap_service_register(l2cap->service_registry,
+                                    BLE_GATT_EATT_SERVICE_ID)) {
                 (void)gap_disconnect(0x13);
                 failed = 1;
                 continue;
             }
             l2cap->local_max_sdu_size = transport->eatt.local_mtu;
-            l2cap->ops.authorize_psm = gatt_transport_authorize_psm;
+            l2cap->ops.authorize_service_id = gatt_transport_authorize_service_id;
         }
 #endif
         if (!l2cap_fixed_register(l2cap, BLE_GATT_TRANSPORT_ATT_CID,
@@ -1751,7 +1751,7 @@ static inline int ble_gap_gatt_poll(
         peer->connected = 0;
         memset(&peer->handle, 0, sizeof(peer->handle));
 #if BLE_GATT_ENABLE_EATT
-        memset(&peer->psm_registry, 0, sizeof(peer->psm_registry));
+        memset(&peer->service_registry, 0, sizeof(peer->service_registry));
 #endif
     }
     gap_conn_slot = previous_slot;

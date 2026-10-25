@@ -59,6 +59,8 @@ typedef struct {
     uint8_t data[GAP_ADV_DATA_MAX];
 } gap_scan_report;
 
+static gap_scan_report gap_scan_reports[GAP_SCAN_REPORT_COUNT];
+
 static struct {
     // Scanner radio scheduling and active-scan request state.
     uint8_t channel_index, applied_generation;
@@ -89,7 +91,7 @@ static struct {
     volatile int8_t rssi;
 } gap_adv_scan;
 
-static gap_scan_report gap_scan_reports[GAP_SCAN_REPORT_COUNT];
+
 static struct {
     gap_address peer;
     uint8_t pdu_type, data_len;

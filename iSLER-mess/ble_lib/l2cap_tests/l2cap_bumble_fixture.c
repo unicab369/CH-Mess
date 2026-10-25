@@ -15,9 +15,9 @@ static l2cap_tx_queue tx_queue = {
     .capacity = sizeof(outbound)
 };
 
-static int accept_psm(void *context, uint16_t psm) {
+static int accept_service_id(void *context, uint16_t service_id) {
     (void)context;
-    return psm == 0x0027;
+    return service_id == 0x0027;
 }
 
 static int write_record(const uint8_t *data, uint16_t len) {
@@ -48,12 +48,12 @@ static int receive_frame(
 }
 
 int main(void) {
-    l2cap_psm_registry psm_registry = {0};
+    l2cap_service_registry service_registry = {0};
     l2cap_ops ops = {0};
     ops.tx_queue = &tx_queue;
-    ops.accept_psm = accept_psm;
-    if (!l2cap_conn_init(&connection, &ops, &psm_registry, 100, 40, 2) ||
-        !l2cap_psm_register(&psm_registry, 0x0027)
+    ops.accept_service_id = accept_service_id;
+    if (!l2cap_conn_init(&connection, &ops, &service_registry, 100, 40, 2) ||
+        !l2cap_service_register(&service_registry, 0x0027)
     ) return 1;
 
     uint8_t frame[L2CAP_SDU_MAX + 4];

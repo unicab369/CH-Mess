@@ -65,14 +65,14 @@ static uint8_t open_channel_count(const l2cap_connection *conn) {
         count += conn->channels[i].state == L2CAP_CHANNEL_OPEN;
     return count;
 }
-static int fake_accept_psm(void *ctx, uint16_t psm) {
-    (void)ctx; return psm == 0x0027;
+static int fake_accept_service_id(void *ctx, uint16_t service_id) {
+    (void)ctx; return service_id == 0x0027;
 }
-static uint16_t fake_authorize_psm(void *ctx, uint16_t psm) {
-    (void)psm; return ((fake_l2cap *)ctx)->authorization_result;
+static uint16_t fake_authorize_service_id(void *ctx, uint16_t service_id) {
+    (void)service_id; return ((fake_l2cap *)ctx)->authorization_result;
 }
 int main(void) {
-    l2cap_psm_registry psm_registry = {0};
+    l2cap_service_registry service_registry = {0};
     l2cap_reassembler rx = {0};
     uint8_t pdu[] = {0x0a, 0x01, 0x00};
     uint8_t packet[16], first[5];
@@ -114,11 +114,11 @@ int main(void) {
     fake_output_init(&fake);
     l2cap_ops ops = {0};
     ops.tx_queue = &fake.tx_queue;
-    ops.accept_psm = fake_accept_psm;
-    ops.authorize_psm = fake_authorize_psm;
+    ops.accept_service_id = fake_accept_service_id;
+    ops.authorize_service_id = fake_authorize_service_id;
     ops.context = &fake;
     l2cap_connection conn;
-    assert(l2cap_conn_init(&conn, &ops, &psm_registry, 120, 80, 4));
+    assert(l2cap_conn_init(&conn, &ops, &service_registry, 120, 80, 4));
     assert(l2cap_fixed_register(
         &conn, L2CAP_CID_ATT, route_att, NULL));
     assert(fake_receive(&fake, &conn, L2CAP_CID_ATT,
@@ -126,9 +126,9 @@ int main(void) {
     assert(fake_receive(&fake, &conn, L2CAP_CID_SMP,
         pdu, sizeof(pdu)) == 0);
     assert(routed == 1);
-    assert(l2cap_psm_register(&psm_registry, 0x0027));
-    assert(l2cap_psm_register(&psm_registry, 0x0028));
-    assert(!l2cap_psm_register(&psm_registry, 0x0100));
+    assert(l2cap_service_register(&service_registry, 0x0027));
+    assert(l2cap_service_register(&service_registry, 0x0028));
+    assert(!l2cap_service_register(&service_registry, 0x0100));
     uint16_t local_cid;
     assert(l2cap_ecfc_open(&conn, 0x0027, &local_cid));
     assert(fake_output_take(&fake));
@@ -175,10 +175,10 @@ int main(void) {
         disconnect, sizeof(disconnect)));
     assert(open_channel_count(&conn) == 1 && fake.pdu[0] ==
            L2CAP_DISCONNECTION_RESPONSE);
-    uint16_t closed_psm, closed_local, closed_remote, close_reason;
+    uint16_t closed_service_id, closed_local, closed_remote, close_reason;
     assert(l2cap_channel_closed_get(&conn, (uint8_t)inbound_slot,
-        &closed_psm, &closed_local, &closed_remote, &close_reason));
-    assert(closed_psm == 0x0027 && closed_local == inbound_local &&
+        &closed_service_id, &closed_local, &closed_remote, &close_reason));
+    assert(closed_service_id == 0x0027 && closed_local == inbound_local &&
            closed_remote == 0x0045);
     assert(l2cap_channel_closed_ack(&conn, (uint8_t)inbound_slot));
     uint8_t outgoing[100];
@@ -258,14 +258,14 @@ int main(void) {
     ops.tx_queue = &multi_fake.tx_queue;
     ops.context = &multi_fake;
     l2cap_connection multi;
-    assert(l2cap_conn_init(&multi, &ops, &psm_registry, 100, 64, 2));
+    assert(l2cap_conn_init(&multi, &ops, &service_registry, 100, 64, 2));
     fake_l2cap partial_fake = {0};
     fake_output_init(&partial_fake);
     l2cap_ops partial_ops = ops;
     partial_ops.tx_queue = &partial_fake.tx_queue;
     partial_ops.context = &partial_fake;
     l2cap_connection partial_server;
-    assert(l2cap_conn_init(&partial_server, &partial_ops, &psm_registry,
+    assert(l2cap_conn_init(&partial_server, &partial_ops, &service_registry,
                            100, 64, 2));
     uint8_t incoming_partial[] = {
         L2CAP_ECFC_CONNECTION_REQUEST, 20, 12, 0,
@@ -339,7 +339,7 @@ int main(void) {
     ops.tx_queue = &legacy_fake.tx_queue;
     ops.context = &legacy_fake;
     l2cap_connection legacy;
-    assert(l2cap_conn_init(&legacy, &ops, &psm_registry, 100, 64, 4));
+    assert(l2cap_conn_init(&legacy, &ops, &service_registry, 100, 64, 4));
     uint16_t legacy_cid;
     assert(l2cap_le_credit_open(&legacy, 0x0027, &legacy_cid));
     assert(fake_output_take(&legacy_fake));
@@ -362,7 +362,7 @@ int main(void) {
     ops.tx_queue = &zero_fake.tx_queue;
     ops.context = &zero_fake;
     l2cap_connection zero_credit;
-    assert(l2cap_conn_init(&zero_credit, &ops, &psm_registry, 100, 40, 0));
+    assert(l2cap_conn_init(&zero_credit, &ops, &service_registry, 100, 40, 0));
     assert(l2cap_le_credit_open(&zero_credit, 0x0027, &local_cid));
     assert(fake_output_take(&zero_fake));
     uint8_t colliding_open[] = {L2CAP_LE_CREDIT_CONN_REQ,
@@ -391,7 +391,7 @@ int main(void) {
     ops.tx_queue = &reject_fake.tx_queue;
     ops.context = &reject_fake;
     l2cap_connection reject_conn;
-    assert(l2cap_conn_init(&reject_conn, &ops, &psm_registry, 100, 40, 1));
+    assert(l2cap_conn_init(&reject_conn, &ops, &service_registry, 100, 40, 1));
     uint8_t unknown_signal[] = {0x55, 12, 0, 0};
     assert(fake_receive(&reject_fake, &reject_conn, L2CAP_CID_LE_SIGNALING, unknown_signal,
                                        sizeof(unknown_signal)));

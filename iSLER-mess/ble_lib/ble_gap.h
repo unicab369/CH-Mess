@@ -146,11 +146,17 @@
 #define GAP_ADV_INTERVAL_MIN_MS 100
 #define GAP_ADV_INTERVAL_MAX_MS 10240
 
+// controls reports waiting for your app to retrieve with gap_scan_poll().
+// If the queue fills, older reports are overwritten.
 #ifndef GAP_SCAN_REPORT_COUNT
-#define GAP_SCAN_REPORT_COUNT 2
+#define GAP_SCAN_REPORT_COUNT 1
 #endif
+
+// controls how many advertisers the scanner remembers for duplicate filtering.
+// If its cache fills, entries are replaced, so an advertiser whose entry was
+//  evicted may be reported again.
 #ifndef GAP_SCAN_SEEN_COUNT
-#define GAP_SCAN_SEEN_COUNT 2
+#define GAP_SCAN_SEEN_COUNT 1
 #endif
 
 // Advertising and connection constants.
@@ -922,7 +928,7 @@ typedef struct {
     GAP_RADIO_BUFFER_ATTR uint8_t tx_frame[2 + GAP_CONN_PACKET_BUFFER_MAX + 4];
 
     // One L2CAP connection and bearer buffer set shared by this GAP link.
-    // The owning GATT or L2CAP adapter supplies its PSM registry when needed.
+    // The owning GATT or L2CAP adapter supplies its service ID registry when needed.
     l2cap_connection l2cap;
     l2cap_tx_queue l2cap_tx_queue;
     uint8_t l2cap_tx[4 + L2CAP_SDU_MAX];
@@ -1808,14 +1814,14 @@ typedef struct {
 
 typedef struct {
     ble_gap_l2cap_peer peers[GAP_CONNECTION_COUNT];
-    l2cap_psm_registry psm_registry;
+    l2cap_service_registry service_registry;
     l2cap_ops upper;
     uint16_t local_max_sdu_size, local_max_pdu_payload, initial_credits;
 } ble_gap_l2cap;
 
-static inline int ble_gap_l2cap_accept_psm(void *context, uint16_t psm) {
+static inline int ble_gap_l2cap_accept_service_id(void *context, uint16_t service_id) {
     ble_gap_l2cap_peer *peer = context;
-    return !peer->upper.accept_psm || peer->upper.accept_psm(peer->upper.context, psm);
+    return !peer->upper.accept_service_id || peer->upper.accept_service_id(peer->upper.context, service_id);
 }
 
 // Application-facing
@@ -1870,9 +1876,9 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             peer->tx_queue = &conn->l2cap_tx_queue;
             peer->connection->local_max_sdu_size = manager->local_max_sdu_size;
             peer->connection->local_max_pdu_payload = manager->local_max_pdu_payload;
-            peer->connection->local_credits = manager->initial_credits;
-            peer->connection->psm_registry = &manager->psm_registry;
-            peer->connection->ops.accept_psm = ble_gap_l2cap_accept_psm;
+            peer->connection->initial_credits = manager->initial_credits;
+            peer->connection->service_registry = &manager->service_registry;
+            peer->connection->ops.accept_service_id = ble_gap_l2cap_accept_service_id;
             peer->connection->ops.context = peer;
 
             peer->initialized = 1;
