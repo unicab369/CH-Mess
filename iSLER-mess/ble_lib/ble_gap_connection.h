@@ -444,7 +444,7 @@ static void gap_send_conn_update(gap_conn_context *conn) {
 }
 
 static uint8_t gap_class_valid(const uint8_t *class) {
-    if (!class || (class[9] & 0xfc))
+    if (class[9] & 0xfc)
         return 0;
 
     for (uint8_t channel = 0; channel < 37; channel++) {
@@ -2170,10 +2170,11 @@ int gap_conn_rate_set(
 // Queue a Central data-channel map: bits 0..36 select channels, at least two
 // must be enabled, and bits 37..39 must be zero. Advertising channels are separate.
 // The live map changes only at the shared Instant; status uses connection_status.
+// channels must point to five readable bytes.
 int gap_channel_map_set(const uint8_t channels[5]) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (!channels || gap_conn_procedure_busy(conn) ||
+    if (gap_conn_procedure_busy(conn) ||
         !conn->is_central ||
         (channels[4] & 0xe0)
     ) return 0;
@@ -2230,12 +2231,13 @@ int gap_channel_reporting_set(
 
 // Application facing
 // Read the latest peer classification, or all unknown before the first report.
+// classification must point to GAP_CHANN_CLASS_BYTES writable bytes.
 int gap_peer_class_get(
     uint8_t classification[GAP_CHANN_CLASS_BYTES]
 ) {
     const gap_conn_context *conn = gap_conn_ctx_current();
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        !conn->is_central || !classification
+        !conn->is_central
     ) return 0;
 
     memcpy(classification, conn->central.peer_classification, GAP_CHANN_CLASS_BYTES);
@@ -2246,6 +2248,7 @@ int gap_peer_class_get(
 // Application facing
 // Supply local channel classifications packed as four 2-bit values per byte,
 // channel 0 in the least-significant bits. Values are 0=unknown, 1=good, 3=bad.
+// classification must point to GAP_CHANN_CLASS_BYTES readable bytes.
 // The assessment is shared by all links. Each Peripheral link reports changes
 // only after its Central enables reporting.
 int gap_channel_class_set(
@@ -2345,6 +2348,7 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
 // Application facing
 // Keep data fragments within LE 1M time limits even at faster PHYs, so queued data
 // remains valid if a PHY update returns to 1M without re-fragmentation.
+// data must point to len readable bytes; len must be nonzero.
 // Queue one LL data fragment. LLID 2 begins an L2CAP PDU; LLID 1 continues it.
 int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
@@ -2353,7 +2357,7 @@ int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
     mic_overhead = conn->security.tx_enabled ? 4 : 0;
 #endif
 
-    if (!data || !len ||
+    if (!len ||
         (llid != 1 && llid != 2) ||
         !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->link_layer.first_event) ||
@@ -2408,11 +2412,11 @@ int gap_disconnect(uint8_t reason) {
 }
 
 // Copy one received LL data fragment; leave it queued if the output is too small.
-// Application facing
+// Application facing. llid is optional; data and len must be valid pointers.
 int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (!data || !len || !conn->queue_state.rx_ready)
+    if (!conn->queue_state.rx_ready)
         return 0;
 
 #if GAP_SECURITY_SUPPORT >= 2
@@ -2539,11 +2543,11 @@ static void gap_send_security(gap_conn_context *conn) {
 // Start encryption (or refresh an encrypted link) as Central. LTK and Rand
 // use Bluetooth little-endian byte order; EDIV is the host's numeric value.
 // Pairing uses STK with zero Rand/EDIV; a bond supplies its saved LTK identifiers.
-// Application facing
+// Application facing. ltk and random must each point to the stated number of bytes.
 int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (!ltk || !random || !conn->is_central ||
+    if (!conn->is_central ||
         gap_conn_procedure_busy(conn) ||
         conn->c_features.request_pending
     ) return 0;
