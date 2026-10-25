@@ -191,7 +191,7 @@ int main(void) {
     l2cap_channel *channel = &transport.l2cap_link->channels[channel_slot];
     channel->state = L2CAP_CHANNEL_OPEN;
     channel->remote_cid = 0x0041;
-    channel->remote_mtu = 80;
+    channel->peer_max_sdu_size = 80;
     transport.l2cap_link->pending_id = 0;
     transport.l2cap_link->pending_count = 0;
     transport.l2cap_link->pending_code = 0;
@@ -223,9 +223,9 @@ int main(void) {
     second->psm = BLE_GATT_EATT_PSM;
     second->local_cid = 0x0042;
     second->remote_cid = 0x0043;
-    second->local_mtu = 100;
-    second->remote_mtu = 70;
-    second->local_mps = second->remote_mps = 100;
+    second->local_max_sdu_size = 100;
+    second->peer_max_sdu_size = 70;
+    second->local_max_pdu_payload = second->peer_max_pdu_payload = 100;
     second->state = L2CAP_CHANNEL_OPEN;
     assert(gatt_transport_sync_l2cap_channels(&transport) == 0);
     int second_bearer_slot = gatt_eatt_find(&transport.eatt,

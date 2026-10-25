@@ -1867,8 +1867,8 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             peer->upper = manager->upper;
             peer->connection = &conn->l2cap;
             peer->tx_queue = &conn->l2cap_tx_queue;
-            peer->connection->local_mtu = manager->mtu;
-            peer->connection->local_mps = manager->mps;
+            peer->connection->local_max_sdu_size = manager->mtu;
+            peer->connection->local_max_pdu_payload = manager->mps;
             peer->connection->local_credits = manager->initial_credits;
             peer->connection->psm_registry = &manager->psm_registry;
             peer->connection->ops.accept_psm = ble_gap_l2cap_accept_psm;

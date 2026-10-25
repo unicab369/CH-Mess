@@ -764,8 +764,8 @@ static inline void gatt_transport_channel_opened(
     int slot = l2cap_local_slot(transport->l2cap_link, local_cid);
     uint16_t mtu = local_mtu;
 
-    if (slot >= 0 && transport->l2cap_link->channels[slot].remote_mtu < mtu)
-        mtu = transport->l2cap_link->channels[slot].remote_mtu;
+    if (slot >= 0 && transport->l2cap_link->channels[slot].peer_max_sdu_size < mtu)
+        mtu = transport->l2cap_link->channels[slot].peer_max_sdu_size;
 
     if (!gatt_eatt_channel_opened(
             &transport->eatt, local_cid, mtu, transport->eatt.encrypted, 1
@@ -886,7 +886,7 @@ static inline int gatt_transport_sync_l2cap_channels(
         if (eatt_slot < 0 || transport->eatt.bearers[eatt_slot].state ==
                                BLE_GATT_EATT_OPENING)
             gatt_transport_channel_opened(transport, channel->psm,
-                channel->local_cid, channel->remote_cid, channel->local_mtu);
+                channel->local_cid, channel->remote_cid, channel->local_max_sdu_size);
 
         const uint8_t *sdu;
         uint16_t len;
@@ -925,7 +925,7 @@ static inline int gatt_transport_eatt_init(
     ) return 0;
 
     if (transport->l2cap_link &&
-        transport->l2cap_link->local_mps < L2CAP_ECFC_MPS_MIN)
+        transport->l2cap_link->local_max_pdu_payload < L2CAP_ECFC_MPS_MIN)
         return 0;
 
     ble_gatt_eatt_ops eatt_ops = {0};
@@ -949,7 +949,7 @@ static inline int gatt_transport_eatt_init(
     }
 
     if (transport->l2cap_link) {
-        transport->l2cap_link->local_mtu = transport->eatt.local_mtu;
+        transport->l2cap_link->local_max_sdu_size = transport->eatt.local_mtu;
         transport->l2cap_link->ops.authorize_psm =
             gatt_transport_authorize_psm;
     }
@@ -1051,7 +1051,7 @@ static inline int gatt_transport_init(
         return 0;
 
     if (l2cap && (!tx_queue->data || tx_queue->capacity < 4 ||
-        l2cap->local_mtu < 23 || l2cap->local_mps < 23))
+        l2cap->local_max_sdu_size < 23 || l2cap->local_max_pdu_payload < 23))
         return 0;
 
     if (l2cap) {
@@ -1686,14 +1686,14 @@ static inline int ble_gap_gatt_poll(
         l2cap->ops.context = transport;
 #if BLE_GATT_ENABLE_EATT
         if (transport->eatt_enabled) {
-            if (l2cap->local_mps < L2CAP_ECFC_MPS_MIN ||
+            if (l2cap->local_max_pdu_payload < L2CAP_ECFC_MPS_MIN ||
                 !l2cap_psm_register(l2cap->psm_registry,
                                     BLE_GATT_EATT_PSM)) {
                 (void)gap_disconnect(0x13);
                 failed = 1;
                 continue;
             }
-            l2cap->local_mtu = transport->eatt.local_mtu;
+            l2cap->local_max_sdu_size = transport->eatt.local_mtu;
             l2cap->ops.authorize_psm = gatt_transport_authorize_psm;
         }
 #endif

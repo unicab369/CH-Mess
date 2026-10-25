@@ -46,15 +46,21 @@ static inline uint64_t subtract_clamp0_64(uint64_t value, uint64_t amount) {
     #if L2CAP_SDU_MAX > 251u
         #error "Disable L2CAP_REASSEMBLER_USE_8BIT when L2CAP_SDU_MAX exceeds 251"
     #endif
-typedef uint8_t l2cap_reassembler_size;
+typedef uint8_t l2cap_reassembly_bytes;
 #else
-typedef uint16_t l2cap_reassembler_size;
+typedef uint16_t l2cap_reassembly_bytes;
 #endif
 
 #define L2CAP_CID_ATT 0x0004u
 #define L2CAP_CID_LE_SIGNALING 0x0005u
 #define L2CAP_CID_SMP 0x0006u
 #define L2CAP_SIGNALING_MTU 23u
+#define L2CAP_DYNAMIC_CID_MIN 0x0040u
+#define L2CAP_DYNAMIC_CID_MAX 0x007fu
+#define L2CAP_ECFC_CHANNELS_MAX 5u
+#define L2CAP_ECFC_MTU_MIN 64u
+#define L2CAP_ECFC_MPS_MIN 64u
+
 #ifndef L2CAP_SIGNAL_TIMEOUT_MS
 #define L2CAP_SIGNAL_TIMEOUT_MS 30000u
 #endif
@@ -62,31 +68,49 @@ typedef uint16_t l2cap_reassembler_size;
 #ifndef L2CAP_CHANNEL_MAX
 #define L2CAP_CHANNEL_MAX 2
 #endif
+
 #if L2CAP_CHANNEL_MAX < 1 || L2CAP_CHANNEL_MAX > 32
 #error "L2CAP_CHANNEL_MAX must be 1..32"
 #endif
+
 #ifndef L2CAP_PSM_MAX
 #define L2CAP_PSM_MAX 4
 #endif
+
+// L2CAP_SDU_MAX limits one packet being reassembled,
+// while L2CAP_CHANNEL_MTU_MAX limits a complete credit-based message. 
 #ifndef L2CAP_CHANNEL_MTU_MAX
 #define L2CAP_CHANNEL_MTU_MAX L2CAP_SDU_MAX
 #endif
+
 #ifndef L2CAP_CHANNEL_MPS_MAX
 #define L2CAP_CHANNEL_MPS_MAX 251
 #endif
+
 #ifndef L2CAP_INITIAL_CREDITS
 #define L2CAP_INITIAL_CREDITS 8
 #endif
-#define L2CAP_DYNAMIC_CID_MIN 0x0040u
-#define L2CAP_DYNAMIC_CID_MAX 0x007fu
-#define L2CAP_ECFC_CHANNELS_MAX 5u
-#define L2CAP_ECFC_MTU_MIN 64u
-#define L2CAP_ECFC_MPS_MIN 64u
+
 #if L2CAP_CHANNEL_MTU_MAX < 23 || L2CAP_CHANNEL_MTU_MAX > 65535
 #error "L2CAP_CHANNEL_MTU_MAX must be 23..65535"
 #endif
+
 #if L2CAP_CHANNEL_MPS_MAX < 23 || L2CAP_CHANNEL_MPS_MAX > 65535
 #error "L2CAP_CHANNEL_MPS_MAX must be 23..65535"
+#endif
+
+// Select the integer width used for connection and channel byte limits.
+#ifndef L2CAP_CONNECTION_USE_8BIT
+    #define L2CAP_CONNECTION_USE_8BIT 1
+#endif
+
+#if L2CAP_CONNECTION_USE_8BIT
+    #if L2CAP_CHANNEL_MTU_MAX > 255u || L2CAP_CHANNEL_MPS_MAX > 255u
+        #error "Disable L2CAP_CONNECTION_USE_8BIT when channel MTU or MPS exceeds 255"
+    #endif
+typedef uint8_t l2cap_connection_bytes;
+#else
+typedef uint16_t l2cap_connection_bytes;
 #endif
 
 // LE signaling command codes implemented by the connection manager.
@@ -134,8 +158,8 @@ typedef struct {
 typedef struct {
     uint16_t psm;
     uint16_t local_cid, remote_cid;
-    uint16_t local_mtu, remote_mtu;
-    uint16_t local_mps, remote_mps;
+    l2cap_connection_bytes local_max_sdu_size, peer_max_sdu_size;
+    l2cap_connection_bytes local_max_pdu_payload, peer_max_pdu_payload;
     uint16_t tx_credits, rx_credits;
     uint16_t rx_credit_pending;
     uint8_t state;
@@ -178,14 +202,14 @@ typedef struct l2cap_connection {
     l2cap_psm_registry *psm_registry;
     l2cap_channel_handler fixed[2];
     l2cap_channel channels[L2CAP_CHANNEL_MAX];
-    uint16_t local_mtu;                  // MTU (Maximum Transmission Unit): largest local L2CAP SDU.
-    uint16_t local_mps;                  // MPS (Maximum PDU Payload Size): max L2CAP payload per credit-based PDU.
+    l2cap_connection_bytes local_max_sdu_size;    // max total message size after chunks are combined.
+    l2cap_connection_bytes local_max_pdu_payload; // max chunk size in each credit-based packet.
     uint16_t next_cid;                   // Next dynamic channel ID to allocate.
     uint16_t local_credits;              // Incoming PDUs the peer may send before we grant more credits.
     uint8_t signaling_id;                // Last locally allocated signaling command identifier.
     uint16_t pending_psm;                // PSM (Protocol/Service Multiplexer) for the pending channel request.
-    uint16_t pending_mtu;                // MTU (Maximum Transmission Unit) associated with the pending request.
-    uint16_t pending_mps;                // MPS requested by an outstanding reconfiguration, if any.
+    l2cap_connection_bytes pending_max_sdu_size; // Maximum SDU size associated with the pending request.
+    l2cap_connection_bytes pending_max_pdu_payload; // Maximum PDU payload requested by an outstanding reconfiguration.
     uint8_t pending_count;               // Number of channels in the outstanding request (1 for a single channel).
     uint8_t pending_id;                  // Identifier of the outstanding signaling command; zero means none.
     uint8_t pending_code;                // Command code of the outstanding signaling request.
@@ -212,8 +236,13 @@ typedef struct l2cap_connection {
 } l2cap_connection;
 
 typedef struct {
-    l2cap_reassembler_size bytes_expected; // Total bytes expected, including the L2CAP header.
-    l2cap_reassembler_size bytes_received; // Bytes already received, including the L2CAP header.
+// bytes_expected tracks how many bytes are needed to finish the current packet
+// including its 4-byte L2CAP header. It resets for the next packet.
+// a message can be up to 500 bytes local_max_sdu_size and arrive in several packets.
+// Each packet has its own bytes_expected; the channel combines their payloads
+// until the complete message is receive
+    l2cap_reassembly_bytes bytes_expected; // Total bytes expected, including the L2CAP header.
+    l2cap_reassembly_bytes bytes_received; // Bytes already received, including the L2CAP header.
     uint16_t cid;                   // L2CAP channel identifier of the current SDU.
     uint8_t received_buffer[L2CAP_SDU_MAX + 4]; // SDU payload plus its L2CAP header.
 } l2cap_reassembler;
@@ -253,7 +282,7 @@ static inline int l2cap_tx_queue_pdu(
         queue->capacity < 4 ||
         queue->length ||
         len > L2CAP_SDU_MAX ||
-        len > conn->local_mtu ||
+        len > conn->local_max_sdu_size ||
         len > queue->capacity - 4u
     ) return 0;
 
@@ -287,8 +316,8 @@ static inline int l2cap_conn_init(
     memset(conn, 0, sizeof(*conn));
     conn->ops = *ops;
     conn->psm_registry = psm_registry;
-    conn->local_mtu = mtu;
-    conn->local_mps = mps;
+    conn->local_max_sdu_size = mtu;
+    conn->local_max_pdu_payload = mps;
     conn->local_credits = initial_credits;
     conn->next_cid = 0x0040;
     return 1;
@@ -592,14 +621,14 @@ static inline int l2cap_ecfc_open_many(
 
     if (conn->pending_id || !conn->local_credits ||
         !l2cap_output_configured(&conn->ops) ||
-        conn->local_mtu < L2CAP_ECFC_MTU_MIN ||
-        conn->local_mps < L2CAP_ECFC_MPS_MIN
+        conn->local_max_sdu_size < L2CAP_ECFC_MTU_MIN ||
+        conn->local_max_pdu_payload < L2CAP_ECFC_MPS_MIN
     ) return 0;
 
     uint8_t payload[8 + L2CAP_ECFC_CHANNELS_MAX * 2];
     write_u16_le(payload, psm);
-    write_u16_le(payload + 2, conn->local_mtu);
-    write_u16_le(payload + 4, conn->local_mps);
+    write_u16_le(payload + 2, conn->local_max_sdu_size);
+    write_u16_le(payload + 4, conn->local_max_pdu_payload);
     write_u16_le(payload + 6, conn->local_credits);
     int slots[L2CAP_ECFC_CHANNELS_MAX];
     uint16_t cids[L2CAP_ECFC_CHANNELS_MAX];
@@ -640,8 +669,8 @@ static inline int l2cap_ecfc_open_many(
         memset(ch, 0, sizeof(*ch));
         ch->psm = psm;
         ch->local_cid = cids[i];
-        ch->local_mtu = conn->local_mtu;
-        ch->local_mps = conn->local_mps;
+        ch->local_max_sdu_size = conn->local_max_sdu_size;
+        ch->local_max_pdu_payload = conn->local_max_pdu_payload;
         ch->rx_credits = conn->local_credits;
         ch->state = L2CAP_CHANNEL_OPENING;
         local_cids_out[i] = cids[i];
@@ -650,7 +679,7 @@ static inline int l2cap_ecfc_open_many(
 
     conn->pending_id = id;
     conn->pending_psm = psm;
-    conn->pending_mtu = conn->local_mtu;
+    conn->pending_max_sdu_size = conn->local_max_sdu_size;
     conn->pending_count = count;
     conn->pending_code = L2CAP_ECFC_CONNECTION_REQUEST;
     conn->pending_deadline_ms = conn->now_ms + L2CAP_SIGNAL_TIMEOUT_MS;
@@ -694,8 +723,8 @@ static inline int l2cap_le_credit_open(
     uint8_t payload[10];
     write_u16_le(payload, psm);
     write_u16_le(payload + 2, local_cid);
-    write_u16_le(payload + 4, conn->local_mtu);
-    write_u16_le(payload + 6, conn->local_mps);
+    write_u16_le(payload + 4, conn->local_max_sdu_size);
+    write_u16_le(payload + 6, conn->local_max_pdu_payload);
     write_u16_le(payload + 8, conn->local_credits);
     uint8_t id = l2cap_id_alloc(conn);
 
@@ -707,13 +736,13 @@ static inline int l2cap_le_credit_open(
     memset(ch, 0, sizeof(*ch));
     ch->psm = psm;
     ch->local_cid = local_cid;
-    ch->local_mtu = conn->local_mtu;
-    ch->local_mps = conn->local_mps;
+    ch->local_max_sdu_size = conn->local_max_sdu_size;
+    ch->local_max_pdu_payload = conn->local_max_pdu_payload;
     ch->rx_credits = conn->local_credits;
     ch->state = L2CAP_CHANNEL_OPENING;
     conn->pending_id = id;
     conn->pending_psm = psm;
-    conn->pending_mtu = conn->local_mtu;
+    conn->pending_max_sdu_size = conn->local_max_sdu_size;
     conn->pending_count = 1;
     conn->pending_code = L2CAP_LE_CREDIT_CONN_REQ;
     conn->pending_deadline_ms = conn->now_ms + L2CAP_SIGNAL_TIMEOUT_MS;
@@ -732,7 +761,7 @@ static inline int l2cap_ecfc_send(
 
     l2cap_channel *ch = &conn->channels[slot];
     if (ch->state != L2CAP_CHANNEL_OPEN || ch->tx_len ||
-        len > ch->remote_mtu || len > L2CAP_CHANNEL_MTU_MAX
+        len > ch->peer_max_sdu_size || len > L2CAP_CHANNEL_MTU_MAX
     ) return 0;
 
     memcpy(ch->tx_data, sdu, len);
@@ -790,8 +819,8 @@ static inline int l2cap_ecfc_reconfig(
             return 0;
 
         write_u16_le(payload + 4 + i * 2, ch->local_cid);
-        if (ch->local_mtu > max_mtu) max_mtu = ch->local_mtu;
-        if (ch->local_mps > max_mps) max_mps = ch->local_mps;
+        if (ch->local_max_sdu_size > max_mtu) max_mtu = ch->local_max_sdu_size;
+        if (ch->local_max_pdu_payload > max_mps) max_mps = ch->local_max_pdu_payload;
 
         for (uint8_t j = 0; j < i; j++)
             if (local_cids[j] == local_cids[i])
@@ -809,8 +838,8 @@ static inline int l2cap_ecfc_reconfig(
 
     conn->pending_id = id;
     conn->pending_code = L2CAP_ECFC_RECONFIGURE_REQUEST;
-    conn->pending_mtu = mtu;
-    conn->pending_mps = mps;
+    conn->pending_max_sdu_size = mtu;
+    conn->pending_max_pdu_payload = mps;
     conn->pending_deadline_ms = conn->now_ms + L2CAP_SIGNAL_TIMEOUT_MS;
     conn->pending_count = count;
 
@@ -933,7 +962,7 @@ static inline int l2cap_ecfc_pump(l2cap_connection *conn) {
         ) continue;
 
         uint8_t frame[L2CAP_CHANNEL_MPS_MAX];
-        uint16_t peer_mps = MIN(ch->remote_mps, L2CAP_CHANNEL_MPS_MAX);
+        uint16_t peer_mps = MIN(ch->peer_max_pdu_payload, L2CAP_CHANNEL_MPS_MAX);
         uint16_t used, header_len;
 
         if (!ch->tx_offset) {
@@ -1107,8 +1136,8 @@ static inline int l2cap_receive(
 
                 if (!result) {
                     write_u16_le(response, local_cid);
-                    write_u16_le(response + 2, conn->local_mtu);
-                    write_u16_le(response + 4, conn->local_mps);
+                    write_u16_le(response + 2, conn->local_max_sdu_size);
+                    write_u16_le(response + 4, conn->local_max_pdu_payload);
                     write_u16_le(response + 6, conn->local_credits);
                     write_u16_le(response + 8, 0);
                 }
@@ -1125,12 +1154,12 @@ static inline int l2cap_receive(
                     l2cap_channel *ch = &conn->channels[slot];
                     memset(ch, 0, sizeof(*ch));
                     ch->psm = psm;
-                    ch->remote_mtu = mtu;
-                    ch->remote_mps = mps;
+                    ch->peer_max_sdu_size = mtu;
+                    ch->peer_max_pdu_payload = mps;
                     ch->remote_cid = remote_cid;
                     ch->local_cid = local_cid;
-                    ch->local_mtu = conn->local_mtu;
-                    ch->local_mps = conn->local_mps;
+                    ch->local_max_sdu_size = conn->local_max_sdu_size;
+                    ch->local_max_pdu_payload = conn->local_max_pdu_payload;
                     ch->rx_credits = conn->local_credits;
                     ch->tx_credits = credits;
                     ch->state = L2CAP_CHANNEL_OPEN;
@@ -1169,8 +1198,8 @@ static inline int l2cap_receive(
 
                         l2cap_channel *ch = &conn->channels[slot];
                         ch->remote_cid = remote;
-                        ch->remote_mtu = mtu;
-                        ch->remote_mps = mps;
+                        ch->peer_max_sdu_size = mtu;
+                        ch->peer_max_pdu_payload = mps;
                         ch->tx_credits = credits;
                         ch->state = L2CAP_CHANNEL_OPEN;
                     }
@@ -1275,8 +1304,8 @@ static inline int l2cap_receive(
                             break;
                         }
 
-                    write_u16_le(response, conn->local_mtu);
-                    write_u16_le(response + 2, conn->local_mps);
+                    write_u16_le(response, conn->local_max_sdu_size);
+                    write_u16_le(response + 2, conn->local_max_pdu_payload);
                     write_u16_le(response + 4, conn->local_credits);
                     write_u16_le(response + 6, partial_result);
                     response_len = (uint16_t)(8 + count * 2);
@@ -1291,10 +1320,10 @@ static inline int l2cap_receive(
                         l2cap_channel *ch = &conn->channels[slots[i]];
                         ch->remote_cid = read_u16_le(p + 8 + i * 2);
                         ch->psm = psm;
-                        ch->remote_mtu = mtu;
-                        ch->remote_mps = mps;
-                        ch->local_mtu = conn->local_mtu;
-                        ch->local_mps = conn->local_mps;
+                        ch->peer_max_sdu_size = mtu;
+                        ch->peer_max_pdu_payload = mps;
+                        ch->local_max_sdu_size = conn->local_max_sdu_size;
+                        ch->local_max_pdu_payload = conn->local_max_pdu_payload;
                         ch->rx_credits = conn->local_credits;
                         ch->tx_credits = credits;
                         ch->state = L2CAP_CHANNEL_OPEN;
@@ -1358,8 +1387,8 @@ static inline int l2cap_receive(
                         if (read_u16_le(p + 4 + j * 2) == cid)
                             result = 3;
 
-                    max_mtu = MAX(max_mtu, ch->remote_mtu);
-                    max_mps = MAX(max_mps, ch->remote_mps);
+                    max_mtu = MAX(max_mtu, ch->peer_max_sdu_size);
+                    max_mps = MAX(max_mps, ch->peer_max_pdu_payload);
                 }
 
                 if (!result && mtu < max_mtu) result = 1;
@@ -1374,8 +1403,8 @@ static inline int l2cap_receive(
                 if (!result)
                     for (uint8_t i = 0; i < count; i++) {
                         l2cap_channel *ch = &conn->channels[slots[i]];
-                        ch->remote_mtu = mtu;
-                        ch->remote_mps = mps;
+                        ch->peer_max_sdu_size = mtu;
+                        ch->peer_max_pdu_payload = mps;
                     }
                 break;
             }
@@ -1465,8 +1494,8 @@ static inline int l2cap_receive(
                             }
 
                             ch->remote_cid = remote;
-                            ch->remote_mtu = mtu;
-                            ch->remote_mps = mps;
+                            ch->peer_max_sdu_size = mtu;
+                            ch->peer_max_pdu_payload = mps;
                             ch->tx_credits = credits;
                             ch->state = L2CAP_CHANNEL_OPEN;
                         }
@@ -1608,8 +1637,8 @@ static inline int l2cap_receive(
                         if (slot < 0) continue;
 
                         l2cap_channel *ch = &conn->channels[slot];
-                        ch->local_mtu = conn->pending_mtu;
-                        ch->local_mps = conn->pending_mps;
+                        ch->local_max_sdu_size = conn->pending_max_sdu_size;
+                        ch->local_max_pdu_payload = conn->pending_max_pdu_payload;
                     }
                 }
 
@@ -1640,7 +1669,7 @@ static inline int l2cap_receive(
         l2cap_channel *ch = &conn->channels[slot];
 
         if (ch->state != L2CAP_CHANNEL_OPEN ||
-            len > ch->local_mps || !ch->rx_credits || ch->rx_ready
+            len > ch->local_max_pdu_payload || !ch->rx_credits || ch->rx_ready
         ) {
             l2cap_channel_clear(conn, (uint8_t)slot, 1);
             return 0;
@@ -1658,7 +1687,7 @@ static inline int l2cap_receive(
 
             ch->rx_expected = read_u16_le(sdu);
             offset = 2;
-            if (!ch->rx_expected || ch->rx_expected > ch->local_mtu ||
+            if (!ch->rx_expected || ch->rx_expected > ch->local_max_sdu_size ||
                 len - offset > ch->rx_expected
             ) {
                 l2cap_channel_clear(conn, (uint8_t)slot, 1);
@@ -1713,14 +1742,14 @@ static inline int l2cap_reassembler_feed(
             return 0;
         }
 
-        rx->bytes_expected = (l2cap_reassembler_size)(payload_len + 4u);
+        rx->bytes_expected = (l2cap_reassembly_bytes)(payload_len + 4u);
     }
     else if (!rx->bytes_expected) {
         return 0;
     }
 
-    l2cap_reassembler_size remaining =
-        (l2cap_reassembler_size)(rx->bytes_expected - rx->bytes_received);
+    l2cap_reassembly_bytes remaining =
+        (l2cap_reassembly_bytes)(rx->bytes_expected - rx->bytes_received);
     if (len > remaining) {
         rx->bytes_expected = 0;
         rx->bytes_received = 0;
@@ -1728,7 +1757,7 @@ static inline int l2cap_reassembler_feed(
     }
 
     memcpy(rx->received_buffer + rx->bytes_received, fragment, len);
-    rx->bytes_received = (l2cap_reassembler_size)(rx->bytes_received + len);
+    rx->bytes_received = (l2cap_reassembly_bytes)(rx->bytes_received + len);
     if (rx->bytes_received != rx->bytes_expected)
         return 0;
 
