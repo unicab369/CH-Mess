@@ -37,6 +37,19 @@ static inline uint64_t subtract_clamp0_64(uint64_t value, uint64_t amount) {
 #error "L2CAP_SDU_MAX must leave room for the 4-byte L2CAP header"
 #endif
 
+#ifndef L2CAP_REASSEMBLER_USE_8BIT
+    #define L2CAP_REASSEMBLER_USE_8BIT 1
+#endif
+
+#if L2CAP_REASSEMBLER_USE_8BIT
+    #if L2CAP_SDU_MAX > 251u
+        #error "Disable L2CAP_REASSEMBLER_USE_8BIT when L2CAP_SDU_MAX exceeds 251"
+    #endif
+typedef uint8_t l2cap_reassembler_size;
+#else
+typedef uint16_t l2cap_reassembler_size;
+#endif
+
 #define L2CAP_CID_ATT 0x0004u
 #define L2CAP_CID_LE_SIGNALING 0x0005u
 #define L2CAP_CID_SMP 0x0006u
@@ -180,8 +193,8 @@ typedef struct l2cap_connection {
 } l2cap_connection;
 
 typedef struct {
-    uint16_t bytes_expected;        // Total bytes expected, including the L2CAP header.
-    uint16_t bytes_received;        // Bytes already received, including the L2CAP header.
+    l2cap_reassembler_size bytes_expected; // Total bytes expected, including the L2CAP header.
+    l2cap_reassembler_size bytes_received; // Bytes already received, including the L2CAP header.
     uint16_t cid;                   // L2CAP channel identifier of the current SDU.
     uint8_t received_buffer[L2CAP_SDU_MAX + 4]; // SDU payload plus its L2CAP header.
 } l2cap_reassembler;
@@ -1681,13 +1694,14 @@ static inline int l2cap_reassembler_feed(
             return 0;
         }
 
-        rx->bytes_expected = (uint16_t)(payload_len + 4u);
+        rx->bytes_expected = (l2cap_reassembler_size)(payload_len + 4u);
     }
     else if (!rx->bytes_expected) {
         return 0;
     }
 
-    uint16_t remaining = (uint16_t)(rx->bytes_expected - rx->bytes_received);
+    l2cap_reassembler_size remaining =
+        (l2cap_reassembler_size)(rx->bytes_expected - rx->bytes_received);
     if (len > remaining) {
         rx->bytes_expected = 0;
         rx->bytes_received = 0;
@@ -1695,7 +1709,7 @@ static inline int l2cap_reassembler_feed(
     }
 
     memcpy(rx->received_buffer + rx->bytes_received, fragment, len);
-    rx->bytes_received = (uint16_t)(rx->bytes_received + len);
+    rx->bytes_received = (l2cap_reassembler_size)(rx->bytes_received + len);
     if (rx->bytes_received != rx->bytes_expected)
         return 0;
 
