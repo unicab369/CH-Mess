@@ -489,8 +489,7 @@ static void gap_send_feature_request(gap_conn_context *conn) {
     conn->tx_frame[3] = GAP_LL_FEATURES;
     conn->tx_frame[4] = ((supported_phys & GAP_PHY_2M) ? 0x01 : 0) |
                         ((supported_phys & GAP_PHY_CODED) ? 0x08 : 0);
-    conn->tx_frame[7] =   GAP_LL_FEATURES_SUBRATING |
-                        GAP_LL_FEATURES_SUBRATING_HOST |
+    conn->tx_frame[7] =   GAP_LL_FEATURES_SUBRATING_MASK |
                         GAP_LL_FEATURES_CH_CLASS;
     conn->tx_frame[10] = GAP_LL_FEATURES_EXTENDED;
 }
@@ -1249,8 +1248,7 @@ static uint8_t gap_conn_control(
             conn->tx_frame[3] = GAP_LL_FEATURES & frame[3];
             conn->tx_frame[4] = ((supported_phys & GAP_PHY_2M) ? 0x01 : 0) |
                                 ((supported_phys & GAP_PHY_CODED) ? 0x08 : 0);
-            conn->tx_frame[7] = (GAP_LL_FEATURES_SUBRATING |
-                                GAP_LL_FEATURES_SUBRATING_HOST |
+            conn->tx_frame[7] = (GAP_LL_FEATURES_SUBRATING_MASK |
                                 GAP_LL_FEATURES_CH_CLASS) & frame[7];
             conn->tx_frame[10] = GAP_LL_FEATURES_EXTENDED & frame[10];
             break;
@@ -1471,9 +1469,9 @@ static uint8_t gap_conn_control(
             }
         }
 
-        if (minimum < 3 || maximum > 32000 || minimum > maximum ||
+        if (!IN_RANGE_INCLUSIVE(minimum, 3, maximum) ||
+            !IN_RANGE_INCLUSIVE(maximum, periodicity_125us, 32000) || !offsets_valid ||
             !gap_schedule_parameters_valid(factor_min, factor_max, latency, continuation, timeout) ||
-            periodicity_125us > maximum || !offsets_valid ||
             (uint32_t)timeout * 80 <= 2 * (uint32_t)maximum * factor_max * (latency + 1)
         ) {
             error = GAP_LL_ERR_INVALID_PARAMS;
@@ -1555,7 +1553,7 @@ static uint8_t gap_conn_control(
 
         if (!gap_rate_parameters_valid(interval, factor, latency, continuation, timeout) ||
             interval < gap_conn_min_interval(conn) ||
-            win_offset > interval ||
+            !IN_RANGE_INCLUSIVE(win_offset, 0, interval) ||
             (uint16_t)(instant - conn->link_layer.event_counter) >= 0x8000 ||
             instant == conn->link_layer.event_counter ||
             !(conn->c_features.peer_page1[1] & 0x01) ||
@@ -1629,9 +1627,8 @@ static uint8_t gap_conn_control(
                 error = GAP_LL_ERR_UNSUPPORTED_PARAM;
                 uint16_t factor = max_factor;
 
-                while (factor >= min_factor &&
-                    !gap_rate_parameters_valid(conn->schedule.interval_125us,
-                                    factor, max_latency, continuation, timeout)
+                while (factor >= min_factor && !gap_rate_parameters_valid(
+                    conn->schedule.interval_125us, factor, max_latency, continuation, timeout)
                 ) {
                     if (factor == min_factor) break;
                     factor--;
@@ -1677,9 +1674,8 @@ static uint8_t gap_conn_control(
         uint16_t continuation = ble_read_u16_le(frame + 9);
         uint16_t timeout = ble_read_u16_le(frame + 11);
 
-        if (gap_conn_rate_busy(conn) ||
-            !gap_rate_parameters_valid(conn->schedule.interval_125us,
-                                        factor, latency, continuation, timeout)
+        if (gap_conn_rate_busy(conn) || !gap_rate_parameters_valid(
+                conn->schedule.interval_125us, factor, latency, continuation, timeout)
         ) {
             conn->tx_frame[1] = 3;
             conn->tx_frame[2] = LL_REJECT_EXT_IND;
@@ -1752,10 +1748,10 @@ static uint8_t gap_conn_control(
             for (uint8_t i = 0; i < 4; i++)
                 values[i] = ble_read_u16_le(frame + 3 + i * 2);
 
-            if (values[0] < 27 || values[0] > 251 ||
-                values[2] < 27 || values[2] > 251 ||
-                values[1] < 328 || values[1] > 2128 ||
-                values[3] < 328 || values[3] > 2128
+            if (!IN_RANGE_INCLUSIVE(values[0], 27, 251) ||
+                !IN_RANGE_INCLUSIVE(values[1], 328, 2128) ||
+                !IN_RANGE_INCLUSIVE(values[2], 27, 251) ||
+                !IN_RANGE_INCLUSIVE(values[3], 328, 2128)
             ) {
                 conn->tx_frame[1] = 3;
                 conn->tx_frame[2] = LL_REJECT_EXT_IND;
@@ -1777,13 +1773,13 @@ static uint8_t gap_conn_control(
             // Combine sender and receiver limits for new fragments;
             // already queued fragments retain their original length.
             gap_data_length remote = conn->remote_data_length;
-            uint16_t tx_time = (uint16_t)((conn->local_tx_octets + 14) * 8);
-            uint16_t rx_time = (uint16_t)((gap_data_capacity + 14) * 8);
 
             conn->data_length.tx_octets = MIN(conn->local_tx_octets, remote.rx_octets);
-            conn->data_length.tx_time = MIN(tx_time, remote.rx_time);
+            conn->data_length.tx_time = MIN((uint16_t)((conn->local_tx_octets + 14) * 8),
+                                                        remote.rx_time);
             conn->data_length.rx_octets = MIN(gap_data_capacity, remote.tx_octets);
-            conn->data_length.rx_time = MIN(rx_time, remote.tx_time);
+            conn->data_length.rx_time = MIN((uint16_t)((gap_data_capacity + 14) * 8),
+                                                        remote.tx_time);
 
             if (frame[2] == LL_LENGTH_REQ) {
                 gap_send_data_length(conn, LL_LENGTH_RSP);
@@ -1839,13 +1835,15 @@ static uint8_t gap_conn_control(
             // An empty intersection leaves that direction unchanged.
             uint8_t tx = gap_phy_preferred(conn->phy_state.preferred.tx & peer_rx);
             uint8_t rx = gap_phy_preferred(conn->phy_state.preferred.rx & peer_tx);
+            if (tx == conn->phy_state.current.tx) tx = 0;
+            if (rx == conn->phy_state.current.rx) rx = 0;
 
             // A single identical peer preference requests symmetry: choose it in
             // both directions or leave both unchanged, as required by PHY negotiation.
             if (peer_tx == peer_rx &&
                 (peer_tx == GAP_PHY_1M ||
                 peer_tx == GAP_PHY_2M ||
-                 peer_tx == GAP_PHY_CODED) &&
+                peer_tx == GAP_PHY_CODED) &&
                 ((tx ? tx : conn->phy_state.current.tx) != peer_tx ||
                  (rx ? rx : conn->phy_state.current.rx) != peer_rx)
             ) {
@@ -1853,17 +1851,14 @@ static uint8_t gap_conn_control(
                 rx = 0;
             }
 
-            if (tx == conn->phy_state.current.tx) tx = 0;
-            if (rx == conn->phy_state.current.rx) rx = 0;
-
             // Allow six latency-adjusted event periods plus one extra event of lead.
             conn->phy_state.instant = tx || rx ? (uint16_t)(conn->link_layer.event_counter +
                                                 6 * (conn->schedule.latency + 1) + 1) : 0;
             conn->queue_state.phy_queued = 0;
             conn->procedure_state.phy_request = 0;
             conn->procedure_state.procedure_flags = (conn->procedure_state.procedure_flags &
-                                                (uint8_t)~GAP_PENDING_PHY_UPDATE) |
-                                                ((tx || rx) ? GAP_PENDING_PHY_UPDATE : 0);
+                                                    (uint8_t)~GAP_PENDING_PHY_UPDATE) |
+                                                    ((tx || rx) ? GAP_PENDING_PHY_UPDATE : 0);
 
             if (!(conn->procedure_state.procedure_flags & GAP_PENDING_PHY_UPDATE))
                 conn->phy_state.status = 0;
@@ -1962,16 +1957,16 @@ static uint8_t gap_conn_pending_procedure_busy(const gap_conn_context *conn) {
 
 static uint8_t gap_conn_procedure_busy(const gap_conn_context *conn) {
     return !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        gap_conn_security_busy(conn) ||
-        conn->link_layer.first_event ||
-        gap_conn_pending_procedure_busy(conn);
+            gap_conn_security_busy(conn) ||
+            conn->link_layer.first_event ||
+            gap_conn_pending_procedure_busy(conn);
 }
 
 static uint8_t gap_conn_timing_busy(const gap_conn_context *conn) {
     return gap_conn_procedure_busy(conn) ||
-        gap_conn_rate_busy(conn) ||
-        conn->c_subrate.queued_flags ||
-        conn->c_subrate.procedure_state != GAP_SUBRATE_IDLE;
+            gap_conn_rate_busy(conn) ||
+            conn->c_subrate.queued_flags ||
+            conn->c_subrate.procedure_state != GAP_SUBRATE_IDLE;
 }
 
 // Application facing
@@ -1982,6 +1977,7 @@ int gap_conn_update(uint16_t interval, uint16_t latency, uint16_t timeout) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint32_t interval_125us = (uint32_t)interval * 10;
     uint16_t factor = 1;
+
     if (interval_125us == conn->schedule.interval_125us)
         factor = conn->schedule.factor;
 
@@ -2009,8 +2005,10 @@ int gap_conn_request(
     uint16_t latency, uint16_t timeout
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    uint16_t factor = IN_RANGE_INCLUSIVE(conn->schedule.interval_125us,
-                    minimum * 10, maximum * 10) ? conn->schedule.factor : 1;
+    uint16_t factor = 1;
+
+    if (IN_RANGE_INCLUSIVE(conn->schedule.interval_125us, minimum * 10, maximum * 10))
+        factor = conn->schedule.factor;
 
     if (gap_conn_timing_busy(conn) ||
         !ble_timing_valid( minimum, maximum, latency, timeout) ||
@@ -2046,10 +2044,8 @@ int gap_subrate_set(
                             factor, peripheral_latency, continuation, timeout)
     ) return 0;
 
-    const uint8_t required = GAP_LL_FEATURES_SUBRATING | GAP_LL_FEATURES_SUBRATING_HOST;
-
-    if (conn->c_features.known &&
-        (conn->c_features.peer_feature_4 & required) != required
+    if (conn->c_features.known && GAP_LL_FEATURES_SUBRATING_MASK !=
+        (conn->c_features.peer_feature_4 & GAP_LL_FEATURES_SUBRATING_MASK)
     ) {
         conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
         return 0;
@@ -2081,10 +2077,8 @@ int gap_subrate_request(
                                 (max_latency + 1)
     ) return 0;
 
-    const uint8_t required = GAP_LL_FEATURES_SUBRATING | GAP_LL_FEATURES_SUBRATING_HOST;
-
-    if (conn->c_features.known &&
-        (conn->c_features.peer_feature_4 & required) != required
+    if (conn->c_features.known && GAP_LL_FEATURES_SUBRATING_MASK !=
+        (conn->c_features.peer_feature_4 & GAP_LL_FEATURES_SUBRATING_MASK)
     ) {
         conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
         return 0;

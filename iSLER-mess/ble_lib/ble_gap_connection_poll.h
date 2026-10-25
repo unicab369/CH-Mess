@@ -98,9 +98,9 @@ static void gap_conn_send_queued(void) {
                 gap_send_feature_request(conn);
             }
             else {
-                const uint8_t required = GAP_LL_FEATURES_SUBRATING |
-                                        GAP_LL_FEATURES_SUBRATING_HOST;
-                if ((conn->c_features.peer_feature_4 & required) != required) {
+                if (GAP_LL_FEATURES_SUBRATING_MASK !=
+                    (conn->c_features.peer_feature_4 & GAP_LL_FEATURES_SUBRATING_MASK)
+                ) {
                     conn->c_subrate.queued_flags = 0;
                     conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
                 }

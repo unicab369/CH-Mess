@@ -172,10 +172,13 @@
 #define GAP_PHY_CODED 4
 
 // Encryption, connection parameter requests, extended reject, Peripheral feature exchange, DLE.
-#define GAP_LL_FEATURES 0x2f
-#define GAP_LL_FEATURES_SUBRATING 0x20
-#define GAP_LL_FEATURES_SUBRATING_HOST 0x40
-#define GAP_LL_FEATURES_CH_CLASS 0x80
+enum {
+    GAP_LL_FEATURES = 0x2f,
+    GAP_LL_FEATURES_SUBRATING = 0x20,
+    GAP_LL_FEATURES_SUBRATING_HOST = 0x40,
+    GAP_LL_FEATURES_SUBRATING_MASK = GAP_LL_FEATURES_SUBRATING | GAP_LL_FEATURES_SUBRATING_HOST,
+    GAP_LL_FEATURES_CH_CLASS = 0x80
+};
 #define GAP_CHANN_CLASS_BYTES 10
 // Feature bit 63 enables LL_FEATURE_EXT_REQ/RSP, which carry the Core 6.2
 // Shorter Connection Intervals capabilities on feature page 1.
