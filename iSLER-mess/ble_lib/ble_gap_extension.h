@@ -757,8 +757,7 @@ static void gap_ext_report_queue(
 
     const gap_address *peer = &identity->peer;
 #if GAP_IDENTITY_COUNT > 0
-    if (id_slot >= 0)
-        peer = &gap_identities[id_slot].peer;
+    if (id_slot >= 0) peer = &gap_identities[id_slot].peer;
 #endif
 
     uint32_t data_hash = 2166136261u;
@@ -817,8 +816,7 @@ static void gap_ext_report_queue(
     report->rssi = rssi;
     report->data_len = data_len;
 
-    if (data_len)
-        memcpy(report->data, data, data_len);
+    if (data_len) memcpy(report->data, data, data_len);
     gap_ext_idx.report_count++;
 }
 
@@ -911,6 +909,7 @@ static void gap_sync_scan_finish(void) {
     if (!gap_sync_started_scan) return;
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
         if (gap_syncs[i].used) return;
+
     gap_sync_started_scan = 0;
     if (gap_scanner.scanning) gap_scan_stop();
 }
@@ -919,11 +918,11 @@ static void gap_sync_scan_finish(void) {
 // Stop a sync: terminate=0 cancels acquisition; terminate=1 ends an
 // established synchronization.
 int gap_sync_stop(uint8_t slot, uint8_t terminate) {
-    if (slot >= GAP_PERIODIC_SYNC_COUNT ||
-        terminate > 1 ||
-        !gap_syncs[slot].used ||
-        gap_syncs[slot].established != terminate
-    ) return 0;
+    if (slot >= GAP_PERIODIC_SYNC_COUNT) return 0;
+    // Validate before comparing against established; otherwise an invalid value could match it.
+    if (terminate > 1) return 0;
+    if (!gap_syncs[slot].used || gap_syncs[slot].established != terminate)
+        return 0;
 
     gap_sync_event_post((uint8_t)slot, terminate ? GAP_PERIODIC_SYNC_TERMINATED
                                                 : GAP_PERIODIC_SYNC_CANCELLED);
@@ -970,7 +969,7 @@ int gap_sync_pawr_respond(
 
     if (!sync->window_active)
         sync->next_ticks = sync->anchor_ticks +
-            HW_TICKS_FROM_US((uint32_t)sync->params.interval * 1250 +
+                            HW_TICKS_FROM_US((uint32_t)sync->params.interval * 1250 +
                              (uint32_t)subevent * sync->pawr.timing.subevent_interval * 1250);
     return 1;
 }
@@ -1108,10 +1107,9 @@ static int gap_sync_info_accept(
         event_counter++;
         skipped++;
 
-        uint32_t elapsed_us = fields->sync.offset_us +
-                            (uint32_t)skipped * interval_us + unit_us;
         widen_us = (uint32_t)(((uint64_t)(gap_sca_ppm[fields->sync.params.sca] + 500) *
-                                        elapsed_us + 999999) / 1000000) + 2;
+                        (fields->sync.offset_us + (uint32_t)skipped * interval_us + unit_us) +
+                        999999) / 1000000) + 2;
         widen_ticks = HW_TICKS_FROM_US(widen_us);
         window_start = subtract_clamp0_64(target, widen_ticks);
         window_end = target + HW_TICKS_FROM_US(unit_us + widen_us);
@@ -1162,7 +1160,6 @@ static uint8_t gap_sync_channel(
 
     uint16_t prn_e = prn ^ channel_id;
     uint8_t unmapped = (uint8_t)(prn_e % 37);
-
     if (params->channel_map[unmapped >> 3] & (1 << (unmapped & 7)))
         return unmapped;
 
@@ -1252,7 +1249,6 @@ static int gap_pawr_conn_req(
 #if GAP_CENTRAL_SUPPORT
     if (gap_initiator.active) return 0;
 #endif
-
     if (slot >= GAP_PERIODIC_SYNC_COUNT || !request ||
         request_len != 36 ||
         !gap_syncs[slot].pawr.connect_accept ||
@@ -1297,7 +1293,7 @@ static int gap_pawr_conn_req(
     memcpy(gap_ext_adv_frame + 10, request + 2, 6);
 
     uint8_t channel = gap_sync_channel(&sync->params,
-                            (uint16_t)(sync->last_event_counter ^ sync->pawr.subevent));
+                        (uint16_t)(sync->last_event_counter ^ sync->pawr.subevent));
     uint64_t response_start = received_ticks + HW_TICKS_FROM_US(150);
 
     GAP_HW_TX_CLEAR_DONE();
@@ -1914,8 +1910,7 @@ static void gap_ext_scan_process(void) {
             }
 
             if (gap_sync_reports.count == GAP_PERIODIC_REPORT_COUNT) {
-                gap_sync_reports.head = (gap_sync_reports.head + 1) %
-                                        GAP_PERIODIC_REPORT_COUNT;
+                gap_sync_reports.head = (gap_sync_reports.head + 1) % GAP_PERIODIC_REPORT_COUNT;
                 gap_sync_reports.count--;
             }
 
@@ -1938,11 +1933,9 @@ static void gap_ext_scan_process(void) {
             if (!fields.has_aux_ptr && !fields.sync.has_info &&
                 fields.identity.has_adi && sync->pawr.pending
             ) {
-                uint32_t airtime_us = gap_phy_airtime_us(pdu[1], packet_phy);
-                uint64_t packet_start = subtract_clamp0_64(gap_ext_scan.ticks,
-                                        HW_TICKS_FROM_US(airtime_us));
-                uint64_t response_start = packet_start + HW_TICKS_FROM_US(
-                                (uint32_t)sync->pawr.timing.resp_delay * 1250 +
+                uint64_t response_start = subtract_clamp0_64(gap_ext_scan.ticks,
+                                HW_TICKS_FROM_US(gap_phy_airtime_us(pdu[1], packet_phy))) +
+                                HW_TICKS_FROM_US((uint32_t)sync->pawr.timing.resp_delay * 1250 +
                                 (uint32_t)sync->pawr.slot * sync->pawr.timing.resp_spacing * 125);
                 uint8_t response_channel = gap_sync_channel(&sync->params,
                                 (uint16_t)(sync->last_event_counter ^ sync->pawr.subevent));
@@ -1959,8 +1952,8 @@ static void gap_ext_scan_process(void) {
                         memcpy(response + 4, sync->pawr.response_data, sync->pawr.response_data_len);
                     GAP_HW_TX_CLEAR_DONE();
                     GAP_HW_CRC_INIT(sync->params.crc_init);
-                    GAP_HW_LINK_CONFIG(sync->pawr.timing.resp_access_addr,
-                                        response_channel, response, 0, sync->phy, sync->phy);
+                    GAP_HW_LINK_CONFIG(sync->pawr.timing.resp_access_addr, response_channel,
+                                        response, 0, sync->phy, sync->phy);
 
                     if (GAP_HW_TICKS() < response_start) {
                         while (GAP_HW_TICKS() < response_start) {}
@@ -2087,8 +2080,8 @@ static int gap_past_receive(
         return 0;
 
     int64_t target_signed = (int64_t)connection_anchor_ticks + (int64_t)event_delta *
-                        (int64_t)HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125) +
-                        (int64_t)HW_TICKS_FROM_US(fields.sync.offset_us);
+                    (int64_t)HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125) +
+                    (int64_t)HW_TICKS_FROM_US(fields.sync.offset_us);
     if (target_signed <= 0) return 0;
 
     // Use unsigned ticks for the scheduling calculations after rejecting negative targets.
@@ -2299,7 +2292,6 @@ static void gap_connection_take_radio(void) {
             gap_syncs[slot].window_active
         ) gap_sync_window_missed(slot);
     }
-
     else if (gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX) {
         uint8_t slot = gap_ext_scan.aux_slot;
         gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
@@ -2383,7 +2375,8 @@ static int gap_ext_send_due(uint32_t now) {
         if (periodic_set >= 0) {
             gap_extended_adv_set *set = &gap_ext_adv[periodic_set];
             uint64_t interval = HW_TICKS_FROM_US((uint32_t)set->periodic.params.interval * 1250);
-            uint64_t missed = interval ? (ticks - set->periodic.next_ticks) / interval : 0;
+            uint64_t missed = 0;
+            if (interval) missed = (ticks - set->periodic.next_ticks) / interval;
             set->periodic.event_counter = (uint16_t)(set->periodic.event_counter + missed);
             set->periodic.next_ticks += missed * interval;
 
@@ -2391,8 +2384,10 @@ static int gap_ext_send_due(uint32_t now) {
                 uint32_t event_us = gap_periodic_tx_us(set->periodic.data_len, set->aux_phy);
 
                 if (set->pawr.enabled) {
-                    uint32_t interval_us = (uint32_t)(set->pawr.subevents > 1 ? set->pawr.subevent_int :
-                                                    set->periodic.params.interval) * 1250;
+                    uint32_t interval_us = (uint32_t)set->periodic.params.interval * 1250;
+                    if (set->pawr.subevents > 1)
+                        interval_us = (uint32_t)set->pawr.subevent_int * 1250;
+
                     event_us = MAX(event_us, (uint32_t)(set->pawr.subevents - 1) * interval_us +
                                             (uint32_t)set->pawr.resp_delay * 1250 +
                                             (uint32_t)set->pawr.resp_slots * set->pawr.resp_spacing * 125);
