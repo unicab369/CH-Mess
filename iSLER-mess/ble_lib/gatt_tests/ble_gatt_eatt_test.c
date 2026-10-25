@@ -179,7 +179,7 @@ int main(void) {
                                        &lower));
     gatt_transport_set_eatt_client_callbacks(&transport, NULL,
         eatt_client_result_with_cid, NULL, NULL, &lower);
-    assert(l2cap_service_is_registered(BLE_GATT_EATT_SERVICE_ID));
+    assert(l2cap_service_find(BLE_GATT_EATT_SERVICE_ID) >= 0);
     transport.connected = 1;
     assert(transport.l2cap_link->ops.authorize_service_id(
         transport.l2cap_link->ops.context, BLE_GATT_EATT_SERVICE_ID) == 8);

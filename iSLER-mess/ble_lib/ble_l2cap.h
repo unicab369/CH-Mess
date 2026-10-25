@@ -371,9 +371,10 @@ static inline void l2cap_channel_clear(
 ) {
     if (!conn || slot >= L2CAP_CHANNEL_MAX) return;
     l2cap_channel *chann = &conn->channels[slot];
+
     if (chann->local_cid) {
-        memset(&chann->local_max_sdu_size, 0,
-               sizeof(*chann) - offsetof(l2cap_channel, local_max_sdu_size));
+        memset(&chann->local_max_sdu_size, 0, sizeof(*chann) -
+                    offsetof(l2cap_channel, local_max_sdu_size));
         chann->close_reason = (uint16_t)reason;
         chann->closed_pending = 1;
     }
@@ -406,12 +407,18 @@ static inline uint8_t l2cap_id_alloc(l2cap_connection *conn) {
 }
 
 // Application facing
-static inline int l2cap_service_register(uint16_t service_id) {
-    if (!service_id || service_id > 0x00ffu) return 0;
-
+static inline int l2cap_service_find(uint16_t service_id) {
+    if (!service_id) return -1;
     for (uint8_t i = 0; i < l2cap_services.count; i++)
         if (l2cap_services.service_ids[i] == service_id)
-            return 1;
+            return i;
+    return -1;
+}
+
+// Application facing
+static inline int l2cap_service_register(uint16_t service_id) {
+    if (!service_id || service_id > 0x00ffu) return 0;
+    if (l2cap_service_find(service_id) >= 0) return 1;
 
     if (l2cap_services.count >= L2CAP_SERVICE_REGISTRY_MAX)
         return 0;
@@ -421,39 +428,27 @@ static inline int l2cap_service_register(uint16_t service_id) {
 
 // Application facing
 static inline int l2cap_service_unregister(uint16_t service_id) {
-    if (!service_id) return 0;
-    for (uint8_t i = 0; i < l2cap_services.count; i++) {
-        if (l2cap_services.service_ids[i] != service_id)
-            continue;
+    int index = l2cap_service_find(service_id);
+    if (index < 0) return 0;
 
-        for (uint8_t j = i + 1; j < l2cap_services.count; j++)
-            l2cap_services.service_ids[j - 1] = l2cap_services.service_ids[j];
-        l2cap_services.count--;
-        return 1;
-    }
-    return 0;
-}
-
-// Application facing
-static inline int l2cap_service_is_registered(uint16_t service_id) {
-    if (!service_id) return 0;
-    for (uint8_t i = 0; i < l2cap_services.count; i++)
-        if (l2cap_services.service_ids[i] == service_id)
-            return 1;
-    return 0;
+    // Example: [0x23, 0x25, 0x27], count 3; remove 0x25 at index 1.
+    // Decrement count to 2, then copy index 2 (0x27) into index 1.
+    // The active IDs are now [0x23, 0x27]; entries after count are ignored.
+    l2cap_services.count--;
+    l2cap_services.service_ids[index] = l2cap_services.service_ids[l2cap_services.count];
+    return 1;
 }
 
 static inline uint16_t l2cap_service_authorize(
     l2cap_connection *conn, uint16_t service_id
 ) {
-    if (!l2cap_service_is_registered(service_id))
+    if (l2cap_service_find(service_id) < 0)
         return 2;
 
     if (conn->ops.authorize_service_id) {
         uint16_t result = conn->ops.authorize_service_id(conn->ops.context, service_id);
         if (result)
-            return result == 2 || (result >= 4 && result <= 11) ?
-            result : 2;
+            return result == 2 || IN_RANGE_INCLUSIVE(result, 4, 11) ? result : 2;
     }
 
     return !conn->ops.accept_service_id ||
@@ -1235,7 +1230,7 @@ static inline int l2cap_receive(
                     int slot = l2cap_local_slot(conn, conn->pending_local_cid[0]);
 
                     if (slot < 0 || !(result == 0 || result == 2 ||
-                        (result >= 4 && result <= 11))
+                        IN_RANGE_INCLUSIVE(result, 4, 11))
                     ) return 0;
 
                     if (result) {
