@@ -148,10 +148,9 @@ static void gap_conn_end(void) {
     gap_wipe(&conn->bond, sizeof(conn->bond));
     conn->bonded = 0;
     conn->restore_started = 0;
+    conn->authenticated = 0;
+    conn->enc_key_size = 0;
 #endif
-    l2cap_conn_reset(&conn->l2cap, 0x0013);
-    conn->l2cap_tx_queue.length = conn->l2cap_tx_queue.offset = 0;
-    gap_wipe(conn->l2cap_tx, sizeof(conn->l2cap_tx));
 
 #if GAP_SECURITY_SUPPORT >= 1
     // Preserve the final status while clearing the rest of the security state.
@@ -169,18 +168,16 @@ static void gap_conn_end(void) {
     security->status = security_status;
 #endif
 
+    l2cap_conn_reset(&conn->l2cap, 0x0013);
+    conn->l2cap_tx_queue.length = conn->l2cap_tx_queue.offset = 0;
+    gap_wipe(conn->l2cap_tx, sizeof(conn->l2cap_tx));
+
     // Clear link and queued procedure state after stopping radio use.
     memset(&conn->link_state, 0, sizeof(conn->link_state));
     gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(gap_conn_slot);
     conn->is_central = 0;
     memset(&conn->procedure_state, 0, sizeof(conn->procedure_state));
     memset(&conn->c_features, 0, sizeof(conn->c_features));
-
-    // Clear per-link SMP security and bond state.
-#if GAP_SECURITY_SUPPORT >= 2
-    conn->authenticated = 0;
-    conn->enc_key_size = 0;
-#endif
 
     // Clear the queued periodic sync transfer.
 #if GAP_EXT_ADV_SUPPORT
