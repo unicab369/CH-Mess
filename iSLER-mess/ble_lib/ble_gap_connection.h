@@ -2632,17 +2632,6 @@ int gap_key_reply(const uint8_t ltk[16]) {
 
 // Application facing
 // Report achieved security only after encryption completes, never during pairing.
-#if GAP_SECURITY_SUPPORT >= 2
-int gap_authenticated(void) {
-    return gap_encrypted() && gap_conn_ctx_current()->authenticated;
-}
-
-// Application facing
-uint8_t gap_key_size(void) {
-    return gap_encrypted() ? gap_conn_ctx_current()->enc_key_size : 0;
-}
-#endif // GAP_SECURITY_SUPPORT >= 2
-
 #else
 
 int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
@@ -2701,5 +2690,16 @@ int gap_encrypted(void) {
     return 0;
 #endif
 }
+
+#if GAP_SECURITY_SUPPORT >= 2
+int gap_authenticated(void) {
+    return gap_encrypted() && gap_conn_ctx_current()->authenticated;
+}
+
+// Application facing
+uint8_t gap_key_size(void) {
+    return gap_encrypted() ? gap_conn_ctx_current()->enc_key_size : 0;
+}
+#endif // GAP_SECURITY_SUPPORT >= 2
 
 #endif // GAP_CONNECTION_H
