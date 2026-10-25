@@ -3,6 +3,8 @@
 #include <openssl/aes.h>
 #include <string.h>
 
+static uint16_t radio_data_max;
+#define GAP_HW_DATA_MAX radio_data_max
 #define GAP_EXT_ADV_SUPPORT 1
 #define GAP_HW_ADV_PHY_MASK (GAP_PHY_1M | GAP_PHY_CODED)
 #include "../ble_crypto.h"
@@ -198,7 +200,6 @@ int GAP_CCM_DECRYPT(
     return ccm_auth_decrypt(key, nonce, 13, &aad, 1, data, len, mic, 4, data) == CCM_OK;
 }
 const uint8_t *GAP_HW_RX_FRAME(void) { return rx_frame; }
-uint16_t GAP_HW_DATA_MAX(void) { return radio_data_max; }
 uint8_t GAP_HW_PHY_MASK(void) { return radio_phy_mask; }
 int8_t GAP_HW_RSSI(void) { return -40; }
 uint64_t GAP_HW_TICKS(void) {
@@ -1845,6 +1846,7 @@ static void test_pawr_timing_decode(void) {
 }
 
 static void test_periodic_sync_connection_arbitration(void) {
+    uint16_t old_data_max = radio_data_max;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     now_ms = 4000;
     fake_radio_ticks = 4000000;
@@ -1859,7 +1861,7 @@ static void test_periodic_sync_connection_arbitration(void) {
     gap_scan.applied_generation = gap_scanner.generation;
     gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(gap_conn_slot);
     conn->schedule.interval_125us = 240;
-    gap_data_capacity = 27;
+    radio_data_max = 27;
     conn->link_layer.last_rx_ms = now_ms;
     conn->link_layer.next_ticks = fake_radio_ticks + HW_TICKS_FROM_US(20000);
 
@@ -1903,6 +1905,7 @@ static void test_periodic_sync_connection_arbitration(void) {
     memset(conn, 0, sizeof(*conn));
     memset(gap_syncs, 0, sizeof(gap_syncs));
     fake_radio_ticks_enabled = 0;
+    radio_data_max = old_data_max;
 }
 
 static void test_extended_advertising_multiple_sets(void) {
@@ -2604,6 +2607,7 @@ static void start_test_central_link(void) {
 }
 
 static void test_connection_context_slots(void) {
+    uint16_t old_data_max = radio_data_max;
     gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     gap_smp_context *smp = &conn->smp;
@@ -2735,7 +2739,7 @@ static void test_connection_context_slots(void) {
         connection->schedule.timeout_10ms = 200;
         connection->link_layer.peer_sca_ppm = 500;
         connection->window_size = 1;
-        gap_data_capacity = 27;
+        radio_data_max = 27;
         connection->link_layer.unmapped_channel = 0;
         connection->link_layer.hop = 5;
         connection->link_layer.used_count = 37;
@@ -2807,6 +2811,7 @@ static void test_connection_context_slots(void) {
     smp = &conn->smp;
     gap_conn_end();
     assert(gap_conn_slot_mask == 0 && gap_conn_free_slot() == 0);
+    radio_data_max = old_data_max;
 }
 
 static void receive_test_link_packet(uint8_t acknowledged) {

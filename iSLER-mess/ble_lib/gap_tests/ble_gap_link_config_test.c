@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <string.h>
 
+static uint16_t radio_data_max;
+#define GAP_HW_DATA_MAX radio_data_max
 #define GAP_CENTRAL_SUPPORT 1
 #define GAP_PERIPHERAL_SUPPORT 1
 #define GAP_SECURITY_SUPPORT 0
@@ -33,7 +35,6 @@ void GAP_HW_LINK_CONFIG(uint32_t aa, uint8_t channel, uint8_t *frame,
     configured_frame = frame;
     configured_tx = tx;
 }
-uint16_t GAP_HW_DATA_MAX(void) { return 251; }
 uint8_t GAP_HW_PHY_MASK(void) { return GAP_PHY_1M; }
 void GAP_HW_LINK_TX(void) { tx_started++; }
 void GAP_HW_LINK_RX(void) { rx_started++; }
@@ -58,11 +59,12 @@ void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out) {
 
 int main(void) {
     gap_conn_context *conn = &gap_conn_ctx[0];
+    radio_data_max = GAP_CONN_DATA_MAX;
     memset(conn, 0, sizeof(*conn));
     gap_conn_slot = 0;
     gap_conn_generations[0] = 1;
     gap_conn_slot_mask = GAP_CONN_SLOT_BIT(0);
-    gap_data_capacity = 27;
+    radio_data_max = 27;
 
     conn->is_central = 1;
     conn->link_layer.next_ticks = 10000;

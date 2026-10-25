@@ -1253,7 +1253,7 @@ static int gap_pawr_conn_req(
         request_len != 36 ||
         !gap_syncs[slot].pawr.connect_accept ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        GAP_HW_DATA_MAX() < 27 ||
+        GAP_HW_DATA_MAX < 27 ||
         !gap_conn_request_valid(request)
     ) return 0;
 
@@ -1336,7 +1336,7 @@ static int gap_pawr_exchange(
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!set || !set->pawr_connect.pending ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        GAP_HW_DATA_MAX() < 27
+        GAP_HW_DATA_MAX < 27
     ) return 0;
 
     uint8_t *request = adv_tx.connect_request;
@@ -2319,7 +2319,8 @@ static int gap_sync_conn_overlap(uint64_t start_ticks, uint64_t end_ticks) {
     uint64_t event_ticks = conn->link_layer.next_ticks;
     uint32_t event_window_us = conn->link_layer.first_event ||
             conn->procedure_state.update_window_active ? conn->window_size * 1250 : 1000;
-    uint32_t packet_guard_us = 400 + 16 * subtract_clamp0_32(gap_data_capacity, 27);
+    uint32_t packet_guard_us = 400 + 16 * subtract_clamp0_32(
+                                MIN(GAP_HW_DATA_MAX, GAP_CONN_DATA_MAX), 27);
     uint64_t early_ticks = HW_TICKS_FROM_US(200) + widening_ticks;
     uint64_t late_ticks = widening_ticks + HW_TICKS_FROM_US(event_window_us + packet_guard_us);
     uint64_t open_ticks, close_ticks;

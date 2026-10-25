@@ -128,7 +128,6 @@ void GAP_HW_LINK_CONFIG(
                    gap_phy_mode(receive_after_tx ? tx_phy : rx_phy),
                    tx_frame, receive_after_tx && tx_phy == rx_phy);
 }
-uint16_t GAP_HW_DATA_MAX(void) { return 251; }
 uint8_t GAP_HW_PHY_MASK(void) {
 #ifdef CH571_CH573
     return GAP_PHY_1M;

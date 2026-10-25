@@ -562,8 +562,8 @@ static void gap_send_data_length(gap_conn_context *conn, uint8_t opcode) {
     conn->tx_frame[0] = 3;
     conn->tx_frame[1] = 9;
     conn->tx_frame[2] = opcode;
-    write_u16_le(conn->tx_frame + 3, gap_data_capacity);
-    write_u16_le(conn->tx_frame + 5, (gap_data_capacity + 14) * 8);
+    write_u16_le(conn->tx_frame + 3, MIN(GAP_HW_DATA_MAX, GAP_CONN_DATA_MAX));
+    write_u16_le(conn->tx_frame + 5, (MIN(GAP_HW_DATA_MAX, GAP_CONN_DATA_MAX) + 14) * 8);
     write_u16_le(conn->tx_frame + 7, conn->local_tx_octets);
     write_u16_le(conn->tx_frame + 9, (conn->local_tx_octets + 14) * 8);
 }
@@ -1771,9 +1771,10 @@ static uint8_t gap_conn_control(
             conn->data_length.tx_octets = MIN(conn->local_tx_octets, remote.rx_octets);
             conn->data_length.tx_time = MIN((uint16_t)((conn->local_tx_octets + 14) * 8),
                                                         remote.rx_time);
-            conn->data_length.rx_octets = MIN(gap_data_capacity, remote.tx_octets);
-            conn->data_length.rx_time = MIN((uint16_t)((gap_data_capacity + 14) * 8),
-                                                        remote.tx_time);
+            conn->data_length.rx_octets = MIN(MIN(GAP_HW_DATA_MAX, GAP_CONN_DATA_MAX),
+                                                remote.tx_octets);
+            conn->data_length.rx_time = MIN((uint16_t)(
+                        (MIN(GAP_HW_DATA_MAX, GAP_CONN_DATA_MAX) + 14) * 8), remote.tx_time);
 
             if (frame[2] == LL_LENGTH_REQ) {
                 gap_send_data_length(conn, LL_LENGTH_RSP);
@@ -2281,7 +2282,7 @@ int gap_channel_class_set(
 // LE 1M, allowing four MIC bytes. Buffer capacity remains a compile-time choice.
 int gap_data_length_set(uint16_t octets) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (octets < 27 || octets > gap_data_capacity)
+    if (octets < 27 || octets > MIN(GAP_HW_DATA_MAX, GAP_CONN_DATA_MAX))
         return 0;
 
     uint32_t irq_state = GAP_CRITICAL_ENTER();

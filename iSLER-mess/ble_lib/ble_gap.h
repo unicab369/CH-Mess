@@ -51,6 +51,9 @@
 #ifndef GAP_L2CAP_LL_MAX
 #define GAP_L2CAP_LL_MAX 251
 #endif
+#ifndef GAP_HW_DATA_MAX
+#define GAP_HW_DATA_MAX 251u
+#endif
 
 // Controls local private-address generation and rotation. This is independent
 // of GAP_IDENTITY_COUNT: either feature can be enabled without the other.
@@ -192,8 +195,6 @@ void GAP_HW_LINK_CONFIG(
     uint32_t access_address, uint8_t channel,
     uint8_t *tx_frame, uint8_t receive_after_tx,
     uint8_t tx_phy, uint8_t rx_phy);
-// Maximum unencrypted radio payload supported (27..251 bytes).
-uint16_t GAP_HW_DATA_MAX(void);
 // 1M PHY is mandatory; masks report supported PHYs.
 uint8_t GAP_HW_PHY_MASK(void);
 void GAP_HW_LINK_TX(void);
@@ -582,11 +583,11 @@ typedef struct {
     // Selects the local Central or Peripheral role and the matching initiator/responder address.
     uint8_t is_central;
 #if GAP_SECURITY_SUPPORT >= 1
-    // Link encryption state shared by SMP and encrypted data handling.
-    gap_security_context security;
 #if GAP_SECURITY_SUPPORT >= 2
     gap_smp_context smp;
 #endif
+    // Link encryption state shared by SMP and encrypted data handling.
+    gap_security_context security;
     // Invalidates security work captured before this connection slot was reused.
     uint32_t security_generation;
 #endif
@@ -937,7 +938,6 @@ typedef struct {
 static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];
 // Hardware payload capacity is shared by all links on this controller.
 static uint16_t gap_conn_generations[GAP_CONNECTION_COUNT];
-static uint16_t gap_data_capacity;
 static uint8_t gap_conn_slot;
 static uint8_t gap_conn_slot_mask;
 // Only one radio receive callback runs at a time. Decrypted frames are consumed
@@ -988,6 +988,7 @@ static union {
         gap_address peer;
         // When the Central starts looking for a device to connect to, this
         // records when it should give up.
+        // Attempt timeout is 1..600 s; signed-difference checks support < INT32_MAX ms (~24.8 days).
         uint32_t deadline_ms;
     } gap_initiator;
 
@@ -1692,13 +1693,10 @@ static int gap_conn_accept(
     if (!gap_conn_request_valid(frame))
         return 0;
 
-    uint16_t data_capacity = GAP_HW_DATA_MAX();
-    if (data_capacity < 27) return 0;
-    data_capacity = MIN(data_capacity, GAP_CONN_DATA_MAX);
+    if (MIN(GAP_HW_DATA_MAX, GAP_CONN_DATA_MAX) < 27) return 0;
 
     int free_slot = gap_conn_free_slot();
     if (free_slot < 0) return 0;
-    gap_data_capacity = data_capacity;
 
     // Must precede per-slot state initialization and slot-sensitive helpers.
     gap_conn_slot = free_slot;
