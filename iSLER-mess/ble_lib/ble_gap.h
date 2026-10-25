@@ -1735,10 +1735,7 @@ static int gap_conn_accept(
     memcpy(conn->responder.address, frame + 8, 6);
 #endif
 
-    if (!l2cap_conn_init(&conn->l2cap, &l2cap_ops,
-            L2CAP_CHANNEL_MTU_MAX, L2CAP_CHANNEL_MPS_MAX,
-            L2CAP_INITIAL_CREDITS)
-    ) return 0;
+    if (!l2cap_conn_init(&conn->l2cap, &l2cap_ops)) return 0;
 
 #if GAP_SECURITY_SUPPORT >= 2
     if (!smp_link_init(&gap_conn_ctx[gap_conn_slot].smp, &conn->l2cap)) {

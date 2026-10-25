@@ -5,6 +5,9 @@
 #define L2CAP_REASSEMBLER_USE_8BIT 0
 #define L2CAP_CONNECTION_USE_8BIT 0
 #define L2CAP_CHANNEL_MTU_MAX 517
+#define L2CAP_LOCAL_MAX_SDU_SIZE 100
+#define L2CAP_LOCAL_MAX_PDU_PAYLOAD 40
+#define L2CAP_INITIAL_CREDITS 2
 #include "../ble_l2cap.h"
 
 static l2cap_connection connection;
@@ -51,7 +54,7 @@ int main(void) {
     l2cap_ops ops = {0};
     ops.tx_queue = &tx_queue;
     ops.accept_service_id = accept_service_id;
-    if (!l2cap_conn_init(&connection, &ops, 100, 40, 2) ||
+    if (!l2cap_conn_init(&connection, &ops) ||
         !l2cap_service_register(0x0027)
     ) return 1;
 

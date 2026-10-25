@@ -37,10 +37,7 @@ static inline int gatt_transport_test_init(
     };
     l2cap_ops l2cap_ops = {0};
     l2cap_ops.tx_queue = &gatt_transport_test_tx_queue;
-    uint16_t mps = L2CAP_CHANNEL_MPS_MAX < BLE_GATT_TRANSPORT_MTU_MAX ?
-        L2CAP_CHANNEL_MPS_MAX : BLE_GATT_TRANSPORT_MTU_MAX;
-    if (!l2cap_conn_init(&gatt_transport_test_l2cap, &l2cap_ops,
-            BLE_GATT_TRANSPORT_MTU_MAX, mps, L2CAP_INITIAL_CREDITS))
+    if (!l2cap_conn_init(&gatt_transport_test_l2cap, &l2cap_ops))
         return 0;
     return gatt_transport_init(transport, server,
         &gatt_transport_test_l2cap, &gatt_transport_test_tx_queue);

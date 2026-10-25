@@ -629,8 +629,14 @@ static inline int gatt_transport_eatt_open_channel(
     ) return 0;
 
     int slot = gatt_eatt_free_slot(&transport->eatt);
+    l2cap_channel_config channel_config = {
+        .max_sdu_size = mtu,
+        .max_pdu_payload = L2CAP_LOCAL_MAX_PDU_PAYLOAD,
+        .initial_credits = L2CAP_INITIAL_CREDITS
+    };
 
-    if (slot < 0 || !l2cap_ecfc_open(transport->l2cap_link, service_id, &cid))
+    if (slot < 0 || !l2cap_ecfc_open_many(transport->l2cap_link, service_id,
+                                          &channel_config, &cid, 1))
         return 0;
 
     transport->eatt.bearers[slot].cid = cid;
@@ -920,11 +926,11 @@ static inline int gatt_transport_eatt_init(
     if (!transport || transport->eatt_enabled ||
         local_mtu < BLE_GATT_EATT_MIN_MTU ||
         local_mtu > BLE_GATT_EATT_MTU_MAX ||
-        local_mtu > L2CAP_CHANNEL_MTU_MAX || transport->connected
+        local_mtu > L2CAP_CHANNEL_MTU_MAX ||
+        local_mtu > L2CAP_LOCAL_MAX_SDU_SIZE || transport->connected
     ) return 0;
 
-    if (transport->l2cap_link &&
-        transport->l2cap_link->local_max_pdu_payload < L2CAP_ECFC_MPS_MIN)
+    if (L2CAP_LOCAL_MAX_PDU_PAYLOAD < L2CAP_ECFC_MPS_MIN)
         return 0;
 
     ble_gatt_eatt_ops eatt_ops = {0};
@@ -946,7 +952,6 @@ static inline int gatt_transport_eatt_init(
     }
 
     if (transport->l2cap_link) {
-        transport->l2cap_link->local_max_sdu_size = transport->eatt.local_mtu;
         transport->l2cap_link->ops.authorize_service_id =
             gatt_transport_authorize_service_id;
     }
@@ -1047,8 +1052,7 @@ static inline int gatt_transport_init(
     if (server && !gatt_seal_database(server))
         return 0;
 
-    if (l2cap && (!tx_queue->data || tx_queue->capacity < 4 ||
-        l2cap->local_max_sdu_size < 23 || l2cap->local_max_pdu_payload < 23))
+    if (l2cap && (!tx_queue->data || tx_queue->capacity < 4))
         return 0;
 
     if (l2cap) {
@@ -1670,13 +1674,12 @@ static inline int ble_gap_gatt_poll(
 #if BLE_GATT_ENABLE_EATT
         l2cap->ops.authorize_service_id = gatt_transport_authorize_service_id;
         if (transport->eatt_enabled) {
-            if (l2cap->local_max_pdu_payload < L2CAP_ECFC_MPS_MIN ||
+            if (L2CAP_LOCAL_MAX_PDU_PAYLOAD < L2CAP_ECFC_MPS_MIN ||
                 !l2cap_service_register(BLE_GATT_EATT_SERVICE_ID)) {
                 (void)gap_disconnect(0x13);
                 failed = 1;
                 continue;
             }
-            l2cap->local_max_sdu_size = transport->eatt.local_mtu;
         }
 #endif
         if (!l2cap_fixed_register(l2cap, BLE_GATT_TRANSPORT_ATT_CID,
