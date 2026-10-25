@@ -8,6 +8,17 @@
 #ifndef MIN
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
+#ifndef MAX
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#endif
+
+static inline uint32_t subtract_clamp0_32(uint32_t value, uint32_t amount) {
+    return value > amount ? value - amount : 0;
+}
+
+static inline uint64_t subtract_clamp0_64(uint64_t value, uint64_t amount) {
+    return value > amount ? value - amount : 0;
+}
 
 #ifndef IN_RANGE_INCLUSIVE
 #define IN_RANGE_INCLUSIVE(value, min, max) \
@@ -1023,22 +1034,32 @@ static inline int l2cap_receive(
                     mps = read_u16_le(p + 6);
                     credits = read_u16_le(p + 8);
 
-                    if (!psm || psm > 0x00ffu || mtu < 23 || mps < 23)
+                    if (!IN_RANGE_INCLUSIVE(psm, 1, 0x00ffu) ||
+                        !IN_RANGE_INCLUSIVE(mtu, 23, UINT16_MAX) ||
+                        !IN_RANGE_INCLUSIVE(mps, 23, UINT16_MAX)
+                    ) {
                         result = 0x000b;
+                    }
                     else if (remote_cid < L2CAP_DYNAMIC_CID_MIN ||
-                             remote_cid > L2CAP_DYNAMIC_CID_MAX) result = 9;
-                    else if (l2cap_remote_slot(conn, remote_cid) >= 0)
+                             remote_cid > L2CAP_DYNAMIC_CID_MAX
+                    ) {
+                        result = 9;
+                    }
+                    else if (l2cap_remote_slot(conn, remote_cid) >= 0) {
                         result = 10;
-                    else result = l2cap_psm_authorize(conn, psm);
+                    }
+                    else {
+                        result = l2cap_psm_authorize(conn, psm);
+                    }
                 }
 
                 int slot = -1;
                 if (!result) {
                     for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++) {
                         if (conn->channels[i].state == L2CAP_CHANNEL_CLOSED &&
-                            !conn->channels[i].closed_pending) {
-                            slot = i;
-                            break;
+                            !conn->channels[i].closed_pending
+                        ) {
+                            slot = i; break;
                         }
                     }
                 }
@@ -1302,8 +1323,8 @@ static inline int l2cap_receive(
                         if (read_u16_le(p + 4 + j * 2) == cid)
                             result = 3;
 
-                    if (ch->remote_mtu > max_mtu) max_mtu = ch->remote_mtu;
-                    if (ch->remote_mps > max_mps) max_mps = ch->remote_mps;
+                    max_mtu = MAX(max_mtu, ch->remote_mtu);
+                    max_mps = MAX(max_mps, ch->remote_mps);
                 }
 
                 if (!result && mtu < max_mtu) result = 1;
@@ -1336,7 +1357,7 @@ static inline int l2cap_receive(
                     uint16_t result = read_u16_le(p + 6);
 
                     if (result != 0 && result != 2 &&
-                        (result < 4 || result > 15)
+                        !IN_RANGE_INCLUSIVE(result, 4, 15)
                     ) return 0;
 
                     if (result == 13 || result == 14 || result == 15) {
@@ -1619,8 +1640,7 @@ static inline int l2cap_receive(
         memcpy(ch->rx_data + ch->rx_used, sdu + offset, chunk);
         ch->rx_used = (uint16_t)(ch->rx_used + chunk);
 
-        if (ch->rx_used == ch->rx_expected)
-            ch->rx_ready = 1;
+        if (ch->rx_used == ch->rx_expected) ch->rx_ready = 1;
         return 1;
     }
 
@@ -1655,16 +1675,14 @@ static inline int l2cap_reassembler_feed(
             if (len > (uint32_t)payload_len + 4u)
                 return -1;
 
-            rx->discard_remaining = (uint32_t)payload_len + 4 > len ?
-                                (uint32_t)payload_len + 4 - len : 0;
+            rx->discard_remaining = subtract_clamp0_32((uint32_t)payload_len + 4, len);
             return 0;
         }
 
         rx->expected = (uint16_t)(payload_len + 4);
     }
     else if (rx->discard_remaining) {
-        rx->discard_remaining = len >= rx->discard_remaining ? 0 :
-                                rx->discard_remaining - (uint32_t)len;
+        rx->discard_remaining = (uint32_t)subtract_clamp0_64(rx->discard_remaining, len);
         return 0;
     }
     else if (!rx->expected) {

@@ -1031,14 +1031,6 @@ static inline void gap_bytes_reverse(
         out[i] = in[len - 1 - i];
 }
 
-static inline uint32_t subtract_clamp0_32(uint32_t value, uint32_t amount) {
-    return value > amount ? value - amount : 0;
-}
-
-static inline uint64_t subtract_clamp0_64(uint64_t value, uint64_t amount) {
-    return value > amount ? value - amount : 0;
-}
-
 // Return whether scanning, advertising, a connection, or initiation is active.
 static inline int gap_is_busy(void) {
 #if GAP_LEGACY_ADV_SUPPORT

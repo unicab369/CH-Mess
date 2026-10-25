@@ -7,9 +7,6 @@
 
 #include "ble_crypto.h"
 
-#ifndef MAX
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
-#endif
 enum {
     GAP_LL_ERR_UNSUPPORTED_FEATURE = 0x11,
     GAP_LL_ERR_REMOTE_FEATURE = 0x1a,
