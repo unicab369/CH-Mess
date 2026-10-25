@@ -1810,7 +1810,7 @@ typedef struct {
     ble_gap_l2cap_peer peers[GAP_CONNECTION_COUNT];
     l2cap_psm_registry psm_registry;
     l2cap_ops upper;
-    uint16_t mtu, mps, initial_credits;
+    uint16_t local_max_sdu_size, local_max_pdu_payload, initial_credits;
 } ble_gap_l2cap;
 
 static inline int ble_gap_l2cap_accept_psm(void *context, uint16_t psm) {
@@ -1821,17 +1821,18 @@ static inline int ble_gap_l2cap_accept_psm(void *context, uint16_t psm) {
 // Application-facing
 static inline int ble_gap_l2cap_init(
     ble_gap_l2cap *manager, const l2cap_ops *upper,
-    uint16_t mtu, uint16_t mps, uint16_t initial_credits
+    uint16_t local_max_sdu_size, uint16_t local_max_pdu_payload,
+    uint16_t initial_credits
 ) {
     if (!manager ||
-        !IN_RANGE_INCLUSIVE(mtu, 23, L2CAP_CHANNEL_MTU_MAX) ||
-        !IN_RANGE_INCLUSIVE(mps, 23, L2CAP_CHANNEL_MPS_MAX)
+        !IN_RANGE_INCLUSIVE(local_max_sdu_size, 23, L2CAP_CHANNEL_MTU_MAX) ||
+        !IN_RANGE_INCLUSIVE(local_max_pdu_payload, 23, L2CAP_CHANNEL_MPS_MAX)
     ) return 0;
 
     memset(manager, 0, sizeof(*manager));
     if (upper) manager->upper = *upper;
-    manager->mtu = mtu;
-    manager->mps = mps;
+    manager->local_max_sdu_size = local_max_sdu_size;
+    manager->local_max_pdu_payload = local_max_pdu_payload;
     manager->initial_credits = initial_credits;
     return 1;
 }
@@ -1867,8 +1868,8 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             peer->upper = manager->upper;
             peer->connection = &conn->l2cap;
             peer->tx_queue = &conn->l2cap_tx_queue;
-            peer->connection->local_max_sdu_size = manager->mtu;
-            peer->connection->local_max_pdu_payload = manager->mps;
+            peer->connection->local_max_sdu_size = manager->local_max_sdu_size;
+            peer->connection->local_max_pdu_payload = manager->local_max_pdu_payload;
             peer->connection->local_credits = manager->initial_credits;
             peer->connection->psm_registry = &manager->psm_registry;
             peer->connection->ops.accept_psm = ble_gap_l2cap_accept_psm;
