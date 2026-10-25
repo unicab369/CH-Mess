@@ -9,15 +9,6 @@
 #include <string.h>
 #include "ble_l2cap.h"
 
-#ifndef IN_RANGE_INCLUSIVE
-#define IN_RANGE_INCLUSIVE(value, min, max) \
-    ((value) >= (min) && (value) <= (max))
-#endif
-#ifndef IN_RANGE_EXCLUSIVE
-#define IN_RANGE_EXCLUSIVE(value, min, max) \
-    ((value) > (min) && (value) < (max))
-#endif
-
 // Platform hooks used by the GAP controller and security procedures.
 #ifndef GAP_RADIO_BUFFER_ATTR
 #define GAP_RADIO_BUFFER_ATTR __attribute__((aligned(4)))
@@ -1968,11 +1959,11 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
                 (int32_t)(GET_MILLIS() - l2cap->remote_update_due_ms) < 0
             ) {
                 if (!conn->is_central) {
-                    if (l2cap_connection_update_reply(l2cap, 0))
+                    if (l2cap_update_reply(l2cap, 0))
                         result = 1;
                 }
                 else if (peer->update_applied) {
-                    if (l2cap_connection_update_reply(l2cap, 1)) {
+                    if (l2cap_update_reply(l2cap, 1)) {
                         peer->update_applied = 0;
                         result = 1;
                     }
@@ -1989,7 +1980,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
                     ) {
                         peer->update_applied = 1;
 
-                        if (l2cap_connection_update_reply(l2cap, 1)) {
+                        if (l2cap_update_reply(l2cap, 1)) {
                             peer->update_applied = 0;
                             result = 1;
                         }

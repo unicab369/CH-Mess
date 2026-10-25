@@ -244,7 +244,7 @@ int main(void) {
     assert(conn.remote_update_pending && conn.remote_update_min == 24 &&
            conn.remote_update_max == 40 && !conn.remote_update_latency &&
            conn.remote_update_timeout == 100 && !fake.len);
-    assert(l2cap_connection_update_reply(&conn, 1));
+    assert(l2cap_update_reply(&conn, 1));
     assert(fake_output_take(&fake));
     assert(fake.pdu[0] == L2CAP_CONN_PARAM_UPDATE_RESP &&
            read_u16_le(fake.pdu + 4) == 0);
