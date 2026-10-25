@@ -178,14 +178,17 @@ typedef struct l2cap_connection {
     l2cap_psm_registry *psm_registry;
     l2cap_channel_handler fixed[2];
     l2cap_channel channels[L2CAP_CHANNEL_MAX];
-    uint16_t local_mtu, local_mps;
-    uint16_t next_cid;
-    uint16_t local_credits;
-    uint8_t signaling_id;
-    uint16_t pending_psm, pending_mtu;
-    uint16_t pending_mps;
-    uint8_t pending_count, pending_id;
-    uint8_t pending_code;
+    uint16_t local_mtu;                  // MTU (Maximum Transmission Unit): largest local L2CAP SDU.
+    uint16_t local_mps;                  // MPS (Maximum PDU Payload Size): max L2CAP payload per credit-based PDU.
+    uint16_t next_cid;                   // Next dynamic channel ID to allocate.
+    uint16_t local_credits;              // Incoming PDUs the peer may send before we grant more credits.
+    uint8_t signaling_id;                // Last locally allocated signaling command identifier.
+    uint16_t pending_psm;                // PSM (Protocol/Service Multiplexer) for the pending channel request.
+    uint16_t pending_mtu;                // MTU (Maximum Transmission Unit) associated with the pending request.
+    uint16_t pending_mps;                // MPS requested by an outstanding reconfiguration, if any.
+    uint8_t pending_count;               // Number of channels in the outstanding request (1 for a single channel).
+    uint8_t pending_id;                  // Identifier of the outstanding signaling command; zero means none.
+    uint8_t pending_code;                // Command code of the outstanding signaling request.
 
     // Peer Peripheral's requested parameters. The Central applies the update;
     // the local Peripheral rejects the request.
