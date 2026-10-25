@@ -751,6 +751,15 @@ static inline uint16_t gatt_transport_authorize_service_id(
     return 0;
 }
 
+static inline void gatt_configure_channel_cb(
+    void *context, uint16_t service_id, l2cap_channel_config *config
+) {
+    ble_gatt_transport *transport = context;
+    if (transport && config && transport->eatt_enabled &&
+        service_id == BLE_GATT_EATT_SERVICE_ID
+    ) config->max_sdu_size = transport->eatt.local_mtu;
+}
+
 static inline void gatt_transport_channel_opened(
     ble_gatt_transport *transport, uint16_t service_id, uint16_t local_cid,
     uint16_t remote_cid, uint16_t local_mtu
@@ -948,6 +957,7 @@ static inline int gatt_transport_eatt_init(
     if (transport->l2cap_link) {
         transport->l2cap_link->ops.authorize_service_id =
             gatt_transport_authorize_service_id;
+        transport->l2cap_link->ops.configure_channel = gatt_configure_channel_cb;
     }
     transport->eatt_enabled = 1;
     return 1;
@@ -1667,6 +1677,7 @@ static inline int ble_gap_gatt_poll(
         l2cap->ops.context = transport;
 #if BLE_GATT_ENABLE_EATT
         l2cap->ops.authorize_service_id = gatt_transport_authorize_service_id;
+        l2cap->ops.configure_channel = gatt_configure_channel_cb;
         if (transport->eatt_enabled) {
             if (L2CAP_LOCAL_MAX_PDU_PAYLOAD < L2CAP_ECFC_MPS_MIN ||
                 !l2cap_service_register(BLE_GATT_EATT_SERVICE_ID)) {

@@ -87,7 +87,7 @@ typedef uint16_t l2cap_reassembly_bytes;
 #define L2CAP_CHANNEL_MPS_MAX 251
 #endif
 
-// Device-wide local settings advertised and used for every credit-based channel.
+// Device-wide defaults; configure_channel may adjust them for a service.
 #ifndef L2CAP_INITIAL_CREDITS
 #define L2CAP_INITIAL_CREDITS 8
 #endif
@@ -172,12 +172,22 @@ typedef struct {
     uint16_t length, offset;
 } l2cap_tx_queue;
 
+// Local receive settings selected when opening a channel.
+typedef struct {
+    uint16_t max_sdu_size;
+    uint16_t max_pdu_payload;
+    uint16_t initial_credits;
+} l2cap_channel_config;
+
 typedef struct {
     uint16_t service_id; // Service ID carried in the connection request's PSM/SPSM field.
     uint16_t local_cid, remote_cid;
-    l2cap_connection_bytes local_max_sdu_size, peer_max_sdu_size;
-    l2cap_connection_bytes local_max_pdu_payload, peer_max_pdu_payload;
-    uint16_t tx_credits, rx_credits;
+    l2cap_connection_bytes local_max_sdu_size;    // Active local receive limit for this channel.
+    l2cap_connection_bytes peer_max_sdu_size;     // Peer receive limit; bounds outgoing SDUs.
+    l2cap_connection_bytes local_max_pdu_payload; // Active local receive payload limit for this channel.
+    l2cap_connection_bytes peer_max_pdu_payload;  // Peer receive limit; bounds outgoing PDU payloads.
+    uint16_t tx_credits;                          // Credits granted by the peer for our outgoing packets.
+    uint16_t rx_credits;                          // Credits we granted the peer for incoming packets.
     uint16_t rx_credit_pending;
     uint8_t state;
     uint8_t disconnect_id;
@@ -197,6 +207,8 @@ typedef struct {
     // Return 0 to accept or a standardized LE Credit Based Connection result
     // code (2, 4..11) to refuse for a specific security/policy reason.
     uint16_t (*authorize_service_id)(void *context, uint16_t service_id);
+    // Adjust the device-wide defaults for a service on incoming or outgoing opens.
+    void (*configure_channel)(void *context, uint16_t service_id, l2cap_channel_config *config);
     void *context;
 } l2cap_ops;
 
@@ -230,8 +242,8 @@ typedef struct l2cap_connection {
     uint8_t pending_id;                  // Identifier of the request; zero means none.
     uint8_t pending_count;               // Number of channels in the request (1 for a single channel).
     uint8_t pending_code;                // Command code of the outstanding request.
-    l2cap_connection_bytes pending_max_sdu_size; // Maximum SDU size associated with the pending request.
-    l2cap_connection_bytes pending_max_pdu_payload; // Maximum PDU payload requested by an outstanding reconfiguration.
+    l2cap_connection_bytes pending_max_sdu_size; // Proposed local SDU limit until reconfiguration is accepted.
+    l2cap_connection_bytes pending_max_pdu_payload; // Proposed local PDU payload limit until accepted.
     uint16_t pending_local_cid[L2CAP_CHANNEL_MAX];
     uint32_t pending_deadline_ms;
 
@@ -623,15 +635,23 @@ static inline int l2cap_ecfc_open_many(
     if (!conn || !local_cids_out ||
         !service_id || service_id > 0x00ffu ||
         !count || count > L2CAP_ECFC_CHANNELS_MAX ||
-        count > L2CAP_CHANNEL_MAX
+        count > L2CAP_CHANNEL_MAX || conn->pending_id ||
+        !l2cap_output_configured(&conn->ops)
     ) return 0;
 
-    // Send the device-wide local settings to the peer and track them on the channel.
-    uint16_t max_sdu_size = L2CAP_LOCAL_MAX_SDU_SIZE;
-    uint16_t max_pdu_payload = L2CAP_LOCAL_MAX_PDU_PAYLOAD;
-    uint16_t initial_credits = L2CAP_INITIAL_CREDITS;
-    if (conn->pending_id || !l2cap_output_configured(&conn->ops) ||
-        !IN_RANGE_INCLUSIVE(max_sdu_size, 23, L2CAP_CHANNEL_MTU_MAX) ||
+    l2cap_channel_config local_config = {
+        L2CAP_LOCAL_MAX_SDU_SIZE,
+        L2CAP_LOCAL_MAX_PDU_PAYLOAD,
+        L2CAP_INITIAL_CREDITS
+    };
+    if (conn->ops.configure_channel)
+        conn->ops.configure_channel(conn->ops.context, service_id, &local_config);
+
+    // Send the selected local settings to the peer and track them on the channel.
+    uint16_t max_sdu_size = local_config.max_sdu_size;
+    uint16_t max_pdu_payload = local_config.max_pdu_payload;
+    uint16_t initial_credits = local_config.initial_credits;
+    if (!IN_RANGE_INCLUSIVE(max_sdu_size, 23, L2CAP_CHANNEL_MTU_MAX) ||
         !IN_RANGE_INCLUSIVE(max_pdu_payload, 23, L2CAP_CHANNEL_MPS_MAX) ||
         !initial_credits || max_sdu_size < L2CAP_ECFC_MTU_MIN ||
         max_pdu_payload < L2CAP_ECFC_MPS_MIN
@@ -690,7 +710,6 @@ static inline int l2cap_ecfc_open_many(
     }
 
     conn->pending_id = id;
-    conn->pending_max_sdu_size = max_sdu_size;
     conn->pending_count = count;
     conn->pending_code = L2CAP_ECFC_CONNECTION_REQUEST;
     conn->pending_deadline_ms = conn->now_ms + L2CAP_SIGNAL_TIMEOUT_MS;
@@ -707,10 +726,18 @@ static inline int l2cap_le_credit_open(
         !l2cap_output_configured(&conn->ops) || conn->pending_id
     ) return 0;
 
-    // Send the device-wide local settings to the peer and track them on the channel.
-    uint16_t max_sdu_size = L2CAP_LOCAL_MAX_SDU_SIZE;
-    uint16_t max_pdu_payload = L2CAP_LOCAL_MAX_PDU_PAYLOAD;
-    uint16_t initial_credits = L2CAP_INITIAL_CREDITS;
+    l2cap_channel_config local_config = {
+        L2CAP_LOCAL_MAX_SDU_SIZE,
+        L2CAP_LOCAL_MAX_PDU_PAYLOAD,
+        L2CAP_INITIAL_CREDITS
+    };
+    if (conn->ops.configure_channel)
+        conn->ops.configure_channel(conn->ops.context, service_id, &local_config);
+
+    // Send the selected local settings to the peer and track them on the channel.
+    uint16_t max_sdu_size = local_config.max_sdu_size;
+    uint16_t max_pdu_payload = local_config.max_pdu_payload;
+    uint16_t initial_credits = local_config.initial_credits;
     if (!IN_RANGE_INCLUSIVE(max_sdu_size, 23, L2CAP_CHANNEL_MTU_MAX) ||
         !IN_RANGE_INCLUSIVE(max_pdu_payload, 23, L2CAP_CHANNEL_MPS_MAX) ||
         !initial_credits
@@ -750,7 +777,6 @@ static inline int l2cap_le_credit_open(
     chann->rx_credits = initial_credits;
     chann->state = L2CAP_CHANNEL_OPENING;
     conn->pending_id = id;
-    conn->pending_max_sdu_size = max_sdu_size;
     conn->pending_count = 1;
     conn->pending_code = L2CAP_LE_CREDIT_CONN_REQ;
     conn->pending_deadline_ms = conn->now_ms + L2CAP_SIGNAL_TIMEOUT_MS;
@@ -1130,6 +1156,19 @@ static inline int l2cap_receive(
                     }
                 }
 
+                l2cap_channel_config local_config = {
+                    L2CAP_LOCAL_MAX_SDU_SIZE,
+                    L2CAP_LOCAL_MAX_PDU_PAYLOAD,
+                    L2CAP_INITIAL_CREDITS
+                };
+                if (!result && conn->ops.configure_channel)
+                    conn->ops.configure_channel(conn->ops.context, service_id, &local_config);
+
+                if (!result &&
+                    (!IN_RANGE_INCLUSIVE(local_config.max_sdu_size, 23, L2CAP_CHANNEL_MTU_MAX) ||
+                     !IN_RANGE_INCLUSIVE(local_config.max_pdu_payload, 23, L2CAP_CHANNEL_MPS_MAX))
+                ) result = 0x000b;
+
                 int slot = -1;
                 if (!result) {
                     for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++) {
@@ -1149,9 +1188,9 @@ static inline int l2cap_receive(
 
                 if (!result) {
                     write_u16_le(response, local_cid);
-                    write_u16_le(response + 2, L2CAP_LOCAL_MAX_SDU_SIZE);
-                    write_u16_le(response + 4, L2CAP_LOCAL_MAX_PDU_PAYLOAD);
-                    write_u16_le(response + 6, L2CAP_INITIAL_CREDITS);
+                    write_u16_le(response + 2, local_config.max_sdu_size);
+                    write_u16_le(response + 4, local_config.max_pdu_payload);
+                    write_u16_le(response + 6, local_config.initial_credits);
                     write_u16_le(response + 8, 0);
                 }
                 else {
@@ -1171,9 +1210,9 @@ static inline int l2cap_receive(
                     chann->peer_max_pdu_payload = max_pdu_payload;
                     chann->remote_cid = remote_cid;
                     chann->local_cid = local_cid;
-                    chann->local_max_sdu_size = L2CAP_LOCAL_MAX_SDU_SIZE;
-                    chann->local_max_pdu_payload = L2CAP_LOCAL_MAX_PDU_PAYLOAD;
-                    chann->rx_credits = L2CAP_INITIAL_CREDITS;
+                    chann->local_max_sdu_size = local_config.max_sdu_size;
+                    chann->local_max_pdu_payload = local_config.max_pdu_payload;
+                    chann->rx_credits = local_config.initial_credits;
                     chann->tx_credits = credits;
                     chann->state = L2CAP_CHANNEL_OPEN;
                 }
@@ -1247,12 +1286,20 @@ static inline int l2cap_receive(
                     else result = l2cap_service_authorize(conn, service_id);
                 }
 
+                l2cap_channel_config local_config = {
+                    L2CAP_LOCAL_MAX_SDU_SIZE,
+                    L2CAP_LOCAL_MAX_PDU_PAYLOAD,
+                    L2CAP_INITIAL_CREDITS
+                };
+                if (!result && conn->ops.configure_channel)
+                    conn->ops.configure_channel(conn->ops.context, service_id, &local_config);
+
                 if (!result &&
-                    (!IN_RANGE_INCLUSIVE(L2CAP_LOCAL_MAX_SDU_SIZE, L2CAP_ECFC_MTU_MIN,
+                    (!IN_RANGE_INCLUSIVE(local_config.max_sdu_size, L2CAP_ECFC_MTU_MIN,
                                                                     L2CAP_CHANNEL_MTU_MAX) ||
-                     !IN_RANGE_INCLUSIVE(L2CAP_LOCAL_MAX_PDU_PAYLOAD, L2CAP_ECFC_MPS_MIN,
+                     !IN_RANGE_INCLUSIVE(local_config.max_pdu_payload, L2CAP_ECFC_MPS_MIN,
                                                                     L2CAP_CHANNEL_MPS_MAX) ||
-                     !L2CAP_INITIAL_CREDITS)
+                     !local_config.initial_credits)
                 ) result = 0x000b;
 
                 // ECFC permits a partial result for per-channel CID/resource
@@ -1329,9 +1376,9 @@ static inline int l2cap_receive(
                             break;
                         }
 
-                    write_u16_le(response, L2CAP_LOCAL_MAX_SDU_SIZE);
-                    write_u16_le(response + 2, L2CAP_LOCAL_MAX_PDU_PAYLOAD);
-                    write_u16_le(response + 4, L2CAP_INITIAL_CREDITS);
+                    write_u16_le(response, local_config.max_sdu_size);
+                    write_u16_le(response + 2, local_config.max_pdu_payload);
+                    write_u16_le(response + 4, local_config.initial_credits);
                     write_u16_le(response + 6, partial_result);
                     response_len = (uint16_t)(8 + count * 2);
 
@@ -1344,9 +1391,9 @@ static inline int l2cap_receive(
                         chann[i]->service_id = service_id;
                         chann[i]->peer_max_sdu_size = max_sdu_size;
                         chann[i]->peer_max_pdu_payload = max_pdu_payload;
-                        chann[i]->local_max_sdu_size = L2CAP_LOCAL_MAX_SDU_SIZE;
-                        chann[i]->local_max_pdu_payload = L2CAP_LOCAL_MAX_PDU_PAYLOAD;
-                        chann[i]->rx_credits = L2CAP_INITIAL_CREDITS;
+                        chann[i]->local_max_sdu_size = local_config.max_sdu_size;
+                        chann[i]->local_max_pdu_payload = local_config.max_pdu_payload;
+                        chann[i]->rx_credits = local_config.initial_credits;
                         chann[i]->tx_credits = credits;
                         chann[i]->state = L2CAP_CHANNEL_OPEN;
                     }
