@@ -847,7 +847,7 @@ static inline int gatt_transport_channel_data(
     ble_gatt_transport *transport,
     uint16_t local_cid, const uint8_t *sdu, uint16_t len
 ) {
-    if (!transport || !transport->eatt_enabled)
+    if (!transport || !transport->eatt_enabled || !transport->l2cap_link)
         return 0;
 
     return gatt_eatt_receive(&transport->eatt, local_cid, sdu, len);
@@ -859,7 +859,7 @@ static inline int gatt_transport_sync_l2cap_channels(
     ble_gatt_transport *transport
 ) {
 #if BLE_GATT_ENABLE_EATT
-    if (!transport || !transport->eatt_enabled)
+    if (!transport || !transport->eatt_enabled || !transport->l2cap_link)
         return 0;
 
     for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++) {
@@ -883,9 +883,8 @@ static inline int gatt_transport_sync_l2cap_channels(
     }
 
     for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++) {
-        const l2cap_channel *channel =
-            l2cap_channel_at(transport->l2cap_link, i);
-        if (!channel || channel->state != L2CAP_CHANNEL_OPEN ||
+        const l2cap_channel *channel = &transport->l2cap_link->channels[i];
+        if (channel->state != L2CAP_CHANNEL_OPEN ||
             channel->service_id != BLE_GATT_EATT_SERVICE_ID)
             continue;
 

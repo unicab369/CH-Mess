@@ -371,32 +371,15 @@ static inline void l2cap_channel_clear(
 ) {
     if (!conn || slot >= L2CAP_CHANNEL_MAX) return;
     l2cap_channel *chann = &conn->channels[slot];
-    uint16_t service_id = chann->service_id;
-    uint16_t local_cid = chann->local_cid;
-    uint16_t remote_cid = chann->remote_cid;
-    memset(chann, 0, sizeof(*chann));
-
-    if (local_cid) {
-        chann->service_id = service_id;
-        chann->local_cid = local_cid;
-        chann->remote_cid = remote_cid;
+    if (chann->local_cid) {
+        memset(&chann->local_max_sdu_size, 0,
+               sizeof(*chann) - offsetof(l2cap_channel, local_max_sdu_size));
         chann->close_reason = (uint16_t)reason;
         chann->closed_pending = 1;
     }
-}
-
-// Application facing
-static inline int l2cap_service_register(uint16_t service_id) {
-    if (!service_id || service_id > 0x00ffu) return 0;
-
-    for (uint8_t i = 0; i < l2cap_services.count; i++)
-        if (l2cap_services.service_ids[i] == service_id)
-            return 1;
-
-    if (l2cap_services.count >= L2CAP_SERVICE_REGISTRY_MAX)
-        return 0;
-    l2cap_services.service_ids[l2cap_services.count++] = service_id;
-    return 1;
+    else {
+        memset(chann, 0, sizeof(*chann));
+    }
 }
 
 // Allocate identifiers without colliding with the one response-bearing local
@@ -420,6 +403,20 @@ static inline uint8_t l2cap_id_alloc(l2cap_connection *conn) {
             return id;
     }
     return 0;
+}
+
+// Application facing
+static inline int l2cap_service_register(uint16_t service_id) {
+    if (!service_id || service_id > 0x00ffu) return 0;
+
+    for (uint8_t i = 0; i < l2cap_services.count; i++)
+        if (l2cap_services.service_ids[i] == service_id)
+            return 1;
+
+    if (l2cap_services.count >= L2CAP_SERVICE_REGISTRY_MAX)
+        return 0;
+    l2cap_services.service_ids[l2cap_services.count++] = service_id;
+    return 1;
 }
 
 // Application facing
@@ -541,15 +538,6 @@ static inline int l2cap_credit_flush(l2cap_connection *conn, l2cap_channel *chan
     chann->rx_credits = (uint16_t)(chann->rx_credits + chann->rx_credit_pending);
     chann->rx_credit_pending = 0;
     return 1;
-}
-
-// Application facing
-// Inspect OPENING/OPEN/CLOSING state by slot. Closed channels are reported via
-// l2cap_channel_closed_get() and their slot is released by closed_ack().
-static inline const l2cap_channel *l2cap_channel_at(
-    const l2cap_connection *conn, uint8_t slot
-) {
-    return conn && slot < L2CAP_CHANNEL_MAX ? &conn->channels[slot] : NULL;
 }
 
 // Application facing
