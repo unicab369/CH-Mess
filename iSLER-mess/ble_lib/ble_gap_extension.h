@@ -407,7 +407,8 @@ int gap_pawr_slots_set(uint8_t set_id, uint8_t count) {
 
 // Application facing
 // Queue one Central connection attempt to a synchronized PAwR device. The
-// request replaces the selected subevent in the next periodic event.
+// request replaces the selected subevent in the next periodic event. peer must
+// point to a valid peer address.
 #if GAP_CENTRAL_SUPPORT
 int gap_pawr_connect(
     uint8_t set_id, uint8_t subevent, const gap_address *peer
@@ -415,7 +416,7 @@ int gap_pawr_connect(
     if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
     gap_extended_adv_set *set = &gap_ext_adv[set_id];
 
-    if (!peer || peer->type > 1 ||
+    if (peer->type > 1 ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (gap_initiator.active || gap_scanner.scanning) ||
         !set->periodic.enabled || !set->pawr.enabled ||
@@ -821,9 +822,10 @@ static void gap_ext_report_queue(
 }
 
 // Application facing
-// Return one complete reassembled extended advertising report.
+// Return one complete reassembled extended advertising report. report must be
+// a valid writable pointer.
 int gap_ext_scan_poll(gap_ext_report *report) {
-    if (!report || !gap_ext_idx.report_count) return 0;
+    if (!gap_ext_idx.report_count) return 0;
     *report = gap_ext_adv_reports[gap_ext_idx.report_head];
     gap_ext_idx.report_head = (gap_ext_idx.report_head + 1) % GAP_EXT_ADV_REPORT_COUNT;
     gap_ext_idx.report_count--;
@@ -855,13 +857,14 @@ static void gap_sync_event_post(uint8_t slot, uint8_t type) {
 
 // Application facing
 // Request synchronization to one advertiser and SID. Scanning is started
-// automatically when needed; the returned slot identifies later events.
+// automatically when needed; the returned slot identifies later events. peer
+// must point to a valid peer address.
 int gap_sync_start(const gap_address *peer, uint8_t sid, uint32_t timeout_ms) {
 #if GAP_CENTRAL_SUPPORT
     if (gap_initiator.active) return -1;
 #endif
 
-    if (!peer || peer->type > 1 || sid > 15 ||
+    if (peer->type > 1 || sid > 15 ||
         !IN_RANGE_INCLUSIVE(timeout_ms, 100, 163840) ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))
     ) return -1;
@@ -1008,8 +1011,9 @@ int gap_sync_pawr_accept(uint8_t slot, uint8_t enabled) {
 }
 
 // Application facing
+// event must be a valid writable pointer.
 int gap_sync_event_poll(gap_periodic_sync_event *event) {
-    if (!event || !gap_sync_events.count) return 0;
+    if (!gap_sync_events.count) return 0;
     *event = gap_sync_events.items[gap_sync_events.head];
     gap_sync_events.head = (gap_sync_events.head + 1) % GAP_PERIODIC_SYNC_EVENT_COUNT;
     gap_sync_events.count--;
@@ -1017,8 +1021,9 @@ int gap_sync_event_poll(gap_periodic_sync_event *event) {
 }
 
 // Application facing
+// report must be a valid writable pointer.
 int gap_report_poll(gap_periodic_report *report) {
-    if (!report || !gap_sync_reports.count) return 0;
+    if (!gap_sync_reports.count) return 0;
     *report = gap_sync_reports.items[gap_sync_reports.head];
     gap_sync_reports.head = (gap_sync_reports.head + 1) % GAP_PERIODIC_REPORT_COUNT;
     gap_sync_reports.count--;
@@ -1026,8 +1031,9 @@ int gap_report_poll(gap_periodic_report *report) {
 }
 
 // Application facing
+// report must be a valid writable pointer.
 int gap_pawr_report_poll(gap_pawr_report *report) {
-    if (!report || !gap_pawr_reports.count) return 0;
+    if (!gap_pawr_reports.count) return 0;
     *report = gap_pawr_reports.items[gap_pawr_reports.head];
     gap_pawr_reports.head = (gap_pawr_reports.head + 1) % GAP_PAWR_RESPONSE_REPORT_COUNT;
     gap_pawr_reports.count--;
