@@ -1851,23 +1851,22 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
         }
 
         // Completed encryption returns above; handle failure or start it here.
-        if (conn->smp.encryption_started && !conn->security.phase &&
-            conn->security.status
-        ) {
-            gap_smp_finish(conn, SMP_FAIL_UNSPECIFIED);
-            return;
-        }
-
-        if (conn->is_central && !conn->smp.encryption_started &&
-            !conn->security.phase
-        ) {
-            if (!gap_encrypt(conn->smp.key.stk, (const uint8_t[8]){0}, 0)) {
-                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
+        if (conn->smp.encryption_started) {
+            if (!conn->security.phase && conn->security.status) {
+                gap_smp_finish(conn, SMP_FAIL_UNSPECIFIED);
                 return;
             }
-            conn->smp.encryption_started = 1;
         }
-        else if (!conn->is_central && gap_key_request(NULL, NULL)) {
+        else if (conn->is_central) {
+            if (!conn->security.phase) {
+                if (!gap_encrypt(conn->smp.key.stk, (const uint8_t[8]){0}, 0)) {
+                    gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
+                    return;
+                }
+                conn->smp.encryption_started = 1;
+            }
+        }
+        else if (gap_key_request(NULL, NULL)) {
             uint8_t zero = conn->security.ediv != 0;
             // Check every byte so timing does not reveal where nonzero key data appears.
             for (unsigned i = 0; i < 8; i++)
@@ -2072,6 +2071,7 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
 
                 if (step == 30 && ENCRYPTION_INFO) {
                     memcpy(conn->bond.peripheral.ltk, pdu + 1, 16);
+
                     for (unsigned i = pairing->key_size; i < 16; i++)
                         conn->bond.peripheral.ltk[i] = 0;
                     conn->bond.has_peripheral_ltk = 1;
@@ -2084,8 +2084,8 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
                     conn->bond.peripheral.ediv[1] = pdu[2];
                     memcpy(conn->bond.peripheral.rand, pdu + 3, 8);
                     pairing->bond_rx_step = 32;
-                    if (identity | signing) return;
 
+                    if (identity | signing) return;
                     smp_bond_rx_complete(conn);
                     return;
                 }
@@ -2185,6 +2185,7 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
         }
 
         smp_features peer = { pdu[1], pdu[2], pdu[3], pdu[4], pdu[5], pdu[6] };
+
         if (!smp_features_valid(&peer) ||
             (peer.init_key_dist & ~GAP_KEY_DIST_MASK) ||
             (peer.resp_key_dist & ~GAP_KEY_DIST_MASK)
@@ -2212,16 +2213,15 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
             }
         }
         else {
-            local = (smp_features){
-                .io_capability = gap_pair_cfg.io,
-                .oob_data_flag = conn->smp.local_oob.oob.valid,
-                .max_key_size = 16,
-                .init_key_dist = GAP_KEY_DIST_MASK,
-                .resp_key_dist = GAP_KEY_DIST_MASK,
-                .auth_req = (gap_pair_cfg.bonding ? 1 : 0) |
-                            (gap_pair_cfg.authenticated ? 4 : 0) |
-                            (gap_pair_cfg.secure_connections ? 8 : 0)
-            };
+            local = (smp_features){ .io_capability = gap_pair_cfg.io,
+                                    .oob_data_flag = conn->smp.local_oob.oob.valid,
+                                    .max_key_size = 16,
+                                    .init_key_dist = GAP_KEY_DIST_MASK,
+                                    .resp_key_dist = GAP_KEY_DIST_MASK,
+                                    .auth_req = (gap_pair_cfg.bonding ? 1 : 0) |
+                                                (gap_pair_cfg.authenticated ? 4 : 0) |
+                                                (gap_pair_cfg.secure_connections ? 8 : 0)
+                                };
         }
 
         uint8_t secure = (local.auth_req & SMP_AUTH_SECURE_CONNECTIONS) &&
@@ -2337,7 +2337,7 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
 
                     if (gap_pair_cfg.io == GAP_IO_KEYBOARD_ONLY ||
                         (gap_pair_cfg.io == GAP_IO_KEYBOARD_DISPLAY && (pdu[1] < GAP_IO_KEYBOARD_ONLY ||
-                                                (pdu[1] == GAP_IO_KEYBOARD_DISPLAY && !conn->is_central)))
+                                            (pdu[1] == GAP_IO_KEYBOARD_DISPLAY && !conn->is_central)))
                     ) {
                         model = SMP_MODEL_PASSKEY_INPUT;
                     }
@@ -2362,8 +2362,7 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
             return;
         }
 
-        if (entropy_ready)
-            memcpy(conn->smp.random, pairing_random, 16);
+        if (entropy_ready) memcpy(conn->smp.random, pairing_random, 16);
         gap_wipe(pairing_random, sizeof(pairing_random));
 
         if (!entropy_ready) {
@@ -2420,10 +2419,7 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
                     return;
                 }
 
-                value = (uint32_t)bytes[0] |
-                        (uint32_t)bytes[1] << 8 |
-                        (uint32_t)bytes[2] << 16 |
-                        (uint32_t)bytes[3] << 24;
+                value = ble_read_u32_le(bytes);
             } while (value >= UINT32_C(4294000000));
 
             value %= 1000000;
@@ -2433,7 +2429,6 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
         }
 
         conn->smp.status = GAP_CONNECTION_PENDING;
-
         uint8_t responder_keys = 0;
         pairing->response[5] = 0;
         pairing->response[6] = 0;
