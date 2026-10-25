@@ -1027,25 +1027,6 @@ static union {
 #endif // GAP_CENTRAL_SUPPORT
 
 
-// Return whether scanning, advertising, a connection, or initiation is active.
-static inline int gap_is_busy(void) {
-#if GAP_LEGACY_ADV_SUPPORT
-    if (gap_adv.enabled) return 1;
-#endif
-
-#if GAP_CENTRAL_SUPPORT
-    if (gap_initiator.active) return 1;
-#endif
-    return GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
-           (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot));
-}
-
-// Application-facing
-// Return the read-only context for the currently selected connection slot.
-const gap_conn_context *gap_conn_ctx_current(void) {
-    return &gap_conn_ctx[gap_conn_slot];
-}
-
 // Volatile stores keep the compiler from removing the wipe as dead code.
 static void gap_wipe(volatile void *data, size_t len) {
     volatile uint8_t *bytes = data;
@@ -1067,11 +1048,23 @@ static inline uint64_t subtract_clamp0_64(uint64_t value, uint64_t amount) {
     return value > amount ? value - amount : 0;
 }
 
-static inline void ble_write_u32_le(uint8_t *dst, uint32_t value) {
-    dst[0] = (uint8_t)value;
-    dst[1] = (uint8_t)(value >> 8);
-    dst[2] = (uint8_t)(value >> 16);
-    dst[3] = (uint8_t)(value >> 24);
+// Return whether scanning, advertising, a connection, or initiation is active.
+static inline int gap_is_busy(void) {
+#if GAP_LEGACY_ADV_SUPPORT
+    if (gap_adv.enabled) return 1;
+#endif
+
+#if GAP_CENTRAL_SUPPORT
+    if (gap_initiator.active) return 1;
+#endif
+    return GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
+           (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot));
+}
+
+// Application-facing
+// Return the read-only context for the currently selected connection slot.
+const gap_conn_context *gap_conn_ctx_current(void) {
+    return &gap_conn_ctx[gap_conn_slot];
 }
 
 // Return conservative on-air time for a Link Layer PDU payload length.
@@ -1163,15 +1156,15 @@ static int gap_access_address_valid(uint32_t address) {
 }
 
 static int gap_conn_request_valid(const uint8_t frame[36]) {
-    uint16_t interval = ble_read_u16_le(frame + 24);
-    uint16_t latency = ble_read_u16_le(frame + 26);
-    uint16_t timeout = ble_read_u16_le(frame + 28);
+    uint16_t interval = read_u16_le(frame + 24);
+    uint16_t latency = read_u16_le(frame + 26);
+    uint16_t timeout = read_u16_le(frame + 28);
     uint8_t win_size = frame[21];
     uint8_t hop = frame[35] & 0x1f;
 
     if ((frame[0] & 0x0f) != 0x05 || frame[1] != 34 ||
         !ble_timing_valid(interval, interval, latency, timeout) ||
-        ble_read_u16_le(frame + 22) > interval ||
+        read_u16_le(frame + 22) > interval ||
         !IN_RANGE_INCLUSIVE(win_size, 1, 8) || win_size >= interval ||
         (uint32_t)timeout * 8 <= 2 * (uint32_t)(latency + 1) * interval ||
         (frame[34] & 0xe0) || hop < 5 || hop > 16
@@ -1183,7 +1176,7 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
             break;
     }
 
-    return count >= 2 && gap_access_address_valid(ble_read_u32_le(frame + 14));
+    return count >= 2 && gap_access_address_valid(read_u32_le(frame + 14));
 }
 
 // Application-facing
@@ -1573,7 +1566,7 @@ static int gap_privacy_timeout_pick(
         if (!GAP_RANDOM_SECURE_BYTES(bytes, sizeof(bytes)))
             return 0;
 
-        uint32_t value = (uint32_t)bytes[0] | (uint32_t)bytes[1] << 8;
+        uint32_t value = read_u16_le(bytes);
         if (value < limit) {
             *timeout_15s = (uint8_t)(min_15s + value % range);
             return 1;
@@ -1771,7 +1764,7 @@ static int gap_conn_accept(
                                             .rx_time = 328, .tx_time = 328 };
     conn->remote_data_length = conn->data_length;
 
-    conn->link_layer.access_address = ble_read_u32_le(frame + 14);
+    conn->link_layer.access_address = read_u32_le(frame + 14);
     conn->link_layer.crc_init = (uint32_t)frame[18] |
                             (uint32_t)frame[19] << 8 |
                             (uint32_t)frame[20] << 16;
@@ -1779,7 +1772,7 @@ static int gap_conn_accept(
     static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
     conn->link_layer.peer_sca_ppm = sca_ppm[frame[35] >> 5];
     conn->link_layer.next_ticks = received_ticks + delay_ticks +
-                                unit_ticks * ble_read_u16_le(frame + 22);
+                                unit_ticks * read_u16_le(frame + 22);
     conn->link_layer.used_count = count;
     conn->link_layer.hop = frame[35] & 0x1f;
     conn->link_layer.last_rx_ms = GET_MILLIS();
@@ -1790,9 +1783,9 @@ static int gap_conn_accept(
     conn->load_pending = 1;
 
     conn->schedule.factor = 1;
-    conn->schedule.interval_125us = ble_read_u16_le(frame + 24) * 10;
-    conn->schedule.latency = ble_read_u16_le(frame + 26);
-    conn->schedule.timeout_10ms = ble_read_u16_le(frame + 28);
+    conn->schedule.interval_125us = read_u16_le(frame + 24) * 10;
+    conn->schedule.latency = read_u16_le(frame + 26);
+    conn->schedule.timeout_10ms = read_u16_le(frame + 28);
     conn->channel_report.min_spacing_200ms = 5;
     conn->channel_report.max_delay_200ms = 5;
     conn->phy_state.current.tx = GAP_PHY_1M;

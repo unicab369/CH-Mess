@@ -34,7 +34,7 @@ static void gap_conn_send_queued(void) {
             conn->tx_frame[1] = 8;
             conn->tx_frame[2] = LL_CHANNEL_MAP_IND;
             memcpy(conn->tx_frame + 3, conn->next_channel_map, 5);
-            ble_write_u16_le(conn->tx_frame + 8, conn->map_instant);
+            write_u16_le(conn->tx_frame + 8, conn->map_instant);
             return;
         }
     }
@@ -59,10 +59,10 @@ static void gap_conn_send_queued(void) {
             conn->tx_frame[1] = 24;
             conn->tx_frame[2] = LL_CONNECTION_PARAM_REQ;
 
-            ble_write_u16_le(conn->tx_frame + 3, conn->params_request.min_intvl_1p25ms);
-            ble_write_u16_le(conn->tx_frame + 5, conn->params_request.max_intvl_1p25ms);
-            ble_write_u16_le(conn->tx_frame + 7, conn->params_request.latency);
-            ble_write_u16_le(conn->tx_frame + 9, conn->params_request.timeout_10ms);
+            write_u16_le(conn->tx_frame + 3, conn->params_request.min_intvl_1p25ms);
+            write_u16_le(conn->tx_frame + 5, conn->params_request.max_intvl_1p25ms);
+            write_u16_le(conn->tx_frame + 7, conn->params_request.latency);
+            write_u16_le(conn->tx_frame + 9, conn->params_request.timeout_10ms);
 
             conn->tx_frame[11] = 0; // No preferred periodicity.
             conn->tx_frame[12] = 0;
@@ -122,11 +122,11 @@ static void gap_conn_send_queued(void) {
                     conn->tx_frame[0] = 0x03;
                     conn->tx_frame[1] = 11;
                     conn->tx_frame[2] = LL_SUBRATE_REQ;
-                    ble_write_u16_le(conn->tx_frame + 3, conn->peripheral.subrate_request.factor_min);
-                    ble_write_u16_le(conn->tx_frame + 5, conn->peripheral.subrate_request.factor_max);
-                    ble_write_u16_le(conn->tx_frame + 7, conn->peripheral.subrate_request.latency);
-                    ble_write_u16_le(conn->tx_frame + 9, conn->peripheral.subrate_request.continuation);
-                    ble_write_u16_le(conn->tx_frame + 11, conn->peripheral.subrate_request.timeout_10ms);
+                    write_u16_le(conn->tx_frame + 3, conn->peripheral.subrate_request.factor_min);
+                    write_u16_le(conn->tx_frame + 5, conn->peripheral.subrate_request.factor_max);
+                    write_u16_le(conn->tx_frame + 7, conn->peripheral.subrate_request.latency);
+                    write_u16_le(conn->tx_frame + 9, conn->peripheral.subrate_request.continuation);
+                    write_u16_le(conn->tx_frame + 11, conn->peripheral.subrate_request.timeout_10ms);
                 }
 #endif // GAP_PERIPHERAL_SUPPORT
             }
@@ -173,18 +173,18 @@ static void gap_conn_send_queued(void) {
                 conn->tx_frame[1] = 27;
                 conn->tx_frame[2] = LL_CONNECTION_RATE_REQ;
 
-                ble_write_u16_le(conn->tx_frame + 3, conn->peripheral.rate_request.intv_min_125us);
-                ble_write_u16_le(conn->tx_frame + 5, conn->peripheral.rate_request.intv_max_125us);
-                ble_write_u16_le(conn->tx_frame + 7, conn->peripheral.rate_request.factor_min);
-                ble_write_u16_le(conn->tx_frame + 9, conn->peripheral.rate_request.factor_max);
-                ble_write_u16_le(conn->tx_frame + 11, conn->peripheral.rate_request.latency);
-                ble_write_u16_le(conn->tx_frame + 13, conn->peripheral.rate_request.continuation);
-                ble_write_u16_le(conn->tx_frame + 15, conn->peripheral.rate_request.timeout_10ms);
-                ble_write_u16_le(conn->tx_frame + 17, conn->peripheral.rate_request.periodicity_125us);
-                ble_write_u16_le(conn->tx_frame + 19, conn->link_layer.event_counter);
+                write_u16_le(conn->tx_frame + 3, conn->peripheral.rate_request.intv_min_125us);
+                write_u16_le(conn->tx_frame + 5, conn->peripheral.rate_request.intv_max_125us);
+                write_u16_le(conn->tx_frame + 7, conn->peripheral.rate_request.factor_min);
+                write_u16_le(conn->tx_frame + 9, conn->peripheral.rate_request.factor_max);
+                write_u16_le(conn->tx_frame + 11, conn->peripheral.rate_request.latency);
+                write_u16_le(conn->tx_frame + 13, conn->peripheral.rate_request.continuation);
+                write_u16_le(conn->tx_frame + 15, conn->peripheral.rate_request.timeout_10ms);
+                write_u16_le(conn->tx_frame + 17, conn->peripheral.rate_request.periodicity_125us);
+                write_u16_le(conn->tx_frame + 19, conn->link_layer.event_counter);
 
                 for (uint8_t i = 0; i < 4; i++) {
-                    ble_write_u16_le(conn->tx_frame + 21 + i * 2,
+                    write_u16_le(conn->tx_frame + 21 + i * 2,
                                      conn->peripheral.rate_request.offsets[i]);
                 }
                 conn->c_rate.queued_flags &= (uint8_t)~GAP_RATE_QUEUED_REQUEST;

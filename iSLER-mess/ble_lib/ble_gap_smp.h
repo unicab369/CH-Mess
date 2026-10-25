@@ -1034,7 +1034,7 @@ int gap_sc_oob_set_peer(const gap_oob_data *peer) {
 uint8_t gap_passkey(uint32_t *value) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (conn->smp.pairing.passkey_action == GAP_PASSKEY_DISPLAY && value) {
-        *value = ble_read_u32_le(conn->smp.pairing.tk);
+        *value = read_u32_le(conn->smp.pairing.tk);
     }
     return conn->smp.pairing.passkey_action;
 }
@@ -1289,7 +1289,7 @@ static void smp_bond_restore_poll(gap_conn_context *conn) {
             !conn->security.phase && !conn->smp.pairing.phase
         ) {
             conn->restore_attempted = 1;
-            uint16_t ediv = ble_read_u16_le(conn->bond.central.ediv);
+            uint16_t ediv = read_u16_le(conn->bond.central.ediv);
             if (gap_encrypt(conn->bond.central.ltk, conn->bond.central.rand, ediv))
                 conn->restore_started = 1;
         }
@@ -1488,7 +1488,7 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
     ) {
         uint8_t action = (pairing->passkey_action == GAP_PASSKEY_DISPLAY) ? SMP_USER_PASSKEY_DISPLAY
                                                                         : SMP_USER_PASSKEY_INPUT;
-        uint32_t passkey = ble_read_u32_le(conn->smp.pairing.tk);
+        uint32_t passkey = read_u32_le(conn->smp.pairing.tk);
         uint32_t value = (action == SMP_USER_PASSKEY_DISPLAY ? passkey : 0);
 
         if (gap_smp_user_request_callback(gap_smp_user_request_context, action, value) < 0) {
@@ -1891,7 +1891,7 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
         conn->restore_attempted = 1;
 
         if (!memcmp(conn->security.random, conn->bond.central.rand, 8) &&
-            conn->security.ediv == ble_read_u16_le(conn->bond.central.ediv) &&
+            conn->security.ediv == read_u16_le(conn->bond.central.ediv) &&
             gap_key_reply(conn->bond.central.ltk)
         ) {
             conn->restore_started = 1;
@@ -1908,7 +1908,7 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
     uint16_t cid = conn->smp.l2cap_rx.cid;
 
     if (conn->rx_packet.llid == 2 && conn->rx_packet.len >= 4)
-        cid = ble_read_u16_le(conn->rx_packet.data + 2);
+        cid = read_u16_le(conn->rx_packet.data + 2);
 
     uint16_t completed_cid = 0, sdu_len = 0;
     const uint8_t *sdu = NULL;
@@ -2419,7 +2419,7 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
                     return;
                 }
 
-                value = ble_read_u32_le(bytes);
+                value = read_u32_le(bytes);
             } while (value >= UINT32_C(4294000000));
 
             value %= 1000000;

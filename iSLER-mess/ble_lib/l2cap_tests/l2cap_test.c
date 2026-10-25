@@ -34,7 +34,7 @@ static void fake_output_init(fake_l2cap *fake) {
 static int fake_output_take(fake_l2cap *fake) {
     if (!fake->tx_queue.length) return 0;
     assert(fake->tx_queue.length >= 4);
-    fake->cid = ble_read_u16_le(fake->tx_data + 2);
+    fake->cid = read_u16_le(fake->tx_data + 2);
     fake->len = (uint16_t)(fake->tx_queue.length - 4);
     assert(fake->len <= sizeof(fake->pdu));
     memcpy(fake->pdu, fake->tx_data + 4, fake->len);
@@ -74,13 +74,13 @@ int main(void) {
     l2cap_reassembler rx = {0};
     uint8_t pdu[] = {0x0a, 0x01, 0x00};
     uint8_t packet[16], first[5];
-    ble_write_u16_le(packet, sizeof(pdu));
-    ble_write_u16_le(packet + 2, L2CAP_CID_ATT);
+    write_u16_le(packet, sizeof(pdu));
+    write_u16_le(packet + 2, L2CAP_CID_ATT);
     memcpy(packet + 4, pdu, sizeof(pdu));
     int packet_len = sizeof(pdu) + 4;
     assert(packet_len == 7);
-    assert(ble_read_u16_le(packet) == sizeof(pdu));
-    assert(ble_read_u16_le(packet + 2) == L2CAP_CID_ATT);
+    assert(read_u16_le(packet) == sizeof(pdu));
+    assert(read_u16_le(packet + 2) == L2CAP_CID_ATT);
     memcpy(first, packet, sizeof(first));
     uint16_t cid = 0, sdu_len = 0;
     const uint8_t *sdu = NULL;
@@ -92,8 +92,8 @@ int main(void) {
     assert(memcmp(sdu, pdu, sizeof(pdu)) == 0);
 
     // Complete unknown-CID SDUs are still reassembled for the caller to route.
-    ble_write_u16_le(packet, sizeof(pdu));
-    ble_write_u16_le(packet + 2, L2CAP_CID_SMP);
+    write_u16_le(packet, sizeof(pdu));
+    write_u16_le(packet + 2, L2CAP_CID_SMP);
     memcpy(packet + 4, pdu, sizeof(pdu));
     assert(l2cap_reassembler_feed(&rx, 2, packet, 7,
         &cid, &sdu, &sdu_len) == 1);
@@ -163,7 +163,7 @@ int main(void) {
     assert(fake_receive(&fake, &conn, L2CAP_CID_LE_SIGNALING,
         incoming_reconfigure, sizeof(incoming_reconfigure)));
     assert(fake.pdu[0] == L2CAP_ECFC_RECONFIGURE_RESPONSE &&
-           ble_read_u16_le(fake.pdu + 4) == 0);
+           read_u16_le(fake.pdu + 4) == 0);
     int inbound_slot = l2cap_remote_slot(&conn, 0x0045);
     assert(inbound_slot >= 0);
     uint16_t inbound_local = conn.channels[inbound_slot].local_cid;
@@ -185,7 +185,7 @@ int main(void) {
     assert(l2cap_ecfc_pump(&conn));
     assert(fake_output_take(&fake));
     assert(fake.cid == 0x44 && fake.len == 64 &&
-           ble_read_u16_le(fake.pdu) == sizeof(outgoing));
+           read_u16_le(fake.pdu) == sizeof(outgoing));
     assert(l2cap_ecfc_pump(&conn));
     assert(fake_output_take(&fake));
     assert(fake.cid == 0x44 && fake.len == 38);
@@ -210,8 +210,8 @@ int main(void) {
     assert(fake_output_take(&fake));
     assert(fake.cid == L2CAP_CID_LE_SIGNALING && fake.pdu[0] ==
            L2CAP_FLOW_CONTROL_CREDIT);
-    assert(ble_read_u16_le(fake.pdu + 4) == 0x44);
-    assert(ble_read_u16_le(fake.pdu + 6) == 2);
+    assert(read_u16_le(fake.pdu + 4) == 0x44);
+    assert(read_u16_le(fake.pdu + 6) == 2);
     assert(l2cap_channel_close(&conn, local_cid));
     assert(fake_output_take(&fake));
     assert(fake.pdu[0] == L2CAP_DISCONNECTION_REQUEST);
@@ -247,7 +247,7 @@ int main(void) {
     assert(l2cap_connection_update_reply(&conn, 1));
     assert(fake_output_take(&fake));
     assert(fake.pdu[0] == L2CAP_CONN_PARAM_UPDATE_RESP &&
-           ble_read_u16_le(fake.pdu + 4) == 0);
+           read_u16_le(fake.pdu + 4) == 0);
 
     // ECFC can establish several channels in one request, and LE CIDs wrap
     // only inside the assigned 0x0040..0x007F dynamic range.
@@ -273,15 +273,15 @@ int main(void) {
         L2CAP_CID_LE_SIGNALING, incoming_partial,
         sizeof(incoming_partial)));
     assert(partial_fake.pdu[0] == L2CAP_ECFC_CONNECTION_RESPONSE &&
-           ble_read_u16_le(partial_fake.pdu + 10) == 9 &&
-           ble_read_u16_le(partial_fake.pdu + 12) == 0 &&
-           ble_read_u16_le(partial_fake.pdu + 14) != 0 &&
+           read_u16_le(partial_fake.pdu + 10) == 9 &&
+           read_u16_le(partial_fake.pdu + 12) == 0 &&
+           read_u16_le(partial_fake.pdu + 14) != 0 &&
            open_channel_count(&partial_server) == 1);
     uint16_t multi_cids[2];
     assert(l2cap_ecfc_open_many(&multi, 0x0027, multi_cids, 2));
     assert(fake_output_take(&multi_fake));
     assert(multi_fake.pdu[0] == L2CAP_ECFC_CONNECTION_REQUEST &&
-           ble_read_u16_le(multi_fake.pdu + 2) == 12);
+           read_u16_le(multi_fake.pdu + 2) == 12);
     uint8_t multi_response[] = {L2CAP_ECFC_CONNECTION_RESPONSE,
         multi_fake.pdu[1], 12, 0, 80, 0, 64, 0, 2, 0, 0, 0,
         0x46, 0, 0x47, 0};
@@ -314,7 +314,7 @@ int main(void) {
     assert(fake_receive(&multi_fake, &multi, L2CAP_CID_LE_SIGNALING,
         denied_open, sizeof(denied_open)));
     assert(multi_fake.pdu[0] == L2CAP_LE_CREDIT_CONN_RESP &&
-           ble_read_u16_le(multi_fake.pdu + 12) == 8);
+           read_u16_le(multi_fake.pdu + 12) == 8);
     uint8_t bad_ecfc_parameters[] = {
         L2CAP_ECFC_CONNECTION_REQUEST, 22, 10, 0,
         0x27, 0, 23, 0, 23, 0, 1, 0, 0x48, 0
@@ -322,7 +322,7 @@ int main(void) {
     assert(fake_receive(&multi_fake, &multi, L2CAP_CID_LE_SIGNALING,
         bad_ecfc_parameters, sizeof(bad_ecfc_parameters)));
     assert(multi_fake.pdu[0] == L2CAP_ECFC_CONNECTION_RESPONSE &&
-           ble_read_u16_le(multi_fake.pdu + 10) == 11);
+           read_u16_le(multi_fake.pdu + 10) == 11);
     int overflow_slot = l2cap_local_slot(&multi, multi_cids[0]);
     assert(overflow_slot >= 0);
     multi.channels[overflow_slot].tx_credits = 65535;
@@ -395,7 +395,7 @@ int main(void) {
                                        sizeof(unknown_signal)));
     assert(reject_fake.pdu[0] == L2CAP_COMMAND_REJECT &&
            reject_fake.pdu[1] == 12 &&
-           ble_read_u16_le(reject_fake.pdu + 6) == 0);
+           read_u16_le(reject_fake.pdu + 6) == 0);
     uint8_t malformed_signal[] = {L2CAP_CONN_PARAM_UPDATE_REQ,
         13, 4, 0, 1, 0, 2, 0};
     assert(fake_receive(&reject_fake, &reject_conn, L2CAP_CID_LE_SIGNALING, malformed_signal,

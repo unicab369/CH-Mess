@@ -188,7 +188,7 @@ int gap_ad_uuid16_list(
     for (size_t i = 0; i < count; i++) {
         uint16_t uuid;
         memcpy(&uuid, value + i * 2, sizeof(uuid));
-        ble_write_u16_le(value + i * 2, uuid);
+        write_u16_le(value + i * 2, uuid);
     }
     return 1;
 }
@@ -209,7 +209,7 @@ int gap_ad_uuid32_list(
     for (size_t i = 0; i < count; i++) {
         uint32_t uuid;
         memcpy(&uuid, value + i * 4, sizeof(uuid));
-        ble_write_u32_le(value + i * 4, uuid);
+        write_u32_le(value + i * 4, uuid);
     }
     return 1;
 }
@@ -677,15 +677,15 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     gap_local_addr_select(peer_slot, adv_tx.connect_request + 2, &local_type);
     adv_tx.connect_request[0] = CONNECT_IND | (local_type << 6) | (peer_type << 7);
     adv_tx.connect_request[1] = 34;
-    ble_write_u32_le(adv_tx.connect_request + 14, access_address);
+    write_u32_le(adv_tx.connect_request + 14, access_address);
 
     uint8_t crc_init[3];
     GAP_HW_RANDOM_BYTES(crc_init, sizeof(crc_init));
     memcpy(adv_tx.connect_request + 18, crc_init, sizeof(crc_init));
     adv_tx.connect_request[21] = 1; // transmit window size: 1.25 ms
-    ble_write_u16_le(adv_tx.connect_request + 24, gap_central_timing.interval);
-    ble_write_u16_le(adv_tx.connect_request + 26, gap_central_timing.latency);
-    ble_write_u16_le(adv_tx.connect_request + 28, gap_central_timing.supervision_timeout);
+    write_u16_le(adv_tx.connect_request + 24, gap_central_timing.interval);
+    write_u16_le(adv_tx.connect_request + 26, gap_central_timing.latency);
+    write_u16_le(adv_tx.connect_request + 28, gap_central_timing.supervision_timeout);
 
     memset(adv_tx.connect_request + 30, 0xff, 4);
     adv_tx.connect_request[34] = 0x1f; // data channels 0 through 36

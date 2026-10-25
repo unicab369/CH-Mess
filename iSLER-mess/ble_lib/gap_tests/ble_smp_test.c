@@ -71,8 +71,8 @@ int main(void) {
            !memcmp(bearer->rx, pairing_request, bearer->rx_len));
     bearer->rx_len = 0;
     uint8_t l2cap_packet[sizeof(pairing_request) + 4];
-    ble_write_u16_le(l2cap_packet, sizeof(pairing_request));
-    ble_write_u16_le(l2cap_packet + 2, L2CAP_CID_SMP);
+    write_u16_le(l2cap_packet, sizeof(pairing_request));
+    write_u16_le(l2cap_packet + 2, L2CAP_CID_SMP);
     memcpy(l2cap_packet + 4, pairing_request, sizeof(pairing_request));
     l2cap_reassembler rx = {0};
     uint16_t cid, sdu_len;

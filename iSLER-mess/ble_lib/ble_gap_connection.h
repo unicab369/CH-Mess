@@ -446,10 +446,10 @@ static void gap_send_conn_update(gap_conn_context *conn) {
     conn->tx_frame[3] = conn->update_window_size;
     conn->tx_frame[4] = 0;
     conn->tx_frame[5] = 0; // WinOffset
-    ble_write_u16_le(conn->tx_frame + 6, conn->new_params.interval);
-    ble_write_u16_le(conn->tx_frame + 8, conn->new_params.latency);
-    ble_write_u16_le(conn->tx_frame + 10, conn->new_params.supervision_timeout);
-    ble_write_u16_le(conn->tx_frame + 12, conn->update_instant);
+    write_u16_le(conn->tx_frame + 6, conn->new_params.interval);
+    write_u16_le(conn->tx_frame + 8, conn->new_params.latency);
+    write_u16_le(conn->tx_frame + 10, conn->new_params.supervision_timeout);
+    write_u16_le(conn->tx_frame + 12, conn->update_instant);
 }
 
 static uint8_t gap_class_valid(const uint8_t *class) {
@@ -507,11 +507,11 @@ static void gap_send_subrate_update(gap_conn_context *conn) {
     conn->tx_frame[0] = 0x03;
     conn->tx_frame[1] = 11;
     conn->tx_frame[2] = LL_SUBRATE_IND;
-    ble_write_u16_le(conn->tx_frame + 3, conn->next_schedule.factor);
-    ble_write_u16_le(conn->tx_frame + 5, conn->next_schedule.base_event);
-    ble_write_u16_le(conn->tx_frame + 7, conn->next_schedule.latency);
-    ble_write_u16_le(conn->tx_frame + 9, conn->next_schedule.continuation);
-    ble_write_u16_le(conn->tx_frame + 11, conn->next_schedule.timeout_10ms);
+    write_u16_le(conn->tx_frame + 3, conn->next_schedule.factor);
+    write_u16_le(conn->tx_frame + 5, conn->next_schedule.base_event);
+    write_u16_le(conn->tx_frame + 7, conn->next_schedule.latency);
+    write_u16_le(conn->tx_frame + 9, conn->next_schedule.continuation);
+    write_u16_le(conn->tx_frame + 11, conn->next_schedule.timeout_10ms);
 }
 
 static void gap_send_rate_ind(
@@ -546,13 +546,13 @@ static void gap_send_rate_ind(
     conn->tx_frame[0] = 0x03;
     conn->tx_frame[1] = 15;
     conn->tx_frame[2] = LL_CONNECTION_RATE_IND;
-    ble_write_u16_le(conn->tx_frame + 3, conn->next_schedule.win_offset);
-    ble_write_u16_le(conn->tx_frame + 5, conn->next_schedule.interval_125us);
-    ble_write_u16_le(conn->tx_frame + 7, conn->next_schedule.instant);
-    ble_write_u16_le(conn->tx_frame + 9, conn->next_schedule.factor);
-    ble_write_u16_le(conn->tx_frame + 11, conn->next_schedule.latency);
-    ble_write_u16_le(conn->tx_frame + 13, conn->next_schedule.continuation);
-    ble_write_u16_le(conn->tx_frame + 15, conn->next_schedule.timeout_10ms);
+    write_u16_le(conn->tx_frame + 3, conn->next_schedule.win_offset);
+    write_u16_le(conn->tx_frame + 5, conn->next_schedule.interval_125us);
+    write_u16_le(conn->tx_frame + 7, conn->next_schedule.instant);
+    write_u16_le(conn->tx_frame + 9, conn->next_schedule.factor);
+    write_u16_le(conn->tx_frame + 11, conn->next_schedule.latency);
+    write_u16_le(conn->tx_frame + 13, conn->next_schedule.continuation);
+    write_u16_le(conn->tx_frame + 15, conn->next_schedule.timeout_10ms);
 }
 
 // Encode our LE 1M limits for both local requests and peer-request responses.
@@ -568,10 +568,10 @@ static void gap_send_data_length(gap_conn_context *conn, uint8_t opcode) {
     conn->tx_frame[0] = 3;
     conn->tx_frame[1] = 9;
     conn->tx_frame[2] = opcode;
-    ble_write_u16_le(conn->tx_frame + 3, gap_data_capacity);
-    ble_write_u16_le(conn->tx_frame + 5, (gap_data_capacity + 14) * 8);
-    ble_write_u16_le(conn->tx_frame + 7, conn->local_tx_octets);
-    ble_write_u16_le(conn->tx_frame + 9, (conn->local_tx_octets + 14) * 8);
+    write_u16_le(conn->tx_frame + 3, gap_data_capacity);
+    write_u16_le(conn->tx_frame + 5, (gap_data_capacity + 14) * 8);
+    write_u16_le(conn->tx_frame + 7, conn->local_tx_octets);
+    write_u16_le(conn->tx_frame + 9, (conn->local_tx_octets + 14) * 8);
 }
 
 // Rotate between radio exchanges; preserve addresses throughout initiation,
@@ -762,7 +762,7 @@ static uint8_t gap_conn_control(
         }
 
         conn->security.refreshing = restart;
-        conn->security.ediv = ble_read_u16_le(frame + 11);
+        conn->security.ediv = read_u16_le(frame + 11);
         memcpy(conn->security.random, frame + 3, 8);
         memcpy(conn->security.skd, frame + 13, 8);
         memcpy(conn->security.iv, frame + 21, 4);
@@ -865,11 +865,11 @@ static uint8_t gap_conn_control(
             conn->c_subrate.procedure_state == GAP_SUBRATE_IDLE
         ) {
             uint8_t win_size = frame[3];
-            uint16_t win_offset = ble_read_u16_le(frame + 4);
-            uint16_t interval = ble_read_u16_le(frame + 6);
-            uint16_t latency = ble_read_u16_le(frame + 8);
-            uint16_t timeout = ble_read_u16_le(frame + 10);
-            uint16_t instant = ble_read_u16_le(frame + 12);
+            uint16_t win_offset = read_u16_le(frame + 4);
+            uint16_t interval = read_u16_le(frame + 6);
+            uint16_t latency = read_u16_le(frame + 8);
+            uint16_t timeout = read_u16_le(frame + 10);
+            uint16_t instant = read_u16_le(frame + 12);
             uint32_t interval_125us = (uint32_t)interval * 10;
             uint16_t factor = 1;
             if (interval_125us == conn->schedule.interval_125us)
@@ -920,7 +920,7 @@ static uint8_t gap_conn_control(
                 if (frame[3 + channel / 8] & (1 << (channel % 8)))
                     used_count++;
 
-            uint16_t instant = ble_read_u16_le(frame + 8);
+            uint16_t instant = read_u16_le(frame + 8);
 
             if (used_count >= 2 && !(frame[7] & 0xe0) &&
                 (uint16_t)(instant - conn->link_layer.event_counter) < 0x8000 &&
@@ -949,10 +949,10 @@ static uint8_t gap_conn_control(
             )
         ) return gap_conn_reject_resp(conn, frame[2], error);
 
-        uint16_t minimum = ble_read_u16_le(frame + 3);
-        uint16_t maximum = ble_read_u16_le(frame + 5);
-        uint16_t latency = ble_read_u16_le(frame + 7);
-        uint16_t timeout = ble_read_u16_le(frame + 9);
+        uint16_t minimum = read_u16_le(frame + 3);
+        uint16_t maximum = read_u16_le(frame + 5);
+        uint16_t latency = read_u16_le(frame + 7);
+        uint16_t timeout = read_u16_le(frame + 9);
 
         if (frame[11] > maximum ||
             !ble_timing_valid(minimum, maximum, latency, timeout) ||
@@ -963,7 +963,7 @@ static uint8_t gap_conn_control(
         // ordered before unspecified (0xffff) offsets.
         uint8_t unspecified = 0, has_offset = 0;
         for (uint8_t i = 0; i < 6; i++) {
-            uint16_t offset = ble_read_u16_le(frame + 14 + i * 2);
+            uint16_t offset = read_u16_le(frame + 14 + i * 2);
 
             if (offset == 0xffff) {
                 unspecified = 1;
@@ -974,7 +974,7 @@ static uint8_t gap_conn_control(
                 return gap_conn_reject_resp(conn, frame[2], error);
 
             for (uint8_t j = 0; j < i; j++)
-                if (ble_read_u16_le(frame + 14 + j * 2) == offset)
+                if (read_u16_le(frame + 14 + j * 2) == offset)
                     return gap_conn_reject_resp(conn, frame[2], error);
 
             has_offset = 1;
@@ -1443,20 +1443,20 @@ static uint8_t gap_conn_control(
             break;
         }
 
-        uint16_t minimum    = ble_read_u16_le(frame + 3);
-        uint16_t maximum    = ble_read_u16_le(frame + 5);
-        uint16_t factor_min = ble_read_u16_le(frame + 7);
-        uint16_t factor_max = ble_read_u16_le(frame + 9);
-        uint16_t latency    = ble_read_u16_le(frame + 11);
-        uint16_t continuation = ble_read_u16_le(frame + 13);
-        uint16_t timeout    = ble_read_u16_le(frame + 15);
-        uint16_t periodicity_125us = ble_read_u16_le(frame + 17);
-        uint16_t reference_event = ble_read_u16_le(frame + 19);
+        uint16_t minimum    = read_u16_le(frame + 3);
+        uint16_t maximum    = read_u16_le(frame + 5);
+        uint16_t factor_min = read_u16_le(frame + 7);
+        uint16_t factor_max = read_u16_le(frame + 9);
+        uint16_t latency    = read_u16_le(frame + 11);
+        uint16_t continuation = read_u16_le(frame + 13);
+        uint16_t timeout    = read_u16_le(frame + 15);
+        uint16_t periodicity_125us = read_u16_le(frame + 17);
+        uint16_t reference_event = read_u16_le(frame + 19);
         uint16_t offsets[4];
         uint8_t invalid_offset = 0, offsets_valid = 1;
 
         for (uint8_t i = 0; i < 4; i++) {
-            uint16_t offset = offsets[i] = ble_read_u16_le(frame + 21 + i * 2);
+            uint16_t offset = offsets[i] = read_u16_le(frame + 21 + i * 2);
 
             if (offset == 0xffff)
                 invalid_offset = 1;
@@ -1543,13 +1543,13 @@ static uint8_t gap_conn_control(
         if (conn->is_central || frame[1] != 15)
             return gap_conn_unknown_resp(conn, frame[2]);
 
-        uint16_t win_offset = ble_read_u16_le(frame + 3);
-        uint16_t interval = ble_read_u16_le(frame + 5);
-        uint16_t instant = ble_read_u16_le(frame + 7);
-        uint16_t factor = ble_read_u16_le(frame + 9);
-        uint16_t latency = ble_read_u16_le(frame + 11);
-        uint16_t continuation = ble_read_u16_le(frame + 13);
-        uint16_t timeout = ble_read_u16_le(frame + 15);
+        uint16_t win_offset = read_u16_le(frame + 3);
+        uint16_t interval = read_u16_le(frame + 5);
+        uint16_t instant = read_u16_le(frame + 7);
+        uint16_t factor = read_u16_le(frame + 9);
+        uint16_t latency = read_u16_le(frame + 11);
+        uint16_t continuation = read_u16_le(frame + 13);
+        uint16_t timeout = read_u16_le(frame + 15);
 
         if (!gap_rate_parameters_valid(interval, factor, latency, continuation, timeout) ||
             interval < gap_conn_min_interval(conn) ||
@@ -1598,11 +1598,11 @@ static uint8_t gap_conn_control(
             break;
         }
 
-        uint16_t min_factor = ble_read_u16_le(frame + 3);
-        uint16_t max_factor = ble_read_u16_le(frame + 5);
-        uint16_t max_latency = ble_read_u16_le(frame + 7);
-        uint16_t continuation = ble_read_u16_le(frame + 9);
-        uint16_t timeout = ble_read_u16_le(frame + 11);
+        uint16_t min_factor = read_u16_le(frame + 3);
+        uint16_t max_factor = read_u16_le(frame + 5);
+        uint16_t max_latency = read_u16_le(frame + 7);
+        uint16_t continuation = read_u16_le(frame + 9);
+        uint16_t timeout = read_u16_le(frame + 11);
         uint8_t error = GAP_LL_ERR_INVALID_PARAMS;
 
         if (gap_schedule_parameters_valid(min_factor, max_factor, max_latency,
@@ -1668,11 +1668,11 @@ static uint8_t gap_conn_control(
             break;
         }
 
-        uint16_t factor = ble_read_u16_le(frame + 3);
-        uint16_t base = ble_read_u16_le(frame + 5);
-        uint16_t latency = ble_read_u16_le(frame + 7);
-        uint16_t continuation = ble_read_u16_le(frame + 9);
-        uint16_t timeout = ble_read_u16_le(frame + 11);
+        uint16_t factor = read_u16_le(frame + 3);
+        uint16_t base = read_u16_le(frame + 5);
+        uint16_t latency = read_u16_le(frame + 7);
+        uint16_t continuation = read_u16_le(frame + 9);
+        uint16_t timeout = read_u16_le(frame + 11);
 
         if (gap_conn_rate_busy(conn) || !gap_rate_parameters_valid(
                 conn->schedule.interval_125us, factor, latency, continuation, timeout)
@@ -1746,7 +1746,7 @@ static uint8_t gap_conn_control(
         {
             uint16_t values[4];
             for (uint8_t i = 0; i < 4; i++)
-                values[i] = ble_read_u16_le(frame + 3 + i * 2);
+                values[i] = read_u16_le(frame + 3 + i * 2);
 
             if (!IN_RANGE_INCLUSIVE(values[0], 27, 251) ||
                 !IN_RANGE_INCLUSIVE(values[1], 328, 2128) ||
@@ -1870,7 +1870,7 @@ static uint8_t gap_conn_control(
             conn->tx_frame[2] = LL_PHY_UPDATE_IND;
             conn->tx_frame[3] = tx;
             conn->tx_frame[4] = rx;
-            ble_write_u16_le(conn->tx_frame + 5, conn->phy_state.instant);
+            write_u16_le(conn->tx_frame + 5, conn->phy_state.instant);
         }
         else if (!conn->is_central) {
             // The Central's request wins simultaneous requests.
@@ -1910,7 +1910,7 @@ static uint8_t gap_conn_control(
             break;
         }
 
-        uint16_t instant = ble_read_u16_le(frame + 5);
+        uint16_t instant = read_u16_le(frame + 5);
 
         if ((uint16_t)(instant - conn->link_layer.event_counter) >= 0x8000 ||
             instant == conn->link_layer.event_counter
@@ -2379,7 +2379,7 @@ int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
     // SMP may only send between complete application L2CAP PDUs.
 
     if (llid == 2) {
-        uint16_t pdu_len = ble_read_u16_le(data);
+        uint16_t pdu_len = read_u16_le(data);
         conn->tx_l2cap_remaining = (size_t)pdu_len + 4 > len ?
                                     (uint16_t)((size_t)pdu_len + 4 - len) : 0;
     }
@@ -2503,7 +2503,7 @@ static void gap_send_security(gap_conn_context *conn) {
         conn->tx_frame[1] = 23;
         conn->tx_frame[2] = LL_ENC_REQ;
         memcpy(conn->tx_frame + 3, conn->security.random, 8);
-        ble_write_u16_le(conn->tx_frame + 11, conn->security.ediv);
+        write_u16_le(conn->tx_frame + 11, conn->security.ediv);
         memcpy(conn->tx_frame + 13, conn->security.skd, 8);
         memcpy(conn->tx_frame + 21, conn->security.iv, 4);
         conn->security.phase = GAP_ENC_WAIT_RSP;
