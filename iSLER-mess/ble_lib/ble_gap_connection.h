@@ -2273,6 +2273,7 @@ int gap_channel_class_set(
 
         if (!conn->is_central) {
             conn->peripheral.status_changed_ms = now_ms;
+
             if (conn->channel_report.enabled)
                 conn->peripheral.status_queued = 1;
         }
@@ -2332,6 +2333,7 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
         uint8_t peer_supported = GAP_PHY_1M |
             ((conn->c_features.peer_feature_1 & 0x01) ? GAP_PHY_2M : 0) |
             ((conn->c_features.peer_feature_1 & 0x08) ? GAP_PHY_CODED : 0);
+
         if (!(peer_supported & 6) || !(tx & peer_supported) ||
             !(rx & peer_supported)
         ) {
@@ -2385,6 +2387,7 @@ int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
         conn->tx_l2cap_remaining = len < conn->tx_l2cap_remaining ?
                                     (uint16_t)(conn->tx_l2cap_remaining - len) : 0;
     }
+
     conn->tx_packet.llid = llid;
     conn->tx_packet.len = (uint8_t)len;
     memcpy(conn->tx_packet.data, data, len);
@@ -2453,39 +2456,37 @@ static void gap_security_nonce(
 // Encrypt each new nonempty PDU in place. Retries reuse ciphertext, MIC and
 // counter; only SN/NESN/MD may change, and those bits are excluded from CCM AAD.
 static uint8_t *gap_security_tx_frame(gap_conn_context *conn) {
-    gap_security_context *gap_security = &conn->security;
-
-    if (gap_security->tx_sealed) {
+    if (conn->security.tx_sealed) {
         return conn->tx_frame;
     }
 
-    if (!gap_security->tx_enabled || !conn->tx_frame[1])
+    if (!conn->security.tx_enabled || !conn->tx_frame[1])
         return conn->tx_frame;
 
-    if (gap_security->tx_counter >= (UINT64_C(1) << 39)) {
-        gap_security->status = 0x3d;
+    if (conn->security.tx_counter >= (UINT64_C(1) << 39)) {
+        conn->security.status = 0x3d;
         gap_conn_end();
         return NULL;
     }
 
     uint8_t nonce[13];
     uint8_t payload_len = conn->tx_frame[1];
-    gap_security->tx_plain_len = payload_len;
-    gap_security->tx_opcode = (conn->tx_frame[0] & 3) == 3 ? conn->tx_frame[2] : 0;
-    gap_security_nonce(gap_security, nonce, gap_security->tx_counter, conn->is_central);
+    conn->security.tx_plain_len = payload_len;
+    conn->security.tx_opcode = (conn->tx_frame[0] & 3) == 3 ? conn->tx_frame[2] : 0;
+    gap_security_nonce(&conn->security, nonce, conn->security.tx_counter, conn->is_central);
 
-    if (!GAP_CCM_ENCRYPT(gap_security->session_key, nonce,
+    if (!GAP_CCM_ENCRYPT(conn->security.session_key, nonce,
                         conn->tx_frame[0] & 0xe3, conn->tx_frame + 2,
                         payload_len, conn->tx_frame + 2 + payload_len)
     ) {
-        gap_security->status = 0x3d;
+        conn->security.status = 0x3d;
         gap_conn_end();
         return NULL;
     }
 
     conn->tx_frame[1] = (uint8_t)(payload_len + 4);
-    gap_security->tx_counter++;
-    gap_security->tx_sealed = 1;
+    conn->security.tx_counter++;
+    conn->security.tx_sealed = 1;
     return conn->tx_frame;
 }
 
@@ -2493,51 +2494,52 @@ static uint8_t *gap_security_tx_frame(gap_conn_context *conn) {
 // local control procedures stay queued until the start/pause handshake completes.
 static void gap_send_security(gap_conn_context *conn) {
     if (conn->tx_frame[1]) return;
-    gap_security_context *gap_security = &conn->security;
-    uint16_t phase = gap_security->phase;
+    uint16_t phase = conn->security.phase;
 
     if (phase == GAP_ENC_QUEUED || phase == GAP_ENC_RESTART_QUEUED) {
-        memcpy(gap_security->skd, gap_security->next_skd, 8);
-        memcpy(gap_security->iv, gap_security->next_iv, 4);
+        memcpy(conn->security.skd, conn->security.next_skd, 8);
+        memcpy(conn->security.iv, conn->security.next_iv, 4);
         conn->tx_frame[0] = 3;
         conn->tx_frame[1] = 23;
         conn->tx_frame[2] = LL_ENC_REQ;
-        memcpy(conn->tx_frame + 3, gap_security->random, 8);
-        ble_write_u16_le(conn->tx_frame + 11, gap_security->ediv);
-        memcpy(conn->tx_frame + 13, gap_security->skd, 8);
-        memcpy(conn->tx_frame + 21, gap_security->iv, 4);
-        gap_security->phase = GAP_ENC_WAIT_RSP;
-        gap_security->started_ms = GET_MILLIS();
-    }
-    else if (phase == GAP_ENC_START_QUEUED && gap_security->status == 0x06) {
-        conn->tx_frame[0] = 3;
-        if (gap_security->refreshing) {
-            conn->tx_frame[1] = 2;
-            conn->tx_frame[2] = LL_TERMINATE_IND;
-            conn->tx_frame[3] = 0x06;
-            conn->link_state.terminate_sent = 1;
-        }
-        else {
-            conn->tx_frame[1] = 3;
-            conn->tx_frame[2] = LL_REJECT_EXT_IND;
-            conn->tx_frame[3] = LL_ENC_REQ;
-            conn->tx_frame[4] = 0x06;
-        }
-        gap_security->phase = GAP_ENC_IDLE;
+        memcpy(conn->tx_frame + 3, conn->security.random, 8);
+        ble_write_u16_le(conn->tx_frame + 11, conn->security.ediv);
+        memcpy(conn->tx_frame + 13, conn->security.skd, 8);
+        memcpy(conn->tx_frame + 21, conn->security.iv, 4);
+        conn->security.phase = GAP_ENC_WAIT_RSP;
+        conn->security.started_ms = GET_MILLIS();
     }
     else if (phase == GAP_ENC_START_QUEUED) {
         conn->tx_frame[0] = 3;
-        conn->tx_frame[1] = 1;
-        conn->tx_frame[2] = LL_START_ENC_REQ;
-        gap_security->rx_enabled = 1;
-        gap_security->phase = GAP_ENC_PERIPHERAL_START;
+
+        if (conn->security.status == 0x06) {
+            if (conn->security.refreshing) {
+                conn->tx_frame[1] = 2;
+                conn->tx_frame[2] = LL_TERMINATE_IND;
+                conn->tx_frame[3] = 0x06;
+                conn->link_state.terminate_sent = 1;
+            }
+            else {
+                conn->tx_frame[1] = 3;
+                conn->tx_frame[2] = LL_REJECT_EXT_IND;
+                conn->tx_frame[3] = LL_ENC_REQ;
+                conn->tx_frame[4] = 0x06;
+            }
+            conn->security.phase = GAP_ENC_IDLE;
+        }
+        else {
+            conn->tx_frame[1] = 1;
+            conn->tx_frame[2] = LL_START_ENC_REQ;
+            conn->security.rx_enabled = 1;
+            conn->security.phase = GAP_ENC_PERIPHERAL_START;
+        }
     }
     else if (phase == GAP_ENC_PAUSE_QUEUED) {
         conn->tx_frame[0] = 3;
         conn->tx_frame[1] = 1;
         conn->tx_frame[2] = LL_PAUSE_ENC_REQ;
-        gap_security->phase = GAP_ENC_WAIT_PAUSE;
-        gap_security->started_ms = GET_MILLIS();
+        conn->security.phase = GAP_ENC_WAIT_PAUSE;
+        conn->security.started_ms = GET_MILLIS();
     }
 }
 
@@ -2547,7 +2549,6 @@ static void gap_send_security(gap_conn_context *conn) {
 // Application facing
 int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    gap_security_context *gap_security = &conn->security;
 
     if (!ltk || !random || !conn->is_central ||
         gap_conn_procedure_busy(conn) ||
@@ -2562,14 +2563,14 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
 #endif
 
     if (conn->c_features.known && !(conn->c_features.peer_feature_0 & 1)) {
-        gap_security->status = GAP_LL_ERR_REMOTE_FEATURE;
+        conn->security.status = GAP_LL_ERR_REMOTE_FEATURE;
         return 0;
     }
 
     uint8_t entropy[12];
 
     if (!GAP_RANDOM_SECURE_BYTES(entropy, sizeof(entropy))) {
-        gap_security->status = 0x1f;
+        conn->security.status = 0x1f;
         return 0;
     }
 
@@ -2577,7 +2578,7 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     // Recheck the link and procedures before committing the key.
 
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        gap_security->phase ||
+        conn->security.phase ||
         conn->c_features.request_pending ||
         gap_conn_pending_procedure_busy(conn)
     ) {
@@ -2590,17 +2591,17 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     conn->authenticated = 0;
     conn->enc_key_size = 0;
 #endif
-    gap_security->ediv = ediv;
-    memcpy(gap_security->ltk, ltk, 16);
-    memcpy(gap_security->random, random, 8);
-    memcpy(gap_security->next_skd, entropy, 8);
-    memcpy(gap_security->next_iv, entropy + 8, 4);
+    conn->security.ediv = ediv;
+    memcpy(conn->security.ltk, ltk, 16);
+    memcpy(conn->security.random, random, 8);
+    memcpy(conn->security.next_skd, entropy, 8);
+    memcpy(conn->security.next_iv, entropy + 8, 4);
     gap_wipe(entropy, sizeof(entropy));
 
-    gap_security->refreshing = gap_security->tx_enabled;
-    gap_security->started_ms = GET_MILLIS();
-    gap_security->status = GAP_CONNECTION_PENDING;
-    gap_security->phase = gap_security->refreshing ? GAP_ENC_PAUSE_QUEUED : GAP_ENC_QUEUED;
+    conn->security.refreshing = conn->security.tx_enabled;
+    conn->security.started_ms = GET_MILLIS();
+    conn->security.status = GAP_CONNECTION_PENDING;
+    conn->security.phase = conn->security.refreshing ? GAP_ENC_PAUSE_QUEUED : GAP_ENC_QUEUED;
     GAP_CRITICAL_EXIT(irq_state);
     return 1;
 }
@@ -2609,26 +2610,22 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
 // Pending Peripheral key lookup for SMP or a bond store; the application must
 // reply with that peer's matching key, or NULL if none is available.
 int gap_key_request(uint8_t random[8], uint16_t *ediv) {
-    gap_security_context *gap_security =
-        &gap_conn_ctx[gap_conn_slot].security;
-
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        gap_security->phase != GAP_ENC_KEY_REQUEST
+        gap_conn_ctx[gap_conn_slot].security.phase != GAP_ENC_KEY_REQUEST
     ) return 0;
 
-    if (random) memcpy(random, gap_security->random, 8);
-    if (ediv) *ediv = gap_security->ediv;
+    if (random) memcpy(random, gap_conn_ctx[gap_conn_slot].security.random, 8);
+    if (ediv) *ediv = gap_conn_ctx[gap_conn_slot].security.ediv;
     return 1;
 }
 
 // Application facing
 int gap_key_reply(const uint8_t ltk[16]) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    gap_security_context *gap_security = &conn->security;
     uint32_t irq_state = GAP_CRITICAL_ENTER();
 
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        gap_security->phase != GAP_ENC_KEY_REQUEST) {
+        conn->security.phase != GAP_ENC_KEY_REQUEST) {
         GAP_CRITICAL_EXIT(irq_state);
         return 0;
     }
@@ -2638,15 +2635,15 @@ int gap_key_reply(const uint8_t ltk[16]) {
         conn->authenticated = 0;
         conn->enc_key_size = 0;
 #endif
-        memcpy(gap_security->ltk, ltk, 16);
-        gap_security_derive(gap_security);
-        gap_security->phase = GAP_ENC_START_QUEUED;
+        memcpy(conn->security.ltk, ltk, 16);
+        gap_security_derive(&conn->security);
+        conn->security.phase = GAP_ENC_START_QUEUED;
     }
     else {
         // Send the rejection after ENC_RSP has been acknowledged. A refresh
         // cannot resume the link in plaintext, so it terminates instead.
-        gap_security->status = 0x06;
-        gap_security->phase = GAP_ENC_START_QUEUED;
+        conn->security.status = 0x06;
+        conn->security.phase = GAP_ENC_START_QUEUED;
     }
     GAP_CRITICAL_EXIT(irq_state);
     return 1;
@@ -2655,13 +2652,12 @@ int gap_key_reply(const uint8_t ltk[16]) {
 // Application facing
 int gap_encrypted(void) {
     const gap_conn_context *conn = gap_conn_ctx_current();
-    const gap_security_context *gap_security = &conn->security;
 
     return (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
             (conn->is_central || !conn->link_layer.first_event) &&
-            !gap_security->phase &&
-            gap_security->tx_enabled &&
-            gap_security->rx_enabled;
+            !conn->security.phase &&
+            conn->security.tx_enabled &&
+            conn->security.rx_enabled;
 }
 
 // Application facing
