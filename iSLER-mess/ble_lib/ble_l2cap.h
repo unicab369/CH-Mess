@@ -204,15 +204,19 @@ typedef struct l2cap_connection {
     l2cap_channel channels[L2CAP_CHANNEL_MAX];
     l2cap_connection_bytes local_max_sdu_size;    // max total message size after chunks are combined.
     l2cap_connection_bytes local_max_pdu_payload; // max chunk size in each credit-based packet.
-    l2cap_connection_bytes pending_max_sdu_size; // Maximum SDU size associated with the pending request.
-    l2cap_connection_bytes pending_max_pdu_payload; // Maximum PDU payload requested by an outstanding reconfiguration.
     uint16_t next_cid;                   // Next dynamic channel ID to allocate.
     uint16_t local_credits;              // Incoming PDUs the peer may send before we grant more credits.
     uint8_t signaling_id;                // Last locally allocated signaling command identifier.
+
+    // State for the outstanding signaling request.
+    uint8_t pending_id;                  // Identifier of the request; zero means none.
+    uint8_t pending_code;                // Command code of the outstanding request.
+    uint8_t pending_count;               // Number of channels in the request (1 for a single channel).
     uint16_t pending_psm;                // PSM (Protocol/Service Multiplexer) for the pending channel request.
-    uint8_t pending_count;               // Number of channels in the outstanding request (1 for a single channel).
-    uint8_t pending_id;                  // Identifier of the outstanding signaling command; zero means none.
-    uint8_t pending_code;                // Command code of the outstanding signaling request.
+    l2cap_connection_bytes pending_max_sdu_size; // Maximum SDU size associated with the pending request.
+    l2cap_connection_bytes pending_max_pdu_payload; // Maximum PDU payload requested by an outstanding reconfiguration.
+    uint16_t pending_local_cid[L2CAP_CHANNEL_MAX];
+    uint32_t pending_deadline_ms;
 
     // Peer Peripheral's requested parameters. The Central applies the update;
     // the local Peripheral rejects the request.
@@ -229,10 +233,8 @@ typedef struct l2cap_connection {
     uint16_t periph_update_timeout;     // Supervision timeout: 10..3200 in 10 ms units; > 2 * (latency + 1) * max interval.
     uint32_t periph_update_due_ms;
 
-    // Shared receive and timeout bookkeeping.
-    uint16_t pending_local_cid[L2CAP_CHANNEL_MAX];
+    // Shared timer bookkeeping.
     uint32_t now_ms;
-    uint32_t pending_deadline_ms;
 } l2cap_connection;
 
 typedef struct {
@@ -366,6 +368,7 @@ static inline uint8_t l2cap_id_alloc(l2cap_connection *conn) {
     for (uint16_t attempt = 0; attempt < 255; attempt++) {
         uint8_t id = ++conn->signaling_id;
         if (!id) id = ++conn->signaling_id;
+
         if (id == conn->pending_id)
             continue;
 
@@ -374,7 +377,8 @@ static inline uint8_t l2cap_id_alloc(l2cap_connection *conn) {
             if (conn->channels[i].state == L2CAP_CHANNEL_CLOSING &&
                 conn->channels[i].disconnect_id == id
             ) used = 1;
-        if (!used) return id;
+        if (!used)
+            return id;
     }
     return 0;
 }
@@ -898,7 +902,10 @@ static inline void l2cap_conn_reset(l2cap_connection *conn, int reason) {
     for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++)
         if (conn->channels[i].state != L2CAP_CHANNEL_CLOSED)
             l2cap_channel_clear(conn, i, reason);
-    conn->pending_id = conn->pending_count = conn->pending_code = 0;
+
+    conn->pending_id = 0;
+    conn->pending_count = 0;
+    conn->pending_code = 0;
     conn->pending_deadline_ms = 0;
     conn->periph_update_pending = conn->periph_update_id = 0;
     conn->periph_update_due_ms = 0;
@@ -924,7 +931,9 @@ static inline int l2cap_conn_tick(l2cap_connection *conn, uint32_t now_ms) {
             }
         }
 
-        conn->pending_id = conn->pending_count = conn->pending_code = 0;
+        conn->pending_id = 0;
+        conn->pending_count = 0;
+        conn->pending_code = 0;
         conn->pending_deadline_ms = 0;
         expired++;
     }
@@ -1205,7 +1214,9 @@ static inline int l2cap_receive(
                         chann->tx_credits = credits;
                         chann->state = L2CAP_CHANNEL_OPEN;
                     }
-                    conn->pending_id = conn->pending_count = conn->pending_code = 0;
+                    conn->pending_id = 0;
+                    conn->pending_count = 0;
+                    conn->pending_code = 0;
                     conn->pending_deadline_ms = 0;
                 }
                 break;
@@ -1501,7 +1512,9 @@ static inline int l2cap_receive(
                             chann->state = L2CAP_CHANNEL_OPEN;
                         }
                     }
-                    conn->pending_id = conn->pending_count = conn->pending_code = 0;
+                    conn->pending_id = 0;
+                    conn->pending_count = 0;
+                    conn->pending_code = 0;
                     conn->pending_deadline_ms = 0;
                 }
                 break;
@@ -1608,7 +1621,9 @@ static inline int l2cap_receive(
                         }
                     }
 
-                    conn->pending_id = conn->pending_count = conn->pending_code = 0;
+                    conn->pending_id = 0;
+                    conn->pending_count = 0;
+                    conn->pending_code = 0;
                     conn->pending_deadline_ms = 0;
                 }
 
@@ -1619,7 +1634,8 @@ static inline int l2cap_receive(
                     conn->pending_code != L2CAP_CONN_PARAM_UPDATE_REQ
                 ) return 0;
 
-                conn->pending_id = conn->pending_code = 0;
+                conn->pending_id = 0;
+                conn->pending_code = 0;
                 conn->pending_deadline_ms = 0;
                 break;
 
