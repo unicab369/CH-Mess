@@ -213,13 +213,35 @@ typedef struct {
 } l2cap_ops;
 
 // Local services supported by this L2CAP stack, shared by all connections.
-typedef struct {
+// Bluetooth SIG assigned L2CAP PSM/SPSM values:
+// +--------+--------------------+------------------------------------------+
+// | ID     | Name               | Description                              |
+// +--------+--------------------+------------------------------------------+
+// | 0x0001 | SDP                | Service Discovery Protocol               |
+// | 0x0003 | RFCOMM             | Serial cable emulation                   |
+// | 0x0005 | TCS-BIN            | Telephony Control Protocol               |
+// | 0x0007 | TCS-BIN-CORDLESS   | Cordless telephony control               |
+// | 0x000F | BNEP               | Bluetooth Network Encapsulation Protocol |
+// | 0x0011 | HID_Control        | Human Interface Device control           |
+// | 0x0013 | HID_Interrupt      | Human Interface Device interrupt         |
+// | 0x0015 | UPnP               | Universal Plug and Play                  |
+// | 0x0017 | AVCTP              | Audio/Video Control Transport Protocol   |
+// | 0x0019 | AVDTP              | Audio/Video Distribution Transport       |
+// | 0x001B | AVCTP_Browsing     | Audio/Video Control browsing             |
+// | 0x001D | UDI_C-Plane        | Unrestricted Digital Information control |
+// | 0x001F | ATT                | Attribute Protocol                       |
+// | 0x0021 | 3DSP               | 3D Synchronization Profile               |
+// | 0x0023 | LE_PSM_IPSP        | Internet Protocol Support Profile        |
+// | 0x0025 | OTS                | Object Transfer Service                  |
+// | 0x0027*| EATT               | Enhanced Attribute Protocol              |
+// +--------+--------------------+------------------------------------------+
+// * Registered by this stack when EATT is enabled. Registration only enables
+//   services implemented by this device.
+static struct {
     // Registration rejects PSMs above 0x00ff, so each entry fits in one byte.
     uint8_t service_ids[L2CAP_SERVICE_REGISTRY_MAX];
     uint8_t count;
-} l2cap_service_registry;
-
-static l2cap_service_registry l2cap_services;
+} l2cap_services;
 
 static inline int l2cap_output_configured(const l2cap_ops *ops) {
     return ops && ops->tx_queue && ops->tx_queue->data &&
