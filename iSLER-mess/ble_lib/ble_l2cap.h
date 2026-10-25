@@ -475,16 +475,17 @@ static inline uint16_t l2cap_service_authorize(
 static inline void l2cap_configure_channel(
     l2cap_connection *conn, uint16_t service_id, l2cap_channel_config *config
 ) {
-    void (*configure)(void *, uint16_t, l2cap_channel_config *) =
-                    conn->local_ops.configure_channel
-                    ? conn->local_ops.configure_channel
-                    : (conn->shared_ops ? conn->shared_ops->configure_channel : NULL);
+    if (conn->shared_ops && conn->shared_ops->configure_channel)
+        conn->shared_ops->configure_channel(
+            conn->shared_ops->context, service_id, config
+        );
 
-    void *context = conn->local_ops.configure_channel
-                    ? conn->local_ops.context
-                    : (conn->shared_ops ? conn->shared_ops->context : NULL);
-    if (configure)
-        configure(context, service_id, config);
+    if (conn->local_ops.configure_channel &&
+        (!conn->shared_ops || conn->local_ops.configure_channel !=
+                                conn->shared_ops->configure_channel)
+    ) conn->local_ops.configure_channel(
+            conn->local_ops.context, service_id, config
+        );
 }
 
 // conn and receive_cb must be non-null; context may be null.

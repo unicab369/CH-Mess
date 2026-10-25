@@ -1694,7 +1694,7 @@ int gap_use_public_address(void) {
 #include "ble_gap_smp.h"
 #endif
 
-static l2cap_ops ble_gap_l2cap_upper;
+static l2cap_ops gap_l2cap_ops;
 
 // Use the configured L2CAP defaults unless the application supplies a
 // service-specific configure_channel callback.
@@ -1746,8 +1746,7 @@ static int gap_conn_accept(
     memcpy(conn->responder.address, frame + 8, 6);
 #endif
 
-    if (!l2cap_conn_init(&conn->l2cap, &ble_gap_l2cap_upper,
-                         &conn->l2cap_tx_queue)) return 0;
+    if (!l2cap_conn_init(&conn->l2cap, &gap_l2cap_ops, &conn->l2cap_tx_queue)) return 0;
 
 #if GAP_SECURITY_SUPPORT >= 2
     if (!smp_link_init(&gap_conn_ctx[gap_conn_slot].smp, &conn->l2cap)) {
@@ -1828,10 +1827,10 @@ static ble_gap_l2cap_peer ble_gap_l2cap_peers[GAP_CONNECTION_COUNT];
 // transmit queue and references this shared callback configuration.
 static inline int ble_gap_l2cap_init(const l2cap_ops *upper) {
     memset(ble_gap_l2cap_peers, 0, sizeof(ble_gap_l2cap_peers));
-    memset(&ble_gap_l2cap_upper, 0, sizeof(ble_gap_l2cap_upper));
-    if (upper) ble_gap_l2cap_upper = *upper;
-    if (!ble_gap_l2cap_upper.configure_channel)
-        ble_gap_l2cap_upper.configure_channel = gap_configure_channel_default;
+    memset(&gap_l2cap_ops, 0, sizeof(gap_l2cap_ops));
+    if (upper) gap_l2cap_ops = *upper;
+    if (!gap_l2cap_ops.configure_channel)
+        gap_l2cap_ops.configure_channel = gap_configure_channel_default;
     return 1;
 }
 
