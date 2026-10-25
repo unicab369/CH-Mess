@@ -2607,19 +2607,6 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
 }
 
 // Application facing
-// Pending Peripheral key lookup for SMP or a bond store; the application must
-// reply with that peer's matching key, or NULL if none is available.
-int gap_key_request(uint8_t random[8], uint16_t *ediv) {
-    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        gap_conn_ctx[gap_conn_slot].security.phase != GAP_ENC_KEY_REQUEST
-    ) return 0;
-
-    if (random) memcpy(random, gap_conn_ctx[gap_conn_slot].security.random, 8);
-    if (ediv) *ediv = gap_conn_ctx[gap_conn_slot].security.ediv;
-    return 1;
-}
-
-// Application facing
 int gap_key_reply(const uint8_t ltk[16]) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint32_t irq_state = GAP_CRITICAL_ENTER();
@@ -2650,17 +2637,6 @@ int gap_key_reply(const uint8_t ltk[16]) {
 }
 
 // Application facing
-int gap_encrypted(void) {
-    const gap_conn_context *conn = gap_conn_ctx_current();
-
-    return (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
-            (conn->is_central || !conn->link_layer.first_event) &&
-            !conn->security.phase &&
-            conn->security.tx_enabled &&
-            conn->security.rx_enabled;
-}
-
-// Application facing
 // Report achieved security only after encryption completes, never during pairing.
 #if GAP_SECURITY_SUPPORT >= 2
 int gap_authenticated(void) {
@@ -2673,21 +2649,10 @@ uint8_t gap_key_size(void) {
 }
 #endif // GAP_SECURITY_SUPPORT >= 2
 
-// Application facing
-uint8_t gap_security_status(void) {
-    return gap_conn_ctx[gap_conn_slot].security.status;
-}
-
 #else
 
 int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     (void)ltk;
-    (void)random;
-    (void)ediv;
-    return 0;
-}
-
-int gap_key_request(uint8_t random[8], uint16_t *ediv) {
     (void)random;
     (void)ediv;
     return 0;
@@ -2698,13 +2663,49 @@ int gap_key_reply(const uint8_t ltk[16]) {
     return 0;
 }
 
-int gap_encrypted(void) {
+#endif // GAP_SECURITY_SUPPORT >= 1
+
+// Application facing
+// Pending Peripheral key lookup for SMP or a bond store; the application must
+// reply with that peer's matching key, or NULL if none is available.
+int gap_key_request(uint8_t random[8], uint16_t *ediv) {
+#if GAP_SECURITY_SUPPORT >= 1
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
+        gap_conn_ctx[gap_conn_slot].security.phase != GAP_ENC_KEY_REQUEST
+    ) return 0;
+
+    if (random) memcpy(random, gap_conn_ctx[gap_conn_slot].security.random, 8);
+    if (ediv) *ediv = gap_conn_ctx[gap_conn_slot].security.ediv;
+    return 1;
+#else
+    (void)random;
+    (void)ediv;
     return 0;
+#endif
 }
 
+// Application facing
 uint8_t gap_security_status(void) {
+#if GAP_SECURITY_SUPPORT >= 1
+    return gap_conn_ctx[gap_conn_slot].security.status;
+#else
     return 0;
+#endif
 }
-#endif // GAP_SECURITY_SUPPORT >= 1
+
+// Application facing
+int gap_encrypted(void) {
+#if GAP_SECURITY_SUPPORT >= 1
+    const gap_conn_context *conn = gap_conn_ctx_current();
+
+    return (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
+            (conn->is_central || !conn->link_layer.first_event) &&
+            !conn->security.phase &&
+            conn->security.tx_enabled &&
+            conn->security.rx_enabled;
+#else
+    return 0;
+#endif
+}
 
 #endif // GAP_CONNECTION_H
