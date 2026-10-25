@@ -808,7 +808,7 @@ static int smp_link_init(gap_smp_context *smp, l2cap_connection *l2cap) {
     smp->tx = l2cap->ops.tx_queue->data;
     smp->bearer.l2cap = l2cap;
 
-    if (!l2cap_fixed_register(l2cap, L2CAP_CID_SMP, smp_receive_sdu, smp))
+    if (!l2cap_fixed_register(l2cap, smp, L2CAP_CID_SMP, smp_receive_sdu))
         return 0;
 
     smp->l2cap_ready = 1;

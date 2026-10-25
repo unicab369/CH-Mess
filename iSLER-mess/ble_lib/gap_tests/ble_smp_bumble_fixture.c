@@ -51,8 +51,8 @@ int main(void) {
     if (!l2cap_conn_init(&l2cap, &ops))
         return 1;
     bearer->l2cap = &l2cap;
-    if (!l2cap_fixed_register(&l2cap, L2CAP_CID_SMP,
-            smp_receive_sdu, &smp)
+    if (!l2cap_fixed_register(&l2cap, &smp, L2CAP_CID_SMP,
+            smp_receive_sdu)
     ) return 1;
 
     const uint8_t request[] = {SMP_PAIRING_REQUEST, 3, 0, 0x09, 16, 3, 3};

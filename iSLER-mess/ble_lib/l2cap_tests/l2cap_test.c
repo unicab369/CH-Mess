@@ -122,7 +122,7 @@ int main(void) {
     l2cap_connection conn;
     assert(l2cap_conn_init(&conn, &ops));
     assert(l2cap_fixed_register(
-        &conn, L2CAP_CID_ATT, route_att, NULL));
+        &conn, NULL, L2CAP_CID_ATT, route_att));
     assert(fake_receive(&fake, &conn, L2CAP_CID_ATT,
         pdu, sizeof(pdu)) == 1);
     assert(fake_receive(&fake, &conn, L2CAP_CID_SMP,

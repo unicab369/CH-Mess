@@ -798,8 +798,8 @@ void mesh_gatt_poll(void) {
         mesh_gatt.transport.shared_l2cap = 1;
         l2cap->ops.tx_queue = tx_queue;
         l2cap->ops.context = &mesh_gatt.transport;
-        if (!l2cap_fixed_register(l2cap, L2CAP_CID_ATT,
-                gatt_transport_receive_att, &mesh_gatt.transport)
+        if (!l2cap_fixed_register(l2cap, &mesh_gatt.transport, L2CAP_CID_ATT,
+                gatt_transport_receive_att)
         ) {
             (void)gap_disconnect(0x13);
             return;

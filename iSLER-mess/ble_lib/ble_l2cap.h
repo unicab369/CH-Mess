@@ -456,16 +456,18 @@ static inline uint16_t l2cap_service_authorize(
             conn->ops.accept_service_id(conn->ops.context, service_id) ? 0 : 2;
 }
 
+// conn and receive_cb must be non-null; context may be null.
 static inline int l2cap_fixed_register(
-    l2cap_connection *conn, uint16_t cid,
-    int (*receive_cb)(void *context, uint16_t cid, const uint8_t *sdu, uint16_t len),
-    void *context
+    l2cap_connection *conn, void *context, uint16_t cid,
+    int (*receive_cb)(void *context, uint16_t cid, const uint8_t *sdu, uint16_t len)
 ) {
-    if (!conn || !receive_cb ||
-        (cid != L2CAP_CID_ATT && cid != L2CAP_CID_SMP)
-    ) return 0;
+    uint8_t slot;
+    switch (cid) {
+        case L2CAP_CID_ATT: slot = 0; break;
+        case L2CAP_CID_SMP: slot = 1; break;
+        default: return 0;
+    }
 
-    uint8_t slot = cid == L2CAP_CID_ATT ? 0 : 1;
     conn->channel_handlers[slot].cid = cid;
     conn->channel_handlers[slot].receive_cb = receive_cb;
     conn->channel_handlers[slot].context = context;

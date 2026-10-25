@@ -1057,8 +1057,8 @@ static inline int gatt_transport_init(
     if (l2cap) {
         l2cap->ops.tx_queue = tx_queue;
         l2cap->ops.context = transport;
-        if (!l2cap_fixed_register(transport->l2cap_link, L2CAP_CID_ATT,
-                                gatt_transport_receive_att, transport
+        if (!l2cap_fixed_register(transport->l2cap_link, transport, L2CAP_CID_ATT,
+                                                        gatt_transport_receive_att
         )) return 0;
     }
 
@@ -1678,7 +1678,7 @@ static inline int ble_gap_gatt_poll(
             }
         }
 #endif
-        if (!l2cap_fixed_register(l2cap, L2CAP_CID_ATT, gatt_transport_receive_att, transport)) {
+        if (!l2cap_fixed_register(l2cap, transport, L2CAP_CID_ATT, gatt_transport_receive_att)) {
             (void)gap_disconnect(0x13);
             failed = 1;
             continue;
