@@ -41,9 +41,8 @@ int main(void) {
         .capacity = sizeof(tx_data)
     };
     l2cap_ops ops = {0};
-    ops.tx_queue = &tx_queue;
     l2cap_connection l2cap;
-    assert(l2cap_conn_init(&l2cap, &ops));
+    assert(l2cap_conn_init(&l2cap, &ops, &tx_queue));
     gap_smp_context smp = {0};
     assert(smp_link_init(&smp, &l2cap));
     smp.key.stk[0] = 0x5a;

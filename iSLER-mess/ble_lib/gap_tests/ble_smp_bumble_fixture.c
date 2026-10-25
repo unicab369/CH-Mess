@@ -44,11 +44,10 @@ static int read_record(uint8_t *data, uint16_t capacity, uint16_t *len) {
 
 int main(void) {
     l2cap_ops ops = {0};
-    ops.tx_queue = &tx_queue;
     l2cap_connection l2cap;
     gap_smp_context smp = {0};
     typeof(smp.bearer) *bearer = &smp.bearer;
-    if (!l2cap_conn_init(&l2cap, &ops))
+    if (!l2cap_conn_init(&l2cap, &ops, &tx_queue))
         return 1;
     bearer->l2cap = &l2cap;
     if (!l2cap_fixed_register(&l2cap, &smp, L2CAP_CID_SMP,

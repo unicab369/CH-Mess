@@ -802,11 +802,11 @@ static void gap_smp_confirm(
 
 static int smp_link_init(gap_smp_context *smp, l2cap_connection *l2cap) {
     gap_wipe(smp, sizeof(*smp));
-    if (!l2cap || !l2cap->ops.tx_queue) return 0;
+    if (!l2cap || !l2cap->tx_queue) return 0;
 
     smp->l2cap = l2cap;
-    smp->tx_queue = l2cap->ops.tx_queue;
-    smp->tx = l2cap->ops.tx_queue->data;
+    smp->tx_queue = l2cap->tx_queue;
+    smp->tx = l2cap->tx_queue->data;
     smp->bearer.l2cap = l2cap;
 
     if (!l2cap_fixed_register(l2cap, smp, L2CAP_CID_SMP, smp_receive_sdu))

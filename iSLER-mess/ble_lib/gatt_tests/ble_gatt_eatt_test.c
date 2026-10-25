@@ -181,12 +181,12 @@ int main(void) {
         eatt_client_result_with_cid, NULL, NULL, &lower);
     assert(l2cap_service_find(BLE_GATT_EATT_SERVICE_ID) >= 0);
     transport.connected = 1;
-    assert(transport.l2cap_link->ops.authorize_service_id(
-        transport.l2cap_link->ops.context, BLE_GATT_EATT_SERVICE_ID) == 8);
+    assert(transport.l2cap_link->local_ops.authorize_service_id(
+        transport.l2cap_link->local_ops.context, BLE_GATT_EATT_SERVICE_ID) == 8);
     lower.encrypted = 1;
     gatt_transport_set_security(&transport, 1, 0, 0);
-    assert(transport.l2cap_link->ops.authorize_service_id(
-        transport.l2cap_link->ops.context, BLE_GATT_EATT_SERVICE_ID) == 0);
+    assert(transport.l2cap_link->local_ops.authorize_service_id(
+        transport.l2cap_link->local_ops.context, BLE_GATT_EATT_SERVICE_ID) == 0);
     assert(gatt_transport_eatt_open(&transport));
     uint16_t local_cid = transport.l2cap_link->pending_local_cid[0];
     int channel_slot = l2cap_local_slot(transport.l2cap_link,

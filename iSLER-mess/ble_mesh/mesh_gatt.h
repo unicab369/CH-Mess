@@ -796,8 +796,8 @@ void mesh_gatt_poll(void) {
         mesh_gatt.transport.l2cap_link = l2cap;
         mesh_gatt.transport.tx_queue_link = tx_queue;
         mesh_gatt.transport.shared_l2cap = 1;
-        l2cap->ops.tx_queue = tx_queue;
-        l2cap->ops.context = &mesh_gatt.transport;
+        l2cap->tx_queue = tx_queue;
+        l2cap->local_ops.context = &mesh_gatt.transport;
         if (!l2cap_fixed_register(l2cap, &mesh_gatt.transport, L2CAP_CID_ATT,
                 gatt_transport_receive_att)
         ) {

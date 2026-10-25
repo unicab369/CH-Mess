@@ -195,8 +195,9 @@ typedef struct {
     uint8_t rx_data[L2CAP_CHANNEL_MTU_MAX];
 } l2cap_channel;
 
+// Callback configuration shared by connections. Each connection receives its
+// own l2cap_tx_queue separately.
 typedef struct {
-    l2cap_tx_queue *tx_queue;
     int (*accept_service_id)(void *context, uint16_t service_id);
     // Return 0 to accept or a standardized LE Credit Based Connection result
     // code (2, 4..11) to refuse for a specific security/policy reason.
@@ -237,15 +238,17 @@ static struct {
     uint8_t count;
 } l2cap_services;
 
-static inline int l2cap_output_configured(const l2cap_ops *ops) {
-    return ops && ops->tx_queue && ops->tx_queue->data &&
-           ops->tx_queue->capacity >= 4;
+static inline int l2cap_output_configured(const l2cap_tx_queue *queue) {
+    return queue && queue->data && queue->capacity >= 4;
 }
 
 // Per-connection L2CAP state used by both Central and Peripheral roles.
 typedef struct l2cap_connection {
-    // Shared L2CAP channels, signaling, and pending operation state.
-    l2cap_ops ops;
+    // Each link owns its output queue and may share the application's callback
+    // table. local_ops contains only optional per-link callback overrides.
+    l2cap_tx_queue *tx_queue;
+    const l2cap_ops *shared_ops; // Must outlive this connection.
+    l2cap_ops local_ops;
 
     // One handler each for ATT and SMP; L2CAP handles LE signaling internally.
     struct {
@@ -257,16 +260,16 @@ typedef struct l2cap_connection {
     l2cap_channel channels[L2CAP_CHANNEL_MAX];
     uint16_t next_cid;                   // Next dynamic channel ID to allocate.
 
-    // Rolling counter for outgoing signaling IDs. The allocator skips 0,
-    // the active pending_id, and IDs used by channels that are closing.
+    // Rolling counter for signaling IDs. The allocator skips 0, the active
+    // pending_id, and IDs used by channels that are closing.
     uint8_t signaling_id;
 
     // State for the outstanding signaling request.
-    uint32_t pending_deadline_ms;
-    uint16_t pending_local_cid[L2CAP_CHANNEL_MAX];
     uint8_t pending_id;                  // Identifier of the request; zero means none.
     uint8_t pending_count;               // Number of channels in the request (1 for a single channel).
     uint8_t pending_code;                // Command code of the outstanding request.
+    uint32_t pending_deadline_ms;
+    uint16_t pending_local_cid[L2CAP_CHANNEL_MAX];
     l2cap_connection_bytes pending_max_sdu_size; // Proposed local SDU limit until reconfiguration is accepted.
     l2cap_connection_bytes pending_max_pdu_payload; // Proposed local PDU payload limit until accepted.
 
@@ -332,7 +335,7 @@ static inline int l2cap_tx_queue_pdu(
 ) {
     if (!len) return 0;
 
-    l2cap_tx_queue *queue = conn->ops.tx_queue;
+    l2cap_tx_queue *queue = conn->tx_queue;
     if (!queue || !queue->data ||
         queue->capacity < 4 ||
         queue->length ||
@@ -356,14 +359,17 @@ static inline int ble_timing_valid(
             IN_RANGE_INCLUSIVE(timeout, 10, 3200);
 }
 
-// Application facing
+// Application facing. tx_queue belongs to this connection. shared_ops may be
+// shared by multiple connections and, when non-null, must outlive each one.
 static inline int l2cap_conn_init(
-    l2cap_connection *conn, const l2cap_ops *ops
+    l2cap_connection *conn, const l2cap_ops *shared_ops,
+    l2cap_tx_queue *tx_queue
 ) {
-    if (!l2cap_output_configured(ops)) return 0;
+    if (!l2cap_output_configured(tx_queue)) return 0;
 
     memset(conn, 0, sizeof(*conn));
-    conn->ops = *ops;
+    conn->shared_ops = shared_ops;
+    conn->tx_queue = tx_queue;
     conn->next_cid = 0x0040;
     return 1;
 }
@@ -442,17 +448,43 @@ static inline int l2cap_service_unregister(uint16_t service_id) {
 static inline uint16_t l2cap_service_authorize(
     l2cap_connection *conn, uint16_t service_id
 ) {
-    if (l2cap_service_find(service_id) < 0)
-        return 2;
+    if (l2cap_service_find(service_id) < 0) return 2;
 
-    if (conn->ops.authorize_service_id) {
-        uint16_t result = conn->ops.authorize_service_id(conn->ops.context, service_id);
+    uint16_t (*authorize)(void *, uint16_t) = conn->local_ops.authorize_service_id ?
+                                conn->local_ops.authorize_service_id :
+                                (conn->shared_ops ? conn->shared_ops->authorize_service_id : NULL);
+    void *auth_context = conn->local_ops.authorize_service_id ?
+                                conn->local_ops.context :
+                                (conn->shared_ops ? conn->shared_ops->context : NULL);
+
+    if (authorize) {
+        uint16_t result = authorize(auth_context, service_id);
         if (result)
             return result == 2 || IN_RANGE_INCLUSIVE(result, 4, 11) ? result : 2;
     }
 
-    return !conn->ops.accept_service_id ||
-            conn->ops.accept_service_id(conn->ops.context, service_id) ? 0 : 2;
+    int (*accept)(void *, uint16_t) = conn->local_ops.accept_service_id ?
+                                conn->local_ops.accept_service_id :
+                                (conn->shared_ops ? conn->shared_ops->accept_service_id : NULL);
+    void *accept_context = conn->local_ops.accept_service_id ?
+                                conn->local_ops.context :
+                                (conn->shared_ops ? conn->shared_ops->context : NULL);
+    return !accept || accept(accept_context, service_id) ? 0 : 2;
+}
+
+static inline void l2cap_configure_channel(
+    l2cap_connection *conn, uint16_t service_id, l2cap_channel_config *config
+) {
+    void (*configure)(void *, uint16_t, l2cap_channel_config *) =
+                    conn->local_ops.configure_channel
+                    ? conn->local_ops.configure_channel
+                    : (conn->shared_ops ? conn->shared_ops->configure_channel : NULL);
+
+    void *context = conn->local_ops.configure_channel
+                    ? conn->local_ops.context
+                    : (conn->shared_ops ? conn->shared_ops->context : NULL);
+    if (configure)
+        configure(context, service_id, config);
 }
 
 // conn and receive_cb must be non-null; context may be null.
@@ -639,7 +671,7 @@ static inline int l2cap_ecfc_open(
         !service_id || service_id > 0x00ffu ||
         !count || count > L2CAP_ECFC_CHANNELS_MAX ||
         count > L2CAP_CHANNEL_MAX || conn->pending_id ||
-        !l2cap_output_configured(&conn->ops)
+        !l2cap_output_configured(conn->tx_queue)
     ) return 0;
 
     l2cap_channel_config local_config = {
@@ -647,8 +679,7 @@ static inline int l2cap_ecfc_open(
         L2CAP_LOCAL_MAX_PDU_PAYLOAD,
         L2CAP_INITIAL_CREDITS
     };
-    if (conn->ops.configure_channel)
-        conn->ops.configure_channel(conn->ops.context, service_id, &local_config);
+    l2cap_configure_channel(conn, service_id, &local_config);
 
     // Send the selected local settings to the peer and track them on the channel.
     if (!IN_RANGE_INCLUSIVE(local_config.max_sdu_size, 23, L2CAP_CHANNEL_MTU_MAX) ||
@@ -724,7 +755,7 @@ static inline int l2cap_le_credit_open(
     uint16_t *local_cid_out
 ) {
     if (!service_id || service_id > 0x00ffu ||
-        !l2cap_output_configured(&conn->ops) || conn->pending_id
+        !l2cap_output_configured(conn->tx_queue) || conn->pending_id
     ) return 0;
 
     l2cap_channel_config local_config = {
@@ -732,8 +763,7 @@ static inline int l2cap_le_credit_open(
         L2CAP_LOCAL_MAX_PDU_PAYLOAD,
         L2CAP_INITIAL_CREDITS
     };
-    if (conn->ops.configure_channel)
-        conn->ops.configure_channel(conn->ops.context, service_id, &local_config);
+    l2cap_configure_channel(conn, service_id, &local_config);
 
     // Send the selected local settings to the peer and track them on the channel.
     if (!IN_RANGE_INCLUSIVE(local_config.max_sdu_size, 23, L2CAP_CHANNEL_MTU_MAX) ||
@@ -1156,8 +1186,8 @@ static inline int l2cap_receive(
                     L2CAP_LOCAL_MAX_PDU_PAYLOAD,
                     L2CAP_INITIAL_CREDITS
                 };
-                if (!result && conn->ops.configure_channel)
-                    conn->ops.configure_channel(conn->ops.context, service_id, &local_config);
+                if (!result)
+                    l2cap_configure_channel(conn, service_id, &local_config);
 
                 if (!result &&
                     (!IN_RANGE_INCLUSIVE(local_config.max_sdu_size, 23, L2CAP_CHANNEL_MTU_MAX) ||
@@ -1286,8 +1316,8 @@ static inline int l2cap_receive(
                     L2CAP_LOCAL_MAX_PDU_PAYLOAD,
                     L2CAP_INITIAL_CREDITS
                 };
-                if (!result && conn->ops.configure_channel)
-                    conn->ops.configure_channel(conn->ops.context, service_id, &local_config);
+                if (!result)
+                    l2cap_configure_channel(conn, service_id, &local_config);
 
                 if (!result &&
                     (!IN_RANGE_INCLUSIVE(local_config.max_sdu_size, L2CAP_ECFC_MTU_MIN,

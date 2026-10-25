@@ -115,12 +115,11 @@ int main(void) {
     fake_l2cap fake = {0};
     fake_output_init(&fake);
     l2cap_ops ops = {0};
-    ops.tx_queue = &fake.tx_queue;
     ops.accept_service_id = fake_accept_service_id;
     ops.authorize_service_id = fake_authorize_service_id;
     ops.context = &fake;
     l2cap_connection conn;
-    assert(l2cap_conn_init(&conn, &ops));
+    assert(l2cap_conn_init(&conn, &ops, &fake.tx_queue));
     assert(l2cap_fixed_register(
         &conn, NULL, L2CAP_CID_ATT, route_att));
     assert(fake_receive(&fake, &conn, L2CAP_CID_ATT,
@@ -257,17 +256,16 @@ int main(void) {
     // only inside the assigned 0x0040..0x007F dynamic range.
     fake_l2cap multi_fake = {0};
     fake_output_init(&multi_fake);
-    ops.tx_queue = &multi_fake.tx_queue;
-    ops.context = &multi_fake;
+    l2cap_ops multi_ops = ops;
+    multi_ops.context = &multi_fake;
     l2cap_connection multi;
-    assert(l2cap_conn_init(&multi, &ops));
+    assert(l2cap_conn_init(&multi, &multi_ops, &multi_fake.tx_queue));
     fake_l2cap partial_fake = {0};
     fake_output_init(&partial_fake);
     l2cap_ops partial_ops = ops;
-    partial_ops.tx_queue = &partial_fake.tx_queue;
     partial_ops.context = &partial_fake;
     l2cap_connection partial_server;
-    assert(l2cap_conn_init(&partial_server, &partial_ops));
+    assert(l2cap_conn_init(&partial_server, &partial_ops, &partial_fake.tx_queue));
     uint8_t incoming_partial[] = {
         L2CAP_ECFC_CONNECTION_REQUEST, 20, 12, 0,
         0x27, 0, 80, 0, 64, 0, 2, 0, 0x30, 0, 0x4a, 0
@@ -337,10 +335,10 @@ int main(void) {
 
     fake_l2cap legacy_fake = {0};
     fake_output_init(&legacy_fake);
-    ops.tx_queue = &legacy_fake.tx_queue;
-    ops.context = &legacy_fake;
+    l2cap_ops legacy_ops = ops;
+    legacy_ops.context = &legacy_fake;
     l2cap_connection legacy;
-    assert(l2cap_conn_init(&legacy, &ops));
+    assert(l2cap_conn_init(&legacy, &legacy_ops, &legacy_fake.tx_queue));
     uint16_t legacy_cid;
     assert(l2cap_le_credit_open(&legacy, 0x0027, &legacy_cid));
     assert(fake_output_take(&legacy_fake));
@@ -360,10 +358,10 @@ int main(void) {
 
     fake_l2cap zero_fake = {0};
     fake_output_init(&zero_fake);
-    ops.tx_queue = &zero_fake.tx_queue;
-    ops.context = &zero_fake;
+    l2cap_ops zero_ops = ops;
+    zero_ops.context = &zero_fake;
     l2cap_connection zero_credit;
-    assert(l2cap_conn_init(&zero_credit, &ops));
+    assert(l2cap_conn_init(&zero_credit, &zero_ops, &zero_fake.tx_queue));
     assert(l2cap_le_credit_open(&zero_credit, 0x0027, &local_cid));
     assert(fake_output_take(&zero_fake));
     uint8_t colliding_open[] = {L2CAP_LE_CREDIT_CONN_REQ,
@@ -389,10 +387,10 @@ int main(void) {
 
     fake_l2cap reject_fake = {0};
     fake_output_init(&reject_fake);
-    ops.tx_queue = &reject_fake.tx_queue;
-    ops.context = &reject_fake;
+    l2cap_ops reject_ops = ops;
+    reject_ops.context = &reject_fake;
     l2cap_connection reject_conn;
-    assert(l2cap_conn_init(&reject_conn, &ops));
+    assert(l2cap_conn_init(&reject_conn, &reject_ops, &reject_fake.tx_queue));
     uint8_t unknown_signal[] = {0x55, 12, 0, 0};
     assert(fake_receive(&reject_fake, &reject_conn, L2CAP_CID_LE_SIGNALING, unknown_signal,
                                        sizeof(unknown_signal)));

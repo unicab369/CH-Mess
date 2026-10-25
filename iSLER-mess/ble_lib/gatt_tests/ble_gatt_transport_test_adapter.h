@@ -36,8 +36,8 @@ static inline int gatt_transport_test_init(
         .capacity = sizeof(gatt_transport_test_tx)
     };
     l2cap_ops l2cap_ops = {0};
-    l2cap_ops.tx_queue = &gatt_transport_test_tx_queue;
-    if (!l2cap_conn_init(&gatt_transport_test_l2cap, &l2cap_ops))
+    if (!l2cap_conn_init(&gatt_transport_test_l2cap, &l2cap_ops,
+                         &gatt_transport_test_tx_queue))
         return 0;
     return gatt_transport_init(transport, server,
         &gatt_transport_test_l2cap, &gatt_transport_test_tx_queue);

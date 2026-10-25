@@ -953,8 +953,8 @@ static inline int gatt_transport_eatt_init(
     }
 
     if (transport->l2cap_link) {
-        transport->l2cap_link->ops.authorize_service_id = gatt_authorize_service_id_cb;
-        transport->l2cap_link->ops.configure_channel = gatt_configure_channel_cb;
+        transport->l2cap_link->local_ops.authorize_service_id = gatt_authorize_service_id_cb;
+        transport->l2cap_link->local_ops.configure_channel = gatt_configure_channel_cb;
     }
     transport->eatt_enabled = 1;
     return 1;
@@ -1055,8 +1055,8 @@ static inline int gatt_transport_init(
         return 0;
 
     if (l2cap) {
-        l2cap->ops.tx_queue = tx_queue;
-        l2cap->ops.context = transport;
+        l2cap->tx_queue = tx_queue;
+        l2cap->local_ops.context = transport;
         if (!l2cap_fixed_register(transport->l2cap_link, transport, L2CAP_CID_ATT,
                                                         gatt_transport_receive_att
         )) return 0;
@@ -1664,11 +1664,11 @@ static inline int ble_gap_gatt_poll(
         transport->l2cap_link = l2cap;
         transport->tx_queue_link = tx_queue;
         transport->shared_l2cap = 1;
-        l2cap->ops.tx_queue = tx_queue;
-        l2cap->ops.context = transport;
+        l2cap->tx_queue = tx_queue;
+        l2cap->local_ops.context = transport;
 #if BLE_GATT_ENABLE_EATT
-        l2cap->ops.authorize_service_id = gatt_authorize_service_id_cb;
-        l2cap->ops.configure_channel = gatt_configure_channel_cb;
+        l2cap->local_ops.authorize_service_id = gatt_authorize_service_id_cb;
+        l2cap->local_ops.configure_channel = gatt_configure_channel_cb;
         if (transport->eatt_enabled) {
             if (L2CAP_LOCAL_MAX_PDU_PAYLOAD < L2CAP_ECFC_MPS_MIN ||
                 !l2cap_service_register(BLE_GATT_EATT_SERVICE_ID)) {

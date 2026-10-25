@@ -52,9 +52,8 @@ static int receive_frame(
 
 int main(void) {
     l2cap_ops ops = {0};
-    ops.tx_queue = &tx_queue;
     ops.accept_service_id = accept_service_id;
-    if (!l2cap_conn_init(&connection, &ops) ||
+    if (!l2cap_conn_init(&connection, &ops, &tx_queue) ||
         !l2cap_service_register(0x0027)
     ) return 1;
 

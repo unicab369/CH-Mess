@@ -1694,6 +1694,20 @@ int gap_use_public_address(void) {
 #include "ble_gap_smp.h"
 #endif
 
+static l2cap_ops ble_gap_l2cap_upper;
+
+// Use the configured L2CAP defaults unless the application supplies a
+// service-specific configure_channel callback.
+static void gap_configure_channel_default(
+    void *context, uint16_t service_id, l2cap_channel_config *config
+) {
+    (void)context;
+    (void)service_id;
+    config->max_sdu_size = L2CAP_LOCAL_MAX_SDU_SIZE;
+    config->max_pdu_payload = L2CAP_LOCAL_MAX_PDU_PAYLOAD;
+    config->initial_credits = L2CAP_INITIAL_CREDITS;
+}
+
 // Validate a legacy CONNECT_IND and initialize its data-channel state.
 static int gap_conn_accept(
     const uint8_t frame[36], uint64_t received_ticks,
@@ -1726,15 +1740,14 @@ static int gap_conn_accept(
     conn->peer = conn->initiator;
     conn->l2cap_tx_queue.data = conn->l2cap_tx;
     conn->l2cap_tx_queue.capacity = sizeof(conn->l2cap_tx);
-    l2cap_ops l2cap_ops = {0};
-    l2cap_ops.tx_queue = &conn->l2cap_tx_queue;
 
 #if GAP_SECURITY_SUPPORT >= 2
     conn->responder.type = (frame[0] >> 7) & 1;
     memcpy(conn->responder.address, frame + 8, 6);
 #endif
 
-    if (!l2cap_conn_init(&conn->l2cap, &l2cap_ops)) return 0;
+    if (!l2cap_conn_init(&conn->l2cap, &ble_gap_l2cap_upper,
+                         &conn->l2cap_tx_queue)) return 0;
 
 #if GAP_SECURITY_SUPPORT >= 2
     if (!smp_link_init(&gap_conn_ctx[gap_conn_slot].smp, &conn->l2cap)) {
@@ -1809,28 +1822,16 @@ typedef struct {
 } ble_gap_l2cap_peer;
 
 static ble_gap_l2cap_peer ble_gap_l2cap_peers[GAP_CONNECTION_COUNT];
-static l2cap_ops ble_gap_l2cap_upper;
 
-static inline int gap_accept_service_id_cb(void *context, uint16_t service_id) {
-    (void)context;
-    return !ble_gap_l2cap_upper.accept_service_id ||
-        ble_gap_l2cap_upper.accept_service_id(ble_gap_l2cap_upper.context, service_id);
-}
-
-static inline void gap_configure_channel_cb(
-    void *context, uint16_t service_id, l2cap_channel_config *config
-) {
-    (void)context;
-    // The application can adjust a setting here, e.g. config->max_sdu_size = 128.
-    if (ble_gap_l2cap_upper.configure_channel)
-        ble_gap_l2cap_upper.configure_channel(ble_gap_l2cap_upper.context, service_id, config);
-}
-
-// Application-facing
+// Application-facing. Install shared accept/configure callbacks before polling;
+// pass NULL to use the default behavior. Each GAP link retains its own
+// transmit queue and references this shared callback configuration.
 static inline int ble_gap_l2cap_init(const l2cap_ops *upper) {
     memset(ble_gap_l2cap_peers, 0, sizeof(ble_gap_l2cap_peers));
     memset(&ble_gap_l2cap_upper, 0, sizeof(ble_gap_l2cap_upper));
     if (upper) ble_gap_l2cap_upper = *upper;
+    if (!ble_gap_l2cap_upper.configure_channel)
+        ble_gap_l2cap_upper.configure_channel = gap_configure_channel_default;
     return 1;
 }
 
@@ -1862,10 +1863,6 @@ static inline int ble_gap_l2cap_poll(void) {
             peer->handle = handle;
             peer->connection = &conn->l2cap;
             peer->tx_queue = &conn->l2cap_tx_queue;
-            peer->connection->ops.accept_service_id = gap_accept_service_id_cb;
-            peer->connection->ops.configure_channel = gap_configure_channel_cb;
-            peer->connection->ops.context = NULL;
-
             peer->initialized = 1;
         }
 
