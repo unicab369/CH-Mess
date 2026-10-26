@@ -74,8 +74,7 @@ int main(void) {
         if ((int32_t)(now - next_update) >= 0) {
             next_update = now + 1000;
             level = level >= 100 ? 0 : (uint8_t)(level + 10);
-            (void)gatt_bas_notify_level(&gatt_server,
-                                                     &battery_service, level);
+            (void)gatt_bas_notify_level(&gatt_server, &battery_service, level);
         }
 
         (void)gap_send_due(NULL, 0, now, NULL, NULL);

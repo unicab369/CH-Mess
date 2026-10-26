@@ -159,13 +159,6 @@ enum {
 // =============================================================================
 // Connection and channel state
 // =============================================================================
-// One-packet output slot owned and drained by the transport poller.
-typedef struct {
-    uint8_t *data;
-    uint16_t capacity; // Storage size, including the four-byte L2CAP header.
-    uint16_t length, offset;
-} l2cap_tx_queue;
-
 // Local receive settings selected when opening a channel.
 typedef struct {
     uint16_t max_sdu_size;
@@ -195,17 +188,6 @@ typedef struct {
     uint8_t rx_data[L2CAP_CHANNEL_MTU_MAX];
 } l2cap_channel;
 
-// Callback configuration shared by connections. Each connection receives its
-// own l2cap_tx_queue separately.
-typedef struct {
-    int (*accept_service_id)(void *context, uint16_t service_id);
-    // Return 0 to accept or a standardized LE Credit Based Connection result
-    // code (2, 4..11) to refuse for a specific security/policy reason.
-    uint16_t (*authorize_service_id)(void *context, uint16_t service_id);
-    // Adjust the device-wide defaults for a service on incoming or outgoing opens.
-    void (*configure_channel)(void *context, uint16_t service_id, l2cap_channel_config *config);
-    void *context;
-} l2cap_ops;
 
 // Local services supported by this L2CAP stack, shared by all connections.
 // Bluetooth SIG assigned L2CAP PSM/SPSM values:
@@ -238,9 +220,29 @@ static struct {
     uint8_t count;
 } l2cap_services;
 
+// One-packet output slot owned and drained by the transport poller.
+typedef struct {
+    uint8_t *data;
+    uint16_t capacity; // Storage size, including the four-byte L2CAP header.
+    uint16_t length, offset;
+} l2cap_tx_queue;
+
 static inline int l2cap_output_configured(const l2cap_tx_queue *queue) {
     return queue && queue->data && queue->capacity >= 4;
 }
+
+// Callback configuration shared by connections. Each connection receives its
+// own l2cap_tx_queue separately.
+typedef struct {
+    int (*accept_service_id)(void *context, uint16_t service_id);
+    // Return 0 to accept or a standardized LE Credit Based Connection result
+    // code (2, 4..11) to refuse for a specific security/policy reason.
+    uint16_t (*authorize_service_id)(void *context, uint16_t service_id);
+    // Adjust the device-wide defaults for a service on incoming or outgoing opens.
+    void (*configure_channel)(void *context, uint16_t service_id, l2cap_channel_config *config);
+    void *context;
+} l2cap_ops;
+
 
 // Per-connection L2CAP state used by both Central and Peripheral roles.
 typedef struct l2cap_connection {
@@ -475,17 +477,16 @@ static inline uint16_t l2cap_service_authorize(
 static inline void l2cap_configure_channel(
     l2cap_connection *conn, uint16_t service_id, l2cap_channel_config *config
 ) {
-    if (conn->shared_ops && conn->shared_ops->configure_channel)
-        conn->shared_ops->configure_channel(
-            conn->shared_ops->context, service_id, config
-        );
+    void (*configure)(void *, uint16_t, l2cap_channel_config *) =
+                    conn->local_ops.configure_channel
+                    ? conn->local_ops.configure_channel
+                    : (conn->shared_ops ? conn->shared_ops->configure_channel : NULL);
 
-    if (conn->local_ops.configure_channel &&
-        (!conn->shared_ops || conn->local_ops.configure_channel !=
-                                conn->shared_ops->configure_channel)
-    ) conn->local_ops.configure_channel(
-            conn->local_ops.context, service_id, config
-        );
+    void *context = conn->local_ops.configure_channel
+                    ? conn->local_ops.context
+                    : (conn->shared_ops ? conn->shared_ops->context : NULL);
+    if (configure)
+        configure(context, service_id, config);
 }
 
 // conn and receive_cb must be non-null; context may be null.
