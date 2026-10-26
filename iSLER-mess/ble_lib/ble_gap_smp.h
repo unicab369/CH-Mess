@@ -980,6 +980,7 @@ int gap_secure_connections_set(uint8_t enabled) {
 // The application must deliver both values to the peer over its OOB channel;
 // out must point to a writable gap_oob_data.
 int gap_sc_oob_get(gap_oob_data *out) {
+    if (!out) return 0;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     if (!gap_pair_cfg.enabled || !gap_pair_cfg.secure_connections ||

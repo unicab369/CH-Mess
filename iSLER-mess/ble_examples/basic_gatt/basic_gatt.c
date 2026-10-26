@@ -22,6 +22,10 @@ uint32_t GET_MILLIS(void) {
     return (uint32_t)(funSysTick64() / DELAY_MS_TIME);
 }
 
+// Watch these in the debugger to see how long the main-loop cycle takes.
+volatile uint32_t basic_gatt_loop_us;
+volatile uint32_t basic_gatt_loop_max_us;
+
 static ble_gatt_server gatt_server;
 static ble_gatt_transport gatt_transport;
 static ble_gatt_bas_service battery_service;
@@ -48,12 +52,10 @@ int main(void) {
     gap_hw_init();
 
     if (!gatt_start() ||
-        !gap_ad_builder_init(&builder, advertising_data,
-                             sizeof(advertising_data)) ||
+        !gap_ad_builder_init(&builder, advertising_data, sizeof(advertising_data)) ||
         !gap_ad_flags(&builder, 0x06) ||
         !gap_ad_uuid16_list(&builder, &service_uuid, 1, 1) ||
-        !gap_ad_local_name(&builder, local_name,
-                           sizeof(local_name) - 1, 1) ||
+        !gap_ad_local_name(&builder, local_name, sizeof(local_name) - 1, 1) ||
         !gap_adv_start(ADV_IND, advertising_data, builder.len, NULL, 0, 100)
     ) {
         for (;;) {}
@@ -61,8 +63,10 @@ int main(void) {
 
     uint8_t level = 50;
     uint32_t next_update = GET_MILLIS() + 1000;
+    uint32_t next_loop_report = GET_MILLIS() + 2000;
 
     for (;;) {
+        uint64_t loop_start_ticks = funSysTick64();
         uint32_t now = GET_MILLIS();
 
         if (gap_conn_count())
@@ -78,5 +82,20 @@ int main(void) {
         }
 
         (void)gap_send_due(NULL, 0, now, NULL, NULL);
+
+        uint32_t loop_us = (uint32_t)((funSysTick64() - loop_start_ticks) /
+                                      DELAY_US_TIME);
+        basic_gatt_loop_us = loop_us;
+        if (loop_us > basic_gatt_loop_max_us)
+            basic_gatt_loop_max_us = loop_us;
+
+        uint32_t report_now = GET_MILLIS();
+
+        if ((int32_t)(report_now - next_loop_report) >= 0) {
+            next_loop_report = report_now + 2000;
+            printf("Loop: %lu us, max: %lu us\n",
+                   (unsigned long)basic_gatt_loop_us,
+                   (unsigned long)basic_gatt_loop_max_us);
+        }
     }
 }

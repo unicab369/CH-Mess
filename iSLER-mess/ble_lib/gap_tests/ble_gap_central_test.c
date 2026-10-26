@@ -2103,20 +2103,21 @@ static void test_radio_privacy_filter(void) {
     adv_evt.rx_event = 1;
     adv_evt.adv_frame[0] = 0; // Undirected connectable advertising.
     GAP_HW_PUBLIC_ADDRESS(adv_evt.adv_frame + 2);
-    adv_evt.scan_resp_started = 0;
+    adv_evt.poll_state = GAP_ADV_POLL_RX;
     rx_frame[0] = 0x43; rx_frame[1] = 12;
     const uint8_t unknown_peer[6] = {0x10, 0x20, 0x30, 0x40, 0x50, 0x60};
     memcpy(rx_frame + 2, unknown_peer, 6);
     memcpy(rx_frame + 8, adv_evt.adv_frame + 2, 6);
     before = link_tx_count;
     gap_hw_received();
-    assert(link_tx_count == before && !adv_evt.scan_resp_started);
+    assert(link_tx_count == before && adv_evt.poll_state == GAP_ADV_POLL_RX);
 
     memcpy(rx_frame + 2, test_rpa, 6);
     gap_rx.ready = 0;
     gap_hw_received();
-    assert(link_tx_count == before + 1 && adv_evt.scan_resp_started);
-    adv_evt.scan_resp_started = 0;
+    assert(link_tx_count == before + 1 &&
+           adv_evt.poll_state == GAP_ADV_POLL_SCAN_TX);
+    adv_evt.poll_state = GAP_ADV_POLL_RX;
 
     rx_frame[0] = 0x45; rx_frame[1] = 34;
     memcpy(rx_frame + 2, unknown_peer, 6);
