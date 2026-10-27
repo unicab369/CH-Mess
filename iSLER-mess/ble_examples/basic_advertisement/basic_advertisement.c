@@ -29,11 +29,9 @@ int main(void) {
     seed((uint32_t)funSysTick64());
     gap_hw_init();
 
-    if (!gap_ad_builder_init(&builder, advertising_data,
-                             sizeof(advertising_data)) ||
+    if (!gap_ad_builder_init(&builder, advertising_data, sizeof(advertising_data)) ||
         !gap_ad_flags(&builder, 0x06) ||
-        !gap_ad_local_name(&builder, local_name,
-                               sizeof(local_name) - 1, 1) ||
+        !gap_ad_local_name(&builder, local_name, sizeof(local_name) - 1, 1) ||
         !gap_adv_start(ADV_NONCONN_IND, advertising_data, builder.len, NULL, 0, 100)
     ) {
         for (;;) {}

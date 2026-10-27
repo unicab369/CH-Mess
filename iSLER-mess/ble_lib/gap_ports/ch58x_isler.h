@@ -175,7 +175,7 @@ void GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]) {
 }
 void GAP_HW_PACKET_READY(void) { gap_port_rx_ready = 1; }
 void GAP_HW_PACKET_CLEAR(void) { gap_port_rx_ready = 0; }
-uint8_t GAP_HW_RANDOM_JITTER(void) { return (uint8_t)(rand() % 11); }
+uint32_t HW_RANDOM(void) { return (uint32_t)rand(); }
 void GAP_HW_RANDOM_BYTES(uint8_t *out, size_t len) {
     for (size_t i = 0; i < len;) {
         uint32_t value = (uint32_t)rand();

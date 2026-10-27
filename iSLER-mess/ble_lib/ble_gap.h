@@ -218,7 +218,7 @@ uint64_t HW_TICKS_FROM_US(uint32_t us);
 void GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]);
 void GAP_HW_PACKET_READY(void);
 void GAP_HW_PACKET_CLEAR(void);
-uint8_t GAP_HW_RANDOM_JITTER(void);
+uint32_t HW_RANDOM(void);
 void GAP_HW_RANDOM_BYTES(uint8_t *out, size_t len);
 // Must provide cryptographic randomness or fail; never use advertising jitter.
 int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len);

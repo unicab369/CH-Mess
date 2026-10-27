@@ -2665,7 +2665,7 @@ static int gap_ext_send_due(uint32_t now) {
         }
     }
 
-    gap_ext_adv[send_extended].next_event_ms = GET_MILLIS() + GAP_HW_RANDOM_JITTER() % 11 +
+    gap_ext_adv[send_extended].next_event_ms = GET_MILLIS() + HW_RANDOM() % 11 +
                                                 gap_ext_adv[send_extended].interval_ms;
     gap_ext_adv_next_set = (send_extended + 1) % GAP_EXT_ADV_SET_COUNT;
     return 1;

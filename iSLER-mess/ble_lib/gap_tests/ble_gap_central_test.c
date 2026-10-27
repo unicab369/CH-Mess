@@ -216,7 +216,7 @@ void GAP_HW_SCAN_RX(uint8_t channel) {
     configured_radio_channel = channel;
     scan_rx_count++;
 }
-uint8_t GAP_HW_RANDOM_JITTER(void) { return 0; }
+uint32_t HW_RANDOM(void) { return 0; }
 void GAP_HW_PACKET_CLEAR(void) {}
 void GAP_HW_PACKET_READY(void) {}
 void GAP_HW_TX_BUFFER(const uint8_t *frame) { tx_buffer = frame; }
