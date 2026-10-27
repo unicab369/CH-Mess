@@ -6,8 +6,9 @@
 static volatile uint32_t gap_port_rx_ready;
 
 // Application must override this with a cryptographic entropy source before
-// using link encryption. The advertising LFSR cannot safely generate session IVs.
-__attribute__((weak)) int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len) {
+// using GAP features that require random values. Weak pseudo-random bytes are
+// not a safe fallback for addresses, connection parameters, or security material.
+__attribute__((weak)) int GAP_RANDOM_BYTES(uint8_t *out, size_t len) {
     (void)out; (void)len;
     return 0;
 }
@@ -175,13 +176,5 @@ void GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]) {
 }
 void GAP_HW_PACKET_READY(void) { gap_port_rx_ready = 1; }
 void GAP_HW_PACKET_CLEAR(void) { gap_port_rx_ready = 0; }
-uint32_t HW_RANDOM(void) { return (uint32_t)rand(); }
-void GAP_HW_RANDOM_BYTES(uint8_t *out, size_t len) {
-    for (size_t i = 0; i < len;) {
-        uint32_t value = (uint32_t)rand();
-        for (uint8_t byte = 0; byte < 4 && i < len; byte++, i++)
-            out[i] = (uint8_t)(value >> (8 * byte));
-    }
-}
 
 #endif // GAP_PORT_CH58X_ISLER_H

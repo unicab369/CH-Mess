@@ -1823,7 +1823,9 @@ int gap_send_due(
     }
 
     uint32_t completed_at = GET_MILLIS();
-    uint8_t event_jitter = HW_RANDOM() % 11;
+    uint32_t random;
+    uint8_t event_jitter = GAP_RANDOM_BYTES((uint8_t *)&random, sizeof(random)) ?
+                           random % 11 : 0;
 
     if (send_gap) {
         gap_adv.next_event_ms = completed_at + gap_adv.interval_ms + event_jitter;

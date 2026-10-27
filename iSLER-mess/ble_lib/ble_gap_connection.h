@@ -733,7 +733,7 @@ static uint8_t gap_conn_control(
 
         uint8_t entropy[12];
 
-        if (!GAP_RANDOM_SECURE_BYTES(entropy, sizeof(entropy))) {
+        if (!GAP_RANDOM_BYTES(entropy, sizeof(entropy))) {
             conn->security.status = GAP_LL_ERR_UNSPECIFIED;
 
             if (restart) {
@@ -2567,7 +2567,7 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
 
     uint8_t entropy[12];
 
-    if (!GAP_RANDOM_SECURE_BYTES(entropy, sizeof(entropy))) {
+    if (!GAP_RANDOM_BYTES(entropy, sizeof(entropy))) {
         conn->security.status = 0x1f;
         return 0;
     }

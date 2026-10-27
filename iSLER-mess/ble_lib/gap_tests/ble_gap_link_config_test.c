@@ -48,9 +48,7 @@ uint64_t HW_TICKS_FROM_US(uint32_t us) { return us; }
 void GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]) { memset(address, 0, 6); }
 void GAP_HW_PACKET_READY(void) {}
 void GAP_HW_PACKET_CLEAR(void) {}
-uint32_t HW_RANDOM(void) { return 0; }
-void GAP_HW_RANDOM_BYTES(uint8_t *out, size_t len) { memset(out, 0, len); }
-int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len) {
+int GAP_RANDOM_BYTES(uint8_t *out, size_t len) {
     memset(out, 0, len); return 1;
 }
 void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out) {

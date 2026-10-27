@@ -17,7 +17,7 @@ typedef struct {
 
 static fake_smp *fake_random_state;
 
-int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len) {
+int GAP_RANDOM_BYTES(uint8_t *out, size_t len) {
     if (!fake_random_state || fake_random_state->random_fail)
         return 0;
     memset(out, 0x5a, len);

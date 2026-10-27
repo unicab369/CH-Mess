@@ -366,7 +366,7 @@ int gap_ead_encrypt(
 
     uint8_t randomizer[GAP_EAD_RANDOMIZER_LEN];
 
-    if (!GAP_RANDOM_SECURE_BYTES(randomizer, sizeof(randomizer)))
+    if (!GAP_RANDOM_BYTES(randomizer, sizeof(randomizer)))
         return 0;
 
     uint8_t nonce[13], aad = 0xea;
@@ -432,7 +432,8 @@ static inline int gap_access_addr(uint32_t *address) {
 
     for (uint8_t attempt = 0; attempt < 32; attempt++) {
         // This is a random value, so little-endian conversion is not required.
-        GAP_HW_RANDOM_BYTES((uint8_t *)address, sizeof(*address));
+        if (!GAP_RANDOM_BYTES((uint8_t *)address, sizeof(*address)))
+            return 0;
         if (gap_access_address_valid(*address))
             return 1;
     }
@@ -683,7 +684,7 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     write_u32_le(adv_tx.connect_request + 14, access_address);
 
     uint8_t crc_init[3];
-    GAP_HW_RANDOM_BYTES(crc_init, sizeof(crc_init));
+    if (!GAP_RANDOM_BYTES(crc_init, sizeof(crc_init))) return 0;
     memcpy(adv_tx.connect_request + 18, crc_init, sizeof(crc_init));
     adv_tx.connect_request[21] = 1; // transmit window size: 1.25 ms
     write_u16_le(adv_tx.connect_request + 24, gap_central_timing.interval);

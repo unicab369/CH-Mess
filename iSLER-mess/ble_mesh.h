@@ -82,15 +82,7 @@ int BLE_MESH_NETWORK_TIME_SECONDS(uint64_t *seconds) {
 }
 
 int GET_RANDOM_BYTES(uint8_t *out, unsigned len) {
-    if (!out && len) return 0;
-
-    for (unsigned i = 0; i < len;) {
-        uint32_t value = rand();
-        for (unsigned j = 0; j < 4 && i < len; j++, i++) {
-            out[i] = (uint8_t)(value >> (8 * j));
-        }
-    }
-    return 1;
+    return GAP_RANDOM_BYTES(out, len);
 }
 
 #define RADIO_QUEUE_SIZE 8
@@ -204,8 +196,6 @@ int BLE_MESH_GATT_PROXY_OFFER_PDU(
 
 static void mesh_radio_init(void) {
     gap_hw_init();
-    uint32_t value = (uint32_t)funSysTick64();
-    seed(value ? value : 0x747AA32F);
     mesh_gatt_proxy_set_rx_callback(mesh_proxy_gatt_receive, NULL);
 }
 
@@ -232,7 +222,9 @@ int BLE_MESH_QUEUE_TX_DELAYED(
         return -1;
 
     uint32_t range = (uint32_t)max_delay_ms - min_delay_ms + 1;
-    uint32_t delay_ms = min_delay_ms + rand() % range;
+    uint32_t random;
+    if (!GAP_RANDOM_BYTES((uint8_t *)&random, sizeof(random))) return -1;
+    uint32_t delay_ms = min_delay_ms + random % range;
     return mesh_adv_queue_add(adv_data, len, GET_MILLIS() + delay_ms, 0);
 }
 

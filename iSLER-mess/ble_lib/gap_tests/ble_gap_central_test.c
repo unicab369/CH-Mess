@@ -102,9 +102,13 @@ uint32_t GAP_CRITICAL_ENTER(void) { return 0; }
 void GAP_CRITICAL_EXIT(uint32_t state) { (void)state; }
 static uint8_t secure_random_forced[12], secure_random_force;
 static uint8_t ead_randomizer_forced[5], ead_randomizer_force;
-int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len) {
+int GAP_RANDOM_BYTES(uint8_t *out, size_t len) {
     if (!secure_random_available || (len == 4 && secure_random_passkey_fail))
         return 0;
+    if (force_random) {
+        for (size_t i = 0; i < len; i++) out[i] = forced_random[i % 6];
+        return 1;
+    }
     if (len == 4 && secure_random_passkey_reject) { memset(out, 0xff, 4); return 1; }
 
     if (secure_random_disconnect)
@@ -184,7 +188,7 @@ static void test_encrypted_advertising_data(void) {
         sizeof(clear), &clear_len));
 }
 int GET_RANDOM_BYTES(uint8_t *out, unsigned size) {
-    return GAP_RANDOM_SECURE_BYTES(out, size);
+    return GAP_RANDOM_BYTES(out, size);
 }
 int GAP_CCM_ENCRYPT(
     const uint8_t key[16], const uint8_t nonce[13],
@@ -216,7 +220,6 @@ void GAP_HW_SCAN_RX(uint8_t channel) {
     configured_radio_channel = channel;
     scan_rx_count++;
 }
-uint32_t HW_RANDOM(void) { return 0; }
 void GAP_HW_PACKET_CLEAR(void) {}
 void GAP_HW_PACKET_READY(void) {}
 void GAP_HW_TX_BUFFER(const uint8_t *frame) { tx_buffer = frame; }
@@ -367,17 +370,6 @@ void GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]) {
     const uint8_t value[6] = {1, 2, 3, 4, 5, 6};
     memcpy(address, value, sizeof(value));
 }
-void GAP_HW_RANDOM_BYTES(uint8_t *out, size_t len) {
-    if (force_random) {
-        for (size_t i = 0; i < len; i++) out[i] = forced_random[i % 6];
-        return;
-    }
-
-    static const uint8_t value[4] = {0x78, 0x56, 0x34, 0x12};
-    for (size_t i = 0; i < len; i++)
-        out[i] = value[i % sizeof(value)] + (len == 4 ? 0 : random_seed);
-}
-
 static void test_access_address_rules(void) {
     assert(gap_access_address_valid(0x12345678));
     assert(!gap_access_address_valid(BLE_ADV_ACCESS_ADDRESS));

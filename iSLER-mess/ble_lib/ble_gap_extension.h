@@ -235,15 +235,16 @@ static int gap_ext_data_valid(const uint8_t *data, size_t len) {
 
 // Generate an Advertising Data ID (DID), used by scanners to recognize duplicate data.
 // Keep the advertising-set and periodic-train DIDs distinct and avoid reusing the last value.
-static uint16_t gap_ext_did_next(uint16_t previous, uint16_t other) {
+static int gap_ext_did_next(uint16_t previous, uint16_t other, uint16_t *next) {
     uint8_t random[2];
-    GAP_HW_RANDOM_BYTES(random, sizeof(random));
+    if (!next || !GAP_RANDOM_BYTES(random, sizeof(random))) return 0;
     uint16_t did = read_u16_le(random) & 0x0fff;
 
     // Keep this DID distinct from both existing values; wrap within 12 bits.
     while (did == previous || did == other)
         did = (did + 1) & 0x0fff;
-    return did;
+    *next = did;
+    return 1;
 }
 
 // Estimate the complete AUX_SYNC_IND/AUX_CHAIN_IND event duration, including
@@ -289,12 +290,16 @@ int gap_periodic_adv_start(
     ) return 0;
 
     uint8_t random[3];
-    GAP_HW_RANDOM_BYTES(random, sizeof(random));
+    if (!GAP_RANDOM_BYTES(random, sizeof(random))) return 0;
     set->periodic.params.crc_init = (uint32_t)random[0] |
                                     (uint32_t)random[1] << 8 |
                                     (uint32_t)random[2] << 16;
-    set->periodic.did = gap_ext_did_next(set->periodic.did, set->did);
-    set->did = gap_ext_did_next(set->did, set->periodic.did);
+    uint16_t periodic_did, did;
+    if (!gap_ext_did_next(set->periodic.did, set->did, &periodic_did) ||
+        !gap_ext_did_next(set->did, periodic_did, &did)
+    ) return 0;
+    set->periodic.did = periodic_did;
+    set->did = did;
 
     if (len) memcpy(set->periodic.data, data, len);
     set->periodic.data_len = (uint16_t)len;
@@ -1365,7 +1370,7 @@ static int gap_pawr_exchange(
     memcpy(request + 2, local_address, 6);
     memcpy(request + 8, peer_address, 6);
     write_u32_le(request + 14, access_address);
-    GAP_HW_RANDOM_BYTES(crc_init, sizeof(crc_init));
+    if (!GAP_RANDOM_BYTES(crc_init, sizeof(crc_init))) return 0;
     memcpy(request + 18, crc_init, sizeof(crc_init));
 
     request[21] = 1;
@@ -2665,7 +2670,10 @@ static int gap_ext_send_due(uint32_t now) {
         }
     }
 
-    gap_ext_adv[send_extended].next_event_ms = GET_MILLIS() + HW_RANDOM() % 11 +
+    uint32_t random;
+    uint8_t event_jitter = GAP_RANDOM_BYTES((uint8_t *)&random, sizeof(random)) ?
+                           random % 11 : 0;
+    gap_ext_adv[send_extended].next_event_ms = GET_MILLIS() + event_jitter +
                                                 gap_ext_adv[send_extended].interval_ms;
     gap_ext_adv_next_set = (send_extended + 1) % GAP_EXT_ADV_SET_COUNT;
     return 1;

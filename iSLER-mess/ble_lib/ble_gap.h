@@ -218,10 +218,8 @@ uint64_t HW_TICKS_FROM_US(uint32_t us);
 void GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]);
 void GAP_HW_PACKET_READY(void);
 void GAP_HW_PACKET_CLEAR(void);
-uint32_t HW_RANDOM(void);
-void GAP_HW_RANDOM_BYTES(uint8_t *out, size_t len);
-// Must provide cryptographic randomness or fail; never use advertising jitter.
-int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len);
+// Provide cryptographically secure random bytes or fail without using a weak fallback.
+int GAP_RANDOM_BYTES(uint8_t *out, size_t len);
 // Protect foreground key updates from interrupt handlers.
 uint32_t GAP_CRITICAL_ENTER(void);
 void GAP_CRITICAL_EXIT(uint32_t state);
@@ -1232,7 +1230,7 @@ static int gap_private_addr_generate(
 ) {
     for (uint8_t attempt = 0; attempt < 32; attempt++) {
         if (irk) {
-            GAP_HW_RANDOM_BYTES(address + 3, 3);
+            if (!GAP_RANDOM_BYTES(address + 3, 3)) return 0;
             address[5] = (address[5] & 0x3f) | 0x40;
             uint32_t random = (uint32_t)address[3] |
                                 (uint32_t)address[4] << 8 |
@@ -1244,7 +1242,7 @@ static int gap_private_addr_generate(
         }
         else {
             // NRPA: 46 random bits with address bits 47:46 cleared; no AES.
-            GAP_HW_RANDOM_BYTES(address, 6);
+            if (!GAP_RANDOM_BYTES(address, 6)) return 0;
             address[5] &= 0x3f;
             uint8_t all_zero = 1, all_one = 1, public_address[6];
 
@@ -1556,7 +1554,7 @@ static int gap_privacy_timeout_pick(
     for (uint8_t attempt = 0; attempt < 8; attempt++) {
         uint8_t bytes[2];
 
-        if (!GAP_RANDOM_SECURE_BYTES(bytes, sizeof(bytes)))
+        if (!GAP_RANDOM_BYTES(bytes, sizeof(bytes)))
             return 0;
 
         uint32_t value = read_u16_le(bytes);

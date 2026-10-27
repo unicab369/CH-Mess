@@ -18,7 +18,7 @@ int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond);
 int GAP_BOND_DELETE(uint8_t slot);
 #endif
 
-int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len);
+int GAP_RANDOM_BYTES(uint8_t *out, size_t len);
 
 // - [ ] Add BR/EDR security-manager procedures only if Classic transport is
 //       supported; BR/EDR SMP is outside this LE SMP implementation.
@@ -293,7 +293,7 @@ static inline int smp_receive_sdu(
 // Validate platform results and clear sensitive outputs when an operation fails.
 static inline int smp_random_bytes(uint8_t *out, unsigned len) {
     if (!out || !len) return 0;
-    if (GAP_RANDOM_SECURE_BYTES(out, len))
+    if (GAP_RANDOM_BYTES(out, len))
         return 1;
 
     gap_wipe(out, len);
