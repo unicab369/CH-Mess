@@ -101,22 +101,11 @@ static struct {
 } gap_poll;
 
 #if GAP_LEGACY_ADV_SUPPORT
-enum {
-    GAP_ADV_POLL_IDLE,
-    GAP_ADV_POLL_TX,
-    GAP_ADV_POLL_RX,
-    GAP_ADV_POLL_SCAN_TX
-};
-
 static struct {
     GAP_RADIO_BUFFER_ATTR uint8_t adv_frame[8 + GAP_ADV_DATA_MAX];
     GAP_RADIO_BUFFER_ATTR uint8_t scan_frame[8 + GAP_ADV_DATA_MAX];
-    volatile uint8_t rx_event;
+    volatile uint8_t rx_event, scan_resp_started;
     volatile uint8_t conn_req_ready;
-    // Nonblocking connectable advertising event state, advanced by gap_send_due.
-    volatile uint8_t poll_state;
-    uint8_t poll_channel;
-    uint64_t poll_deadline;
     uint8_t conn_req_frame[36];
     uint64_t conn_req_ticks;
 } adv_evt;

@@ -914,7 +914,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
                 memcpy(adv_evt.scan_frame + 8, adv_tx.advertising.scan_response, gap_adv.scan_resp_len);
 
             GAP_HW_TX_BUFFER(adv_evt.scan_frame);
-            adv_evt.poll_state = GAP_ADV_POLL_SCAN_TX;
+            adv_evt.scan_resp_started = 1;
             GAP_HW_LINK_TX();
             gap_conn_slot = previous_slot;
             return;
@@ -965,8 +965,8 @@ void gap_hw_init(void) {
 
 #if GAP_LEGACY_ADV_SUPPORT
     adv_evt.rx_event = 0;
+    adv_evt.scan_resp_started = 0;
     adv_evt.conn_req_ready = 0;
-    adv_evt.poll_state = 0;
 #endif // GAP_LEGACY_ADV_SUPPORT
     gap_rx_armed = 0;
     gap_poll.slot = 0;
@@ -1339,19 +1339,6 @@ static void gap_conn_poll(void) {
     }
 #endif // GAP_CENTRAL_SUPPORT
 
-#if GAP_LEGACY_ADV_SUPPORT
-    // Connection events take priority over an unfinished legacy advertising
-    // event because both use the same radio.
-    if (adv_evt.poll_state) {
-        GAP_HW_STOP();
-        adv_evt.poll_state = 0;
-        adv_evt.rx_event = 0;
-        adv_evt.conn_req_ready = 0;
-        if (gap_adv.enabled)
-            gap_adv.next_event_ms = GET_MILLIS() + gap_adv.interval_ms;
-    }
-#endif // GAP_LEGACY_ADV_SUPPORT
-
     GAP_HW_LINK_CONFIG(conn->link_layer.access_address, selected_channel,
                         transmit, transmit != NULL,
                         conn->phy_state.current.tx, conn->phy_state.current.rx);
@@ -1417,11 +1404,6 @@ static inline void gap_conn_poll_all(void) {
 }
 
 void gap_hw_scan_poll(void) {
-#if GAP_LEGACY_ADV_SUPPORT
-    // A connectable advertising exchange owns the radio between poll calls.
-    if (adv_evt.poll_state) return;
-#endif // GAP_LEGACY_ADV_SUPPORT
-
     uint32_t now = GET_MILLIS();
 #if GAP_PRIVACY_SUPPORT
     gap_privacy_poll(now);
@@ -1690,122 +1672,11 @@ void gap_hw_scan_poll(void) {
 }
 
 // Shared radio scheduling and scan report extraction.
-#if GAP_LEGACY_ADV_SUPPORT
-static void gap_adv_poll_start_channel(void) {
-    gap_rx.ready = 0;
-    adv_evt.conn_req_ready = 0;
-    GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, adv_evt.poll_channel,
-                       adv_evt.adv_frame, 1, GAP_PHY_1M, GAP_PHY_1M);
-    GAP_HW_LINK_TX();
-    adv_evt.poll_deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
-    adv_evt.poll_state = GAP_ADV_POLL_TX;
-}
-
-static void gap_adv_poll_finish(void) {
-    GAP_HW_STOP();
-    gap_rx_armed = 0;
-    adv_evt.rx_event = 0;
-    adv_evt.conn_req_ready = 0;
-    adv_evt.poll_state = GAP_ADV_POLL_IDLE;
-
-    if (gap_adv.enabled) {
-        uint32_t completed_at = GET_MILLIS();
-        uint8_t event_jitter = GAP_HW_RANDOM_JITTER() % 11;
-        gap_adv.next_event_ms = completed_at + gap_adv.interval_ms + event_jitter;
-    }
-}
-
-static int gap_adv_poll(void) {
-    uint64_t now = GAP_HW_TICKS();
-
-    if (!gap_adv.enabled) {
-        gap_adv_poll_finish();
-        return 0;
-    }
-
-    if (adv_evt.conn_req_ready) {
-        GAP_HW_STOP();
-        adv_evt.rx_event = 0;
-        if (gap_conn_accept(adv_evt.conn_req_frame, adv_evt.conn_req_ticks,
-                            HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))) {
-#if GAP_CENTRAL_SUPPORT
-            gap_initiator.active = 0;
-            gap_initiator.mode = GAP_CONN_MODE_DIRECT;
-#endif
-            adv_evt.conn_req_ready = 0;
-            gap_rx.ready = 0;
-            gap_adv_scan.ready = 0;
-            gap_scan.active_pending = 0;
-            gap_rx_armed = 0;
-            gap_scanner.scanning = 0;
-            gap_scanner.active = 0;
-            gap_scanner.generation++;
-            adv_evt.poll_state = GAP_ADV_POLL_IDLE;
-            gap_conn_poll();
-            return 2;
-        }
-        adv_evt.conn_req_ready = 0;
-        gap_adv_poll_finish();
-        return 0;
-    }
-
-    if (adv_evt.poll_state == GAP_ADV_POLL_SCAN_TX) {
-        if (!GAP_HW_TX_DONE()) {
-            if ((int64_t)(now - adv_evt.poll_deadline) >= 0) {
-                gap_adv_poll_finish();
-                return -1;
-            }
-            return 0;
-        }
-        GAP_HW_STOP();
-        adv_evt.poll_channel++;
-    }
-    else if (adv_evt.poll_state == GAP_ADV_POLL_TX) {
-        if (!GAP_HW_TX_DONE()) {
-            if ((int64_t)(now - adv_evt.poll_deadline) >= 0) {
-                gap_adv_poll_finish();
-                return -1;
-            }
-            return 0;
-        }
-        GAP_HW_TX_CLEAR_DONE();
-        adv_evt.poll_deadline = now + HW_TICKS_FROM_US(800);
-        adv_evt.poll_state = GAP_ADV_POLL_RX;
-        return 0;
-    }
-    else if (adv_evt.poll_state == GAP_ADV_POLL_RX) {
-        if (gap_rx.ready) {
-            gap_adv_poll_finish();
-            return 0;
-        }
-
-        if ((int64_t)(now - adv_evt.poll_deadline) >= 0) {
-            GAP_HW_STOP();
-            adv_evt.poll_channel++;
-        }
-        else return 0;
-    }
-
-    if (adv_evt.poll_channel > 39) {
-        gap_adv_poll_finish();
-        return 0;
-    }
-
-    gap_adv_poll_start_channel();
-    return 0;
-}
-#endif // GAP_LEGACY_ADV_SUPPORT
-
 int gap_send_due(
     const uint8_t *fallback_ad, uint8_t fallback_len,
     uint32_t now, uint32_t *sent_at, uint8_t *jitter
 ) {
     if (gap_poll.slot_valid) return 0;
-
-#if GAP_LEGACY_ADV_SUPPORT
-    if (adv_evt.poll_state != GAP_ADV_POLL_IDLE)
-        return gap_adv_poll();
-#endif // GAP_LEGACY_ADV_SUPPORT
 
 #if GAP_PRIVACY_SUPPORT
     gap_privacy_poll(now);
@@ -1876,12 +1747,79 @@ int gap_send_due(
     }
     else {
         adv_evt.rx_event = 1;
-        adv_evt.poll_channel = 37;
-        gap_rx.ready = 0;
-        adv_evt.conn_req_ready = 0;
-        adv_evt.poll_state = GAP_ADV_POLL_IDLE;
-        gap_adv_poll_start_channel();
-        return 0;
+
+        for (uint8_t channel = 37; channel <= 39; channel++) {
+            gap_rx.ready = 0;
+            adv_evt.scan_resp_started = 0;
+            adv_evt.conn_req_ready = 0;
+
+            GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel,
+                            adv_evt.adv_frame, 1, GAP_PHY_1M, GAP_PHY_1M);
+            GAP_HW_LINK_TX();
+            int timeout = HW_TICKS_FROM_US(1000);
+            while (!GAP_HW_TX_DONE() && timeout-- > 0) {}
+
+            if (!GAP_HW_TX_DONE()) {
+                GAP_HW_STOP();
+                adv_evt.rx_event = 0;
+                return -1;
+            }
+
+            GAP_HW_TX_CLEAR_DONE();
+            timeout = HW_TICKS_FROM_US(800);
+            while (!adv_evt.scan_resp_started &&
+                   !adv_evt.conn_req_ready && !gap_rx.ready &&
+                   timeout-- > 0
+            ) {}
+
+            if (adv_evt.conn_req_ready) {
+                GAP_HW_STOP();
+                adv_evt.rx_event = 0;
+
+                if (gap_conn_accept(adv_evt.conn_req_frame, adv_evt.conn_req_ticks,
+                                    HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))
+                ) {
+#if GAP_CENTRAL_SUPPORT
+                    // An incoming Peripheral connection wins over any
+                    // simultaneous Central initiation or discovery scan.
+                    gap_initiator.active = 0;
+                    gap_initiator.mode = GAP_CONN_MODE_DIRECT;
+#endif // GAP_CENTRAL_SUPPORT
+                    adv_evt.conn_req_ready = 0;
+                    gap_rx.ready = 0;
+                    gap_adv_scan.ready = 0;
+                    gap_scan.active_pending = 0;
+                    gap_rx_armed = 0;
+                    gap_scanner.scanning = 0;
+                    gap_scanner.active = 0;
+                    gap_scanner.generation++;
+                    gap_conn_poll();
+                    adv_evt.rx_event = 0;
+                    return 2;
+                }
+                else {
+                    adv_evt.conn_req_ready = 0;
+                }
+                break;
+            }
+
+            if (adv_evt.scan_resp_started) {
+                timeout = HW_TICKS_FROM_US(1000);
+                while (!GAP_HW_TX_DONE() && timeout-- > 0) {}
+
+                if (!GAP_HW_TX_DONE()) {
+                    GAP_HW_STOP();
+                    adv_evt.rx_event = 0;
+                    return -1;
+                }
+            }
+
+            GAP_HW_STOP();
+
+            if (!adv_evt.scan_resp_started && gap_rx.ready)
+                break;
+        }
+        adv_evt.rx_event = 0;
     }
 
     uint32_t completed_at = GET_MILLIS();
