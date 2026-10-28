@@ -24,6 +24,11 @@ timer-driven `CONNECT_IND` turnaround on the device.
 The `GAP_HW_TX_DONE()` check in `ble_gap_connection_poll.h:1191`
 already returns when TX is pending; it is not a busy wait.
 
+Legacy `SCAN_REQ` and `SCAN_RSP`, extended `AUX_SCAN_RSP`, and ACL connection
+replies now use the shared CH582 IFS TX timer. The PAwR `AUX_CONNECT_RSP`
+still runs from scan polling, so it needs an RX-time preparation path before
+the timer can meet its response deadline.
+
 ## Exchanges that require interframe timing
 
 `T_IFS` is measured from the end of the previous packet's last bit to the

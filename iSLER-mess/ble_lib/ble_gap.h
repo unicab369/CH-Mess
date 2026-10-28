@@ -13,7 +13,7 @@
 #define ISLER_CALLBACK_RX iSLER_Rx_Received_Cb
 #endif
 #ifndef ISLER_CALLBACK_TMR0
-#define ISLER_CALLBACK_TMR0 iSLER_Connect_Tx_Timer_Cb
+#define ISLER_CALLBACK_TMR0 iSLER_Tx_Timer_Cb
 #endif
 #endif
 
@@ -211,8 +211,8 @@ int8_t GAP_HW_RSSI(void);
 void GAP_HW_INIT(void);
 void GAP_HW_STOP(void);
 int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel);
+void GAP_HW_TX_TIMER_BEGIN(void);
 #if GAP_CENTRAL_SUPPORT
-void GAP_HW_CONNECT_TX_TIMER_BEGIN(void);
 int GAP_HW_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel);
 void GAP_HW_CONNECT_TX_TIMER_CANCEL(void);
 #endif
@@ -225,6 +225,7 @@ void GAP_HW_LINK_CONFIG(
 // 1M PHY is mandatory; masks report supported PHYs.
 uint8_t GAP_HW_PHY_MASK(void);
 void GAP_HW_LINK_TX(void);
+int GAP_HW_IFS_TX_TIMER_ARM(void);
 void GAP_HW_LINK_RX(void);
 void GAP_HW_SCAN_RX(uint8_t channel);
 void GAP_HW_TX_BUFFER(const uint8_t *frame);

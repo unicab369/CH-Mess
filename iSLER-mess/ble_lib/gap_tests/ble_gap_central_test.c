@@ -233,7 +233,13 @@ void GAP_HW_SCAN_RX(uint8_t channel) {
 }
 void GAP_HW_TX_BUFFER(const uint8_t *frame) { tx_buffer = frame; }
 void GAP_HW_TX_TIMER_BEGIN(void) {}
-int GAP_HW_CONN_REPLY_TIMER_ARM(void) {
+int GAP_HW_IFS_TX_TIMER_ARM(void) {
+    if (gap_ext_scan.request_phase == GAP_EXT_REQ_SCAN_TX)
+        gap_ext_scan.request_phase = GAP_EXT_REQ_SCAN_RX;
+    else if (gap_ext_scan.request_phase == GAP_EXT_REQ_CONNECT_TX) {
+        gap_ext_scan.request_end_ticks = GAP_HW_TICKS();
+        gap_ext_scan.request_phase = GAP_EXT_REQ_CONNECT_RX;
+    }
     GAP_HW_LINK_TX();
     return 1;
 }
@@ -651,6 +657,73 @@ static int test_ext_scan_receive(uint8_t kind, const uint8_t *pdu,
 }
 
 #define gap_ext_scan_receive test_ext_scan_receive
+
+static void test_extended_immediate_requests(void) {
+    static const uint8_t peer[6] = {0x31, 0x32, 0x33, 0x34, 0x35, 0x36};
+    uint8_t aux[12] = {ADV_EXT_IND, 10, 0x89, 0x09};
+    memcpy(aux + 4, peer, 6);
+    write_u16_le(aux + 10, 0x1234);
+
+    gap_scan_start(1);
+    gap_hw_scan_poll(); // Apply the scan generation before the simulated AUX RX.
+    gap_ext_ctx[0].active = 1;
+    gap_ext_ctx[0].identity.has_address = 1;
+    gap_ext_ctx[0].identity.peer.type = 0;
+    memcpy(gap_ext_ctx[0].identity.peer.address, peer, 6);
+    gap_ext_ctx[0].identity.has_adi = 1;
+    gap_ext_ctx[0].identity.adi = 0x1234;
+    gap_ext_ctx[0].await_scan_response = 1;
+    gap_ext_ctx[0].deadline_ms = GET_MILLIS() + 100;
+    gap_aux_request[0].active = 1;
+    gap_aux_request[0].channel = 5;
+    gap_ext_scan.aux_slot = 0;
+    gap_ext_scan.aux_rx_phy = GAP_PHY_1M;
+    gap_ext_scan.listen_state = GAP_EXT_SCAN_AUX;
+    memcpy(rx_frame, aux, sizeof(aux));
+    gap_hw_received();
+    assert(gap_ext_scan.request_phase == GAP_EXT_REQ_SCAN_RX &&
+           (tx_buffer[0] & 0x0f) == SCAN_REQ &&
+           configured_radio_channel == 5);
+
+    rx_frame[0] = ADV_EXT_IND;
+    rx_frame[1] = 13;
+    rx_frame[2] = 9;
+    rx_frame[3] = 0x09;
+    memcpy(rx_frame + 4, peer, 6);
+    write_u16_le(rx_frame + 10, 0x1234);
+    rx_frame[12] = 2; rx_frame[13] = 1; rx_frame[14] = 6;
+    gap_hw_received();
+    assert(gap_ext_scan.ready && gap_ext_scan.request_phase == GAP_EXT_REQ_NONE);
+    gap_hw_scan_poll();
+    gap_ext_report report;
+    assert(gap_ext_scan_poll(&report) && report.data_len == 3);
+    gap_scan_stop();
+
+    assert(gap_conn_start(test_address(peer, 0)));
+    aux[2] = 0x49; // Connectable AUX_ADV_IND.
+    gap_aux_request[0].active = 1;
+    gap_aux_request[0].channel = 7;
+    gap_ext_scan.aux_slot = 0;
+    gap_ext_scan.aux_rx_phy = GAP_PHY_1M;
+    gap_ext_scan.listen_state = GAP_EXT_SCAN_AUX;
+    memcpy(rx_frame, aux, sizeof(aux));
+    gap_hw_received();
+    assert(gap_ext_scan.request_phase == GAP_EXT_REQ_CONNECT_RX &&
+           (tx_buffer[0] & 0x0f) == CONNECT_IND &&
+           configured_radio_channel == 7);
+
+    rx_frame[0] = ADV_EXT_IND | ((tx_buffer[0] & 0x40) << 1);
+    rx_frame[1] = 14;
+    rx_frame[2] = 13;
+    rx_frame[3] = 0x03;
+    memcpy(rx_frame + 4, peer, 6);
+    memcpy(rx_frame + 10, tx_buffer + 2, 6);
+    gap_hw_received();
+    assert(gap_ext_scan.request_phase == GAP_EXT_REQ_CONNECT_DONE);
+    gap_hw_scan_poll();
+    assert(gap_conn_slot_mask && !gap_initiator.active);
+    gap_conn_end();
+}
 
 static void test_extended_advertising_reassembly(void) {
     static const uint8_t primary[] = {
@@ -2828,10 +2901,30 @@ static void test_connection_context_slots(void) {
 static void receive_test_link_packet(uint8_t acknowledged) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     conn->link_state.rx_armed = 1;
-    rx_frame[0] = 1 | (conn->link_layer.expected_rx_sn << 3) |
+    rx_frame[0] = 1 | (conn->is_central ? 0x10 : 0) |
+        (conn->link_layer.expected_rx_sn << 3) |
         ((conn->link_layer.tx_sn ^ acknowledged) << 2);
     rx_frame[1] = 0;
     gap_hw_received();
+}
+
+static void test_central_defers_after_md_zero(void) {
+    start_test_central_link();
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    uint32_t sends_before = link_tx_count;
+    conn->link_state.rx_armed = 1;
+    gap_poll.slot = gap_conn_slot;
+    gap_poll.slot_valid = 1;
+    rx_frame[0] = 1 | (conn->link_layer.expected_rx_sn << 3) |
+                  ((conn->link_layer.tx_sn ^ 1) << 2); // Peripheral MD=0.
+    rx_frame[1] = 0;
+    gap_hw_received();
+    assert(link_tx_count == sends_before && !gap_poll.slot_valid);
+    assert(conn->link_layer.tx_pending && !conn->link_state.event_replied);
+    conn->link_layer.next_ticks = GAP_HW_TICKS();
+    gap_conn_poll();
+    assert(link_tx_count == sends_before + 1);
+    gap_conn_end();
 }
 
 static void test_extended_length_control_pdu(void) {
@@ -3056,7 +3149,8 @@ static void receive_test_control(uint8_t opcode, const uint8_t *data, uint8_t le
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     conn->link_state.rx_armed = 1;
     memset(rx_frame, 0, sizeof(rx_frame));
-    rx_frame[0] = 3 | (conn->link_layer.expected_rx_sn << 3) | ((conn->link_layer.tx_sn ^ 1) << 2);
+    rx_frame[0] = 3 | (conn->is_central ? 0x10 : 0) |
+        (conn->link_layer.expected_rx_sn << 3) | ((conn->link_layer.tx_sn ^ 1) << 2);
     rx_frame[1] = len + 1;
     rx_frame[2] = opcode;
     if (len)
@@ -3873,7 +3967,8 @@ static void receive_secure_test_pdu(
     gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t nonce[13], aad;
-    rx_frame[0] = llid | ((conn->link_layer.expected_rx_sn ^ duplicate) << 3) |
+    rx_frame[0] = llid | (conn->is_central ? 0x10 : 0) |
+        ((conn->link_layer.expected_rx_sn ^ duplicate) << 3) |
         ((conn->link_layer.tx_sn ^ acknowledged) << 2);
     rx_frame[1] = (uint8_t)(len + 4);
     for (uint8_t i = 0; i < 5; i++) nonce[i] = (uint8_t)(counter >> (8 * i));
@@ -5455,6 +5550,7 @@ int main(void) {
     test_randomized_private_rotation();
     test_accept_list_capacity();
 #if GAP_EXT_ADV_SUPPORT
+    test_extended_immediate_requests();
     test_extended_advertising_reassembly();
     test_extended_advertising_radio_followup();
     test_extended_advertising_transmit();
@@ -5485,6 +5581,7 @@ int main(void) {
     test_peer_privacy_modes();
     test_peer_local_keys();
     test_nonresolvable_private_addresses();
+    test_central_defers_after_md_zero();
     test_connection_timing_updates();
     test_connection_parameter_requests();
     test_data_length();
