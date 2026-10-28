@@ -55,8 +55,11 @@ int GAP_CCM_DECRYPT(
 
 // iSLER adapter state for GAP's connection and advertising radio operations.
 static struct {
+    uint64_t tx_due_ticks;
     uint32_t access_address;
     uint8_t channel, tx_phy, rx_phy, receive_after_tx;
+    volatile uint8_t reply_armed;
+    volatile uint8_t ifs_tx_active;
     const uint8_t *tx_frame;
 } gap_link;
 
@@ -93,6 +96,24 @@ void iSLER_Radio_Transmitted_Cb(void) {
     if (gap_ext_adv_scan.response_started)
         gap_ext_adv_scan.waiting = 0;
 #endif
+    if (gap_link.ifs_tx_active) {
+        gap_link.ifs_tx_active = 0;
+#if GAP_EXT_ADV_SUPPORT
+        if (gap_ext_scan.request_phase == GAP_EXT_REQ_SCAN_TX)
+            gap_ext_scan.request_phase = GAP_EXT_REQ_SCAN_RX;
+        else if (gap_ext_scan.request_phase == GAP_EXT_REQ_CONNECT_TX) {
+            gap_ext_scan.request_end_ticks = GAP_HW_TICKS();
+            gap_ext_scan.request_phase = GAP_EXT_REQ_CONNECT_RX;
+        }
+#endif
+        if (gap_link.receive_after_tx) {
+            if (gap_link.tx_phy != gap_link.rx_phy)
+                iSLERLinkConfig(gap_link.access_address, gap_link.channel,
+                                gap_phy_mode(gap_link.rx_phy), NULL, 0);
+            iSLERLinkRX();
+        }
+        return;
+    }
     if (gap_link.receive_after_tx &&
         gap_link.tx_phy != gap_link.rx_phy) {
         iSLERLinkConfig(gap_link.access_address, gap_link.channel,
@@ -106,19 +127,38 @@ int8_t GAP_HW_RSSI(void) { return (int8_t)iSLERRSSI(); }
 void GAP_HW_INIT(void) { iSLERInit(LL_TX_POWER_0_DBM); }
 
 void GAP_HW_STOP(void) {
+    gap_link.reply_armed = 0;
+    gap_link.ifs_tx_active = 0;
     gap_link.receive_after_tx = 0;
     iSLERStop();
     gs_iSLERLink.is_open = 0;
 }
 
-#if GAP_CENTRAL_SUPPORT
-
-// iSLER assumes a 2 MHz LL25 timer on CH582: 240 counts target 120 us.
-// Verify this rate and the on-air TX timing on hardware.
-void GAP_HW_CONNECT_TX_TIMER_BEGIN(void) {
-    LL->LLSTATUS = INT_ISLER_TMR0;
-    LL->TMR0 = 240;
+// Both connection initiation and connection replies use this deadline.
+// Radio configuration may overwrite TMR0, so program it after setup.
+// TODO: Replace this provisional 120 us target after measuring RX-end to
+// TX-start timing and the TMR0 rate on CH582 hardware.
+#define GAP_IFS_TX_TARGET_US 120
+void GAP_HW_TX_TIMER_BEGIN(void) {
+    gap_link.tx_due_ticks = GAP_HW_TICKS() + HW_TICKS_FROM_US(GAP_IFS_TX_TARGET_US);
 }
+
+static int gap_tx_timer_arm(void) {
+    uint64_t now = GAP_HW_TICKS();
+    if (now >= gap_link.tx_due_ticks ||
+        gap_link.tx_due_ticks - now < HW_TICKS_FROM_US(10)
+    ) return 0;
+
+    uint64_t remaining_us = (gap_link.tx_due_ticks - now) / HW_TICKS_FROM_US(1);
+    if (remaining_us < 10) return 0;
+
+    tx_done = 0;
+    LL->LLSTATUS = INT_ISLER_TMR0;
+    LL->TMR0 = (uint32_t)(remaining_us * 2);
+    return 1;
+}
+
+#if GAP_CENTRAL_SUPPORT
 
 void GAP_HW_CONNECT_TX_TIMER_CANCEL(void) {
     gap_connect_tx.phase = GAP_CONNECT_TX_IDLE;
@@ -133,11 +173,7 @@ int GAP_HW_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel) {
     iSLERStop();
     iSLERSetMode(DEVMODE_TX);
 
-    // Let the radio settle while TMR0 counts down to the TX start.
-    // Leave enough time to exit the RX ISR before the timer expires.
-    // At the assumed 2 MHz timer rate, 20 counts are 10 us; reject setup if
-    // less than that remains or the timer interrupt has already fired.
-    if (LL->TMR0 < 20 || (LL->LLSTATUS & INT_ISLER_TMR0)) {
+    if (!gap_tx_timer_arm()) {
         GAP_HW_CONNECT_TX_TIMER_CANCEL();
         GAP_HW_STOP();
         return 0;
@@ -145,16 +181,47 @@ int GAP_HW_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel) {
     return 1;
 }
 
-__HIGH_CODE void iSLER_Connect_Tx_Timer_Cb(void) {
-    if (gap_connect_tx.phase != GAP_CONNECT_TX_ARMED) return;
+#endif
+
+int GAP_HW_IFS_TX_TIMER_ARM(void) {
+    if (gs_iSLERLink.phy_mode != gap_phy_mode(gap_link.tx_phy)) {
+        iSLERLinkConfig(gap_link.access_address, gap_link.channel,
+                       gap_phy_mode(gap_link.tx_phy),
+                       (uint8_t *)gap_link.tx_frame,
+                       gap_link.receive_after_tx && gap_link.tx_phy == gap_link.rx_phy);
+    }
+
+    iSLERStop();
+    iSLERSetMode(DEVMODE_TX);
+    LL->LL1 &= ~LL_AUTO;
+
+    if (!gap_tx_timer_arm()) {
+        GAP_HW_STOP();
+        return 0;
+    }
+    gap_link.reply_armed = 1;
+    gap_link.ifs_tx_active = 1;
+    return 1;
+}
+
+__HIGH_CODE void iSLER_Tx_Timer_Cb(void) {
+    if (gap_link.reply_armed) {
+        gap_link.reply_armed = 0;
+    }
+#if GAP_CENTRAL_SUPPORT
+    else if (gap_connect_tx.phase == GAP_CONNECT_TX_ARMED) {
+        gap_connect_tx.phase = GAP_CONNECT_TX_SENDING;
+    }
+    else return;
+#else
+    else return;
+#endif
     tx_done = 0;
 
     BB->CTRL_CFG |= CTRL_CFG_START_TX;
     BB->CTRL_TX &= ~((1 << 0) | (1 << 1));
-    gap_connect_tx.phase = GAP_CONNECT_TX_SENDING;
     LL->LL0 = LL_TX;
 }
-#endif
 
 int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
     gap_link.receive_after_tx = 0;

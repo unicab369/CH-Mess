@@ -20,6 +20,14 @@ enum {
     GAP_EXT_SCAN_AUX,
     GAP_EXT_SCAN_PERIODIC
 };
+enum {
+    GAP_EXT_REQ_NONE,
+    GAP_EXT_REQ_SCAN_TX,
+    GAP_EXT_REQ_SCAN_RX,
+    GAP_EXT_REQ_CONNECT_TX,
+    GAP_EXT_REQ_CONNECT_RX,
+    GAP_EXT_REQ_CONNECT_DONE
+};
 
 // -----------------------------------------------------------------------------
 // Extended scan reassembly and duplicate filtering
@@ -136,6 +144,9 @@ static struct {
     uint64_t ticks;
     volatile uint8_t listen_state;
     uint8_t aux_slot, aux_rx_phy, periodic_slot, periodic_rx_phy;
+    volatile uint8_t request_phase;
+    uint32_t request_deadline_ms;
+    uint64_t request_end_ticks;
 } gap_ext_scan;
 
 // Extended advertising scan-response state
@@ -187,6 +198,8 @@ typedef struct {
     // Common extended header and advertiser identity.
     uint8_t mode, flags;
     gap_ext_identity identity;
+    uint8_t has_target;
+    gap_address target;
 
     // AuxPtr scheduling information.
     uint8_t has_aux_ptr, aux_offset_zero;
@@ -615,6 +628,9 @@ static int gap_ext_adv_decode(
 
     if (fields->flags & 0x02) {
         if (header_end - cursor < 6) return 0;
+        fields->has_target = 1;
+        fields->target.type = (pdu[0] >> 7) & 1;
+        memcpy(fields->target.address, pdu + cursor, 6);
         cursor += 6;
     }
 
@@ -1310,6 +1326,10 @@ static int gap_pawr_conn_req(
 
     uint8_t channel = gap_sync_channel(&sync->params,
                         (uint16_t)(sync->last_event_counter ^ sync->pawr.subevent));
+    // The received AUX_CONNECT_REQ is the previous packet on air.
+    // AUX_CONNECT_RSP must start T_IFS after the request's on-air end.
+    // TODO: This handler runs from scan polling. Move the response preparation
+    // onto the RX timing path before replacing this wait with the TX timer.
     uint64_t response_start = received_ticks + HW_TICKS_FROM_US(150);
 
     GAP_HW_TX_CLEAR_DONE();
@@ -1946,6 +1966,9 @@ static void gap_ext_scan_process(void) {
             if (!fields.has_aux_ptr && !fields.sync.has_info &&
                 fields.identity.has_adi && sync->pawr.pending
             ) {
+                // This received PAwR subevent PDU anchors the response slot.
+                // The slot schedule below determines TX time; it is not simply
+                // T_IFS after the received packet.
                 uint64_t response_start = subtract_clamp0_64(gap_ext_scan.ticks,
                                 HW_TICKS_FROM_US(gap_phy_airtime_us(pdu[1], packet_phy))) +
                                 HW_TICKS_FROM_US((uint32_t)sync->pawr.timing.resp_delay * 1250 +
