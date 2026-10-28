@@ -1,19 +1,12 @@
 #include "ch32fun.h"
-
-void gap_hw_received(void);
-void gap_hw_radio_transmitted(void);
-
-#define ISLER_CALLBACK_TX gap_hw_radio_transmitted
-#define ISLER_CALLBACK_RX gap_hw_received
+#include "../../aes_cmm.h"
+#include "../../ble_lib/ble_gap.h"
 #include "iSLER.h"
 
-#include "../../aes_cmm.h"
 #include "lib_rand.h"
 #ifndef ROM_CFG_MAC_ADDR
 #define ROM_CFG_MAC_ADDR ((const uint32_t *)0x0007F018)
 #endif
-#define GAP_RADIO_BUFFER_ATTR ISLER_BUF_ATTR
-#include "../../ble_lib/ble_gap.h"
 #include "../../ble_lib/ble_gatt_transport.h"
 #include "../../ble_lib/gap_ports/ch58x_isler.h"
 #include "../../ble_lib/gatt_services/ble_gatt_services.h"

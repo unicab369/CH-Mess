@@ -8,9 +8,20 @@ static uint16_t radio_data_max;
 #define GAP_EXT_ADV_SUPPORT 1
 #define GAP_HW_ADV_PHY_MASK (GAP_PHY_1M | GAP_PHY_CODED)
 #include "../ble_crypto.h"
+#define iSLER_Rx_Received_Cb gap_hw_received_impl
 #include "../ble_gap.h"
+#undef iSLER_Rx_Received_Cb
 #include <openssl/evp.h>
 int GET_RANDOM_BYTES(uint8_t *out, unsigned size);
+
+static void gap_hw_received(void) {
+    gap_hw_received_impl();
+    if (gap_connect_tx.phase == GAP_CONNECT_TX_ARMED) {
+        gap_connect_tx.end_ticks = GAP_HW_TICKS();
+        gap_connect_tx.phase = GAP_CONNECT_TX_DONE;
+        gap_hw_scan_poll();
+    }
+}
 
 #define TEST_INTERVAL_1P25MS(conn) ((conn)->schedule.interval_125us / 10)
 static void gap_test_select_slot(uint8_t slot) { gap_conn_slot = slot; }
@@ -220,8 +231,6 @@ void GAP_HW_SCAN_RX(uint8_t channel) {
     configured_radio_channel = channel;
     scan_rx_count++;
 }
-void GAP_HW_PACKET_CLEAR(void) {}
-void GAP_HW_PACKET_READY(void) {}
 void GAP_HW_TX_BUFFER(const uint8_t *frame) { tx_buffer = frame; }
 void GAP_HW_LINK_TX(void) {
     link_tx_count++;
@@ -345,6 +354,7 @@ int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
     (void)frame; (void)len;
     configured_radio_channel = channel;
     advertising_tx_count++;
+
     if ((frame[0] & 0x0f) == 0x07 && captured_extended_count < 16) {
         unsigned slot = captured_extended_count++;
         memcpy(captured_extended_pdus[slot], frame, len);
@@ -357,6 +367,11 @@ int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
         fake_radio_ticks += ((uint32_t)len + 8u) * 8u;
     return 1;
 }
+void GAP_HW_CONNECT_TX_TIMER_BEGIN(void) {}
+int GAP_HW_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel) {
+    return GAP_HW_ADV_TX(frame, len, channel);
+}
+void GAP_HW_CONNECT_TX_TIMER_CANCEL(void) {}
 int GAP_HW_ADV_TX_PHY(
     uint8_t *frame, uint8_t len, uint8_t channel,
                           uint8_t phy
@@ -4186,8 +4201,8 @@ static void test_smp_pairing(void) {
     secure_random_available = 0;
     receive_test_smp(features, 7, 0); assert(smp->status == 8);
     gap_conn_end();
-    start_test_central_link(); conn->is_central = 0;
     secure_random_available = 1;
+    start_test_central_link(); conn->is_central = 0;
     receive_test_smp(features, 7, 0);
     uint8_t bad_confirm[17] = {3}, peer_random[17] = {4};
     receive_test_smp(bad_confirm, 17, 0);

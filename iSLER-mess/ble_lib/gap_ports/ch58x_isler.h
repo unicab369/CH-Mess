@@ -3,7 +3,6 @@
 #ifndef GAP_PORT_CH58X_ISLER_H
 #define GAP_PORT_CH58X_ISLER_H
 
-static volatile uint32_t gap_port_rx_ready;
 
 // Application must override this with a cryptographic entropy source before
 // using GAP features that require random values. Weak pseudo-random bytes are
@@ -68,6 +67,7 @@ static struct {
 #if GAP_CODED_PHY_MODE != PHY_S2 && GAP_CODED_PHY_MODE != PHY_S8
 #error "GAP_CODED_PHY_MODE must be PHY_S2 or PHY_S8"
 #endif
+
 static uint8_t gap_phy_mode(uint8_t phy) {
     if (phy == GAP_PHY_2M)
         return PHY_2M;
@@ -77,7 +77,18 @@ static uint8_t gap_phy_mode(uint8_t phy) {
 }
 
 // For different TX/RX rates, arm RX from TX completion within the peer's IFS.
-void gap_hw_radio_transmitted(void) {
+void iSLER_Radio_Transmitted_Cb(void) {
+    uint32_t status = tx_done;
+    if (!(status & LL_TX)) return;
+#if GAP_CENTRAL_SUPPORT
+    if (gap_connect_tx.phase == GAP_CONNECT_TX_SENDING) {
+        gap_connect_tx.end_ticks = GAP_HW_TICKS();
+        gap_connect_tx.phase = GAP_CONNECT_TX_DONE;
+        gs_iSLERLink.is_open = 0;
+        return;
+    }
+#endif
+
 #if GAP_EXT_ADV_SUPPORT
     if (gap_ext_adv_scan.response_started)
         gap_ext_adv_scan.waiting = 0;
@@ -100,6 +111,51 @@ void GAP_HW_STOP(void) {
     gs_iSLERLink.is_open = 0;
 }
 
+#if GAP_CENTRAL_SUPPORT
+
+// iSLER assumes a 2 MHz LL25 timer on CH582: 240 counts target 120 us.
+// Verify this rate and the on-air TX timing on hardware.
+void GAP_HW_CONNECT_TX_TIMER_BEGIN(void) {
+    LL->LLSTATUS = INT_ISLER_TMR0;
+    LL->TMR0 = 240;
+}
+
+void GAP_HW_CONNECT_TX_TIMER_CANCEL(void) {
+    gap_connect_tx.phase = GAP_CONNECT_TX_IDLE;
+    LL->TMR0 = 0;
+    LL->LLSTATUS = INT_ISLER_TMR0;
+}
+
+int GAP_HW_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel) {
+    gap_link.receive_after_tx = 0;
+    frame[1] = (uint8_t)(len - 2);
+    iSLERLinkConfig(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M, frame, 0);
+    iSLERStop();
+    iSLERSetMode(DEVMODE_TX);
+
+    // Let the radio settle while TMR0 counts down to the TX start.
+    // Leave enough time to exit the RX ISR before the timer expires.
+    // At the assumed 2 MHz timer rate, 20 counts are 10 us; reject setup if
+    // less than that remains or the timer interrupt has already fired.
+    if (LL->TMR0 < 20 || (LL->LLSTATUS & INT_ISLER_TMR0)) {
+        GAP_HW_CONNECT_TX_TIMER_CANCEL();
+        GAP_HW_STOP();
+        return 0;
+    }
+    return 1;
+}
+
+__HIGH_CODE void iSLER_Connect_Tx_Timer_Cb(void) {
+    if (gap_connect_tx.phase != GAP_CONNECT_TX_ARMED) return;
+    tx_done = 0;
+
+    BB->CTRL_CFG |= CTRL_CFG_START_TX;
+    BB->CTRL_TX &= ~((1 << 0) | (1 << 1));
+    gap_connect_tx.phase = GAP_CONNECT_TX_SENDING;
+    LL->LL0 = LL_TX;
+}
+#endif
+
 int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
     gap_link.receive_after_tx = 0;
     frame[1] = (uint8_t)(len - 2);
@@ -109,32 +165,16 @@ int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
     iSLERStop();
     iSLERSetMode(DEVMODE_TX);
 
-    // Wait for the radio to settle after switching to TX mode.
-    // RF26 bit 24 still needs verification on CH582.
-    for (int timeout = Ticks_from_Us(100);
-         !(RF->RF26 & 0x1000000) && timeout >= 0; timeout--);
-
-// #if defined(CH584_CH585) || defined(CH591_CH592)
-//     BB->CTRL_CFG = (gs_iSLERLink.phy_mode == PHY_2M) ?
-//                    CTRL_CFG_PHY_2M : CTRL_CFG_PHY_1M;
-// #endif
+    // // Wait for the radio to settle after switching to TX mode.
+    // // RF26 bit 24 still needs verification on CH582.
+    // for (int timeout = Ticks_from_Us(100);
+    //      !(RF->RF26 & 0x1000000) && timeout >= 0; timeout--);
 
     tx_done = 0;
     BB->CTRL_CFG |= CTRL_CFG_START_TX;
     BB->CTRL_TX &= ~((1 << 0) | (1 << 1));
     LL->LL0 = LL_TX;
 
-// End iSLERLinkTX()
-
-// #ifdef ISLER_IDLE_WHILE_TX
-//     while (!tx_done) {
-//         NVIC->SCTLR &= ~(1 << 2);
-//         NVIC->SCTLR &= ~(1 << 3);
-//         __WFI();
-//     }
-// #else
-//     for (int timeout = Ticks_from_Ms(5); !tx_done && timeout >= 0; timeout--);
-// #endif
     gs_iSLERLink.is_open = 0;
     return tx_done != 0;
 }
@@ -144,8 +184,8 @@ int GAP_HW_ADV_TX_PHY(
                       uint8_t phy
 ) {
     uint8_t mode = gap_phy_mode(phy);
-    if (!(GAP_HW_ADV_PHY_MASK & phy))
-        return 0;
+    if (!(GAP_HW_ADV_PHY_MASK & phy)) return 0;
+
     gap_link.receive_after_tx = 0;
     iSLERTX(BLE_ADV_ACCESS_ADDRESS, frame, len, channel, mode);
     return tx_done != 0;
@@ -178,16 +218,17 @@ uint8_t GAP_HW_PHY_MASK(void) {
 }
 
 void GAP_HW_LINK_TX(void) {
-    if (gs_iSLERLink.phy_mode != gap_phy_mode(gap_link.tx_phy))
+    if (gs_iSLERLink.phy_mode != gap_phy_mode(gap_link.tx_phy)) {
         iSLERLinkConfig(gap_link.access_address, gap_link.channel,
-                       gap_phy_mode(gap_link.tx_phy),
-                       (uint8_t *)gap_link.tx_frame,
-                       gap_link.receive_after_tx &&
-                           gap_link.tx_phy == gap_link.rx_phy);
+                       gap_phy_mode(gap_link.tx_phy), (uint8_t *)gap_link.tx_frame,
+                       gap_link.receive_after_tx && gap_link.tx_phy == gap_link.rx_phy);
+    }
+
     iSLERLinkTX();
 }
 
 void GAP_HW_LINK_RX(void) { iSLERLinkRX(); }
+
 void GAP_HW_SCAN_RX(uint8_t channel) {
     gap_link.receive_after_tx = 0;
     iSLERRX(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M);
@@ -209,15 +250,14 @@ void GAP_HW_CRC_INIT(uint32_t crc_init) {
 #endif
 }
 
-int GAP_HW_TX_DONE(void) { return tx_done != 0; }
+int GAP_HW_TX_DONE(void) { return (tx_done & LL_TX) != 0; }
 void GAP_HW_TX_CLEAR_DONE(void) { tx_done = 0; }
 uint64_t GAP_HW_TICKS(void) { return funSysTick64(); }
 uint64_t HW_TICKS_FROM_US(uint32_t us) { return Ticks_from_Us(us); }
+
 void GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]) {
     const uint8_t *stored = (const uint8_t *)ROM_CFG_MAC_ADDR;
     for (uint8_t i = 0; i < 6; i++) address[i] = stored[5 - i];
 }
-void GAP_HW_PACKET_READY(void) { gap_port_rx_ready = 1; }
-void GAP_HW_PACKET_CLEAR(void) { gap_port_rx_ready = 0; }
 
 #endif // GAP_PORT_CH58X_ISLER_H

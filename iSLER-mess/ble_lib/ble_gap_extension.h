@@ -472,8 +472,10 @@ int gap_periodic_adv_update(
         ) return 0;
     }
 
+    uint16_t did;
+    if (!gap_ext_did_next(set->periodic.did, set->did, &did)) return 0;
     if (len) memcpy(set->periodic.data, data, len);
-    set->periodic.did = gap_ext_did_next(set->periodic.did, set->did);
+    set->periodic.did = did;
     set->periodic.data_len = (uint16_t)len;
 
     if (set->pawr.enabled)
@@ -520,7 +522,9 @@ int gap_ext_adv_start_phy(
         (aux_phy != GAP_PHY_1M && aux_phy != GAP_PHY_2M && aux_phy != GAP_PHY_CODED)
     ) return 0;
 
-    set->did = gap_ext_did_next(set->did, set->periodic.did);
+    uint16_t did;
+    if (!gap_ext_did_next(set->did, set->periodic.did, &did)) return 0;
+    set->did = did;
     if (len) memcpy(set->data, data, len);
     set->data_len = (uint16_t)len;
     set->scan_resp_len = 0;
@@ -1589,7 +1593,6 @@ static int gap_periodic_tx(gap_extended_adv_set *set) {
             while (GAP_HW_TICKS() < start_ticks) {}
             gap_ext_pawr.response.ready = 0;
             gap_ext_pawr.response.listening = 1;
-            GAP_HW_PACKET_CLEAR();
             GAP_HW_CRC_INIT(set->periodic.params.crc_init);
             GAP_HW_LINK_CONFIG(set->periodic.response_access, channel, NULL, 0,
                                 set->aux_phy, set->aux_phy);
@@ -1607,7 +1610,6 @@ static int gap_periodic_tx(gap_extended_adv_set *set) {
             if (gap_rx_armed) GAP_HW_STOP();
             gap_rx_armed = 0;
             gap_ext_pawr.response.listening = 0;
-            GAP_HW_PACKET_CLEAR();
 
             if (gap_ext_pawr.response.ready)
                 gap_pawr_report_push(set, (uint8_t)(set - gap_ext_adv),
@@ -1814,7 +1816,6 @@ static void gap_ext_scan_process(void) {
 
     gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
     gap_ext_scan.ready = 0;
-    GAP_HW_PACKET_CLEAR();
 
     if (gap_rx_armed) GAP_HW_STOP();
     gap_rx_armed = 0;
@@ -2311,8 +2312,6 @@ static void gap_connection_take_radio(void) {
         if (slot < GAP_EXT_ADV_CONTEXT_COUNT)
             gap_aux_request[slot].active = 0;
     }
-
-    GAP_HW_PACKET_CLEAR();
 }
 
 // Check whether a periodic receive window intersects a guarded connection event.

@@ -225,15 +225,38 @@ static void gap_conn_send_queued(void) {
 #endif // GAP_CENTRAL_SUPPORT
 }
 
+#if GAP_CENTRAL_SUPPORT
+typedef enum {
+    GAP_CONNECT_TX_IDLE,
+    GAP_CONNECT_TX_ARMED,
+    GAP_CONNECT_TX_SENDING,
+    GAP_CONNECT_TX_DONE,
+} gap_tx_phase;
+
+static struct {
+    uint64_t end_ticks;
+    int peer_slot;
+    uint32_t deadline_ms;
+    volatile gap_tx_phase phase;
+    uint8_t advertiser_type;
+} gap_connect_tx;
+#endif // GAP_CENTRAL_SUPPORT
+
 // Handle the radio callback under its connection context, then restore the
 // application's previously selected handle.
 // Keep the receive handler out of the RAM-resident radio ISR. With LTO and
 // encryption disabled, inlining this handler can pull several KB into highcode.
-void __attribute__((noinline)) gap_hw_received(void) {
+void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     const uint8_t *frame = GAP_HW_RX_FRAME();
     uint64_t received_ticks = GAP_HW_TICKS();
     uint8_t pdu_type = frame[0] & 0x0f;
     uint64_t conn_anchor_ticks = 0;
+
+#if GAP_CENTRAL_SUPPORT
+    if (gap_initiator.active &&
+        (pdu_type == ADV_IND || pdu_type == ADV_DIRECT_IND)
+    ) GAP_HW_CONNECT_TX_TIMER_BEGIN();
+#endif
 
     uint8_t previous_slot = gap_conn_slot;
     if (gap_poll.slot_valid)
@@ -252,7 +275,6 @@ void __attribute__((noinline)) gap_hw_received(void) {
         gap_ext_pawr.response.rssi = GAP_HW_RSSI();
         gap_ext_pawr.response.ticks = received_ticks;
         gap_ext_pawr.response.ready = 1;
-        GAP_HW_PACKET_READY();
         gap_conn_slot = previous_slot;
         return;
     }
@@ -629,7 +651,6 @@ void __attribute__((noinline)) gap_hw_received(void) {
     ) {
         memcpy(gap_ext_pawr.connect.response, frame, 16);
         gap_ext_pawr.connect.response_ready = 1;
-        GAP_HW_PACKET_READY();
         gap_conn_slot = previous_slot;
         return;
     }
@@ -687,7 +708,6 @@ void __attribute__((noinline)) gap_hw_received(void) {
         memcpy(gap_ext_scan.frame, frame, (size_t)frame[1] + 2);
         gap_ext_scan.ticks = received_ticks;
         gap_ext_scan.ready = 1;
-        GAP_HW_PACKET_READY();
         gap_conn_slot = previous_slot;
         return;
     }
@@ -793,39 +813,12 @@ void __attribute__((noinline)) gap_hw_received(void) {
         GAP_HW_STOP();
         gap_rx_armed = 0;
 
-        if (GAP_HW_ADV_TX(adv_tx.connect_request, sizeof(adv_tx.connect_request), channel) &&
-            gap_conn_accept(adv_tx.connect_request, GAP_HW_TICKS(), HW_TICKS_FROM_US(1250),
-                                                    HW_TICKS_FROM_US(1250))
-        ) {
-            conn = &gap_conn_ctx[gap_conn_slot];
-            conn->central.central_anchor_set = 0;
-            conn->link_layer.peer_sca_ppm = 500; // conservative until clock data exists
-            conn->is_central = 1;
-
-#if GAP_IDENTITY_COUNT > 0
-            if (peer_slot >= 0) {
-                conn->peer = gap_identities[peer_slot].peer;
-            }
-            else
-#endif // GAP_IDENTITY_COUNT > 0
-
-            if (gap_initiator.mode != GAP_CONN_MODE_DIRECT) {
-                // The type is bit 6 of frame[0]; frame[1] is the length, and the
-                // address starts at frame[2], so they cannot be copied as one block.
-                conn->peer.type = advertiser_type;
-                memcpy(conn->peer.address, frame + 2, 6);
-            }
-            else {
-                conn->peer = gap_initiator.peer;
-            }
-
-            gap_initiator.mode = GAP_CONN_MODE_DIRECT;
-            gap_initiator.active = 0;
-            gap_scanner.scanning = 0;
-            gap_scanner.active = 0;
-            gap_scanner.generation++;
-            gap_rx.ready = 0;
-            GAP_HW_PACKET_CLEAR();
+        if (GAP_HW_CONNECT_TX_TIMER_ARM(adv_tx.connect_request,
+                                        sizeof(adv_tx.connect_request), channel)) {
+            gap_connect_tx.peer_slot = peer_slot;
+            gap_connect_tx.advertiser_type = advertiser_type;
+            gap_connect_tx.deadline_ms = GET_MILLIS() + 5;
+            gap_connect_tx.phase = GAP_CONNECT_TX_ARMED;
         }
 
         gap_conn_slot = previous_slot;
@@ -883,7 +876,6 @@ void __attribute__((noinline)) gap_hw_received(void) {
             gap_rx.rssi = GAP_HW_RSSI();
             gap_scan.active_pending = 0;
             gap_rx.ready = 1;
-            GAP_HW_PACKET_READY();
             gap_conn_slot = previous_slot;
             return;
         }
@@ -947,7 +939,6 @@ void __attribute__((noinline)) gap_hw_received(void) {
     memcpy(gap_rx.frame, frame, (size_t)frame[1] + 2);
     gap_rx.rssi = GAP_HW_RSSI();
     gap_rx.ready = 1;
-    GAP_HW_PACKET_READY();
     gap_conn_slot = previous_slot;
 }
 
@@ -955,6 +946,9 @@ void __attribute__((noinline)) gap_hw_received(void) {
 // Application facing
 void gap_hw_init(void) {
     GAP_HW_INIT();
+#if GAP_CENTRAL_SUPPORT
+    GAP_HW_CONNECT_TX_TIMER_CANCEL();
+#endif
 #if GAP_EXT_ADV_SUPPORT
     gap_ext_adv_scan.waiting = 0;
     gap_ext_adv_scan.response_started = 0;
@@ -979,7 +973,6 @@ void gap_hw_init(void) {
     gap_rx.ready = 0;
     gap_rx.rssi = 127;
     gap_adv_scan.ready = 0;
-    GAP_HW_PACKET_CLEAR();
 }
 
 // Calculate the receive-window deadline used to arbitrate the shared radio.
@@ -1360,6 +1353,9 @@ static void gap_conn_poll(void) {
 // Run housekeeping for every live link and let the first due link claim the
 // shared radio until its connection event finishes.
 static inline void gap_conn_poll_all(void) {
+#if GAP_CENTRAL_SUPPORT
+    if (gap_connect_tx.phase != GAP_CONNECT_TX_IDLE) return;
+#endif
     // Sort live links by their next receive-window deadline before polling.
     // order stores slot IDs; deadlines stores the matching sort keys.
     uint8_t order[GAP_CONNECTION_COUNT];
@@ -1405,6 +1401,51 @@ static inline void gap_conn_poll_all(void) {
 
 void gap_hw_scan_poll(void) {
     uint32_t now = GET_MILLIS();
+
+#if GAP_CENTRAL_SUPPORT
+    if (gap_connect_tx.phase == GAP_CONNECT_TX_DONE) {
+        gap_connect_tx.phase = GAP_CONNECT_TX_IDLE;
+        uint8_t previous_slot = gap_conn_slot;
+
+        if (gap_conn_accept(adv_tx.connect_request, gap_connect_tx.end_ticks,
+                            HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))) {
+            gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+            conn->central.central_anchor_set = 0;
+            conn->link_layer.peer_sca_ppm = 500;
+            conn->is_central = 1;
+
+#if GAP_IDENTITY_COUNT > 0
+            if (gap_connect_tx.peer_slot >= 0) {
+                conn->peer = gap_identities[gap_connect_tx.peer_slot].peer;
+            }
+            else
+#endif
+            if (gap_initiator.mode != GAP_CONN_MODE_DIRECT) {
+                conn->peer.type = gap_connect_tx.advertiser_type;
+                memcpy(conn->peer.address, adv_tx.connect_request + 8, 6);
+            }
+            else {
+                conn->peer = gap_initiator.peer;
+            }
+
+            gap_initiator.mode = GAP_CONN_MODE_DIRECT;
+            gap_initiator.active = 0;
+            gap_scanner.scanning = 0;
+            gap_scanner.active = 0;
+            gap_scanner.generation++;
+            gap_rx.ready = 0;
+            gap_conn_slot = previous_slot;
+            return;
+        }
+        gap_conn_slot = previous_slot;
+    }
+    else if (gap_connect_tx.phase != GAP_CONNECT_TX_IDLE) {
+        if ((int32_t)(now - gap_connect_tx.deadline_ms) < 0) return;
+        GAP_HW_CONNECT_TX_TIMER_CANCEL();
+        GAP_HW_STOP();
+    }
+#endif
+
 #if GAP_PRIVACY_SUPPORT
     gap_privacy_poll(now);
 #endif // GAP_PRIVACY_SUPPORT
@@ -1465,7 +1506,6 @@ void gap_hw_scan_poll(void) {
         gap_ext_scan.ready = 0;
         gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
         memset(gap_aux_request, 0, sizeof(gap_aux_request));
-        GAP_HW_PACKET_CLEAR();
     }
 
     gap_ext_scan_process();
@@ -1482,7 +1522,6 @@ void gap_hw_scan_poll(void) {
         gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
         if (gap_syncs[slot].used && gap_syncs[slot].window_active)
             gap_sync_window_missed(slot);
-        GAP_HW_PACKET_CLEAR();
     }
 
     else if (gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX) {
@@ -1496,7 +1535,6 @@ void gap_hw_scan_poll(void) {
         gap_rx_armed = 0;
         gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
         request->active = 0;
-        GAP_HW_PACKET_CLEAR();
     }
 
     if (!gap_scan.active_pending) {

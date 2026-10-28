@@ -1,16 +1,15 @@
 #include "ch32fun.h"
 void gap_hw_received(void);
-void gap_hw_radio_transmitted(void);
 volatile uint32_t rx_ready;
-#define ISLER_CALLBACK_TX gap_hw_radio_transmitted
 static void ble_mesh_rx_received(void) {
     gap_hw_received();
     rx_ready = 1;
 }
 #define ISLER_CALLBACK_RX ble_mesh_rx_received
+#include "aes_cmm.h"
+#include "ble_lib/ble_gap.h"
 #include "iSLER.h"
 #include "ble_lib/ble_crypto.h"
-#include "aes_cmm.h"
 #include "ble_mesh/mesh_provisioning.h"
 #include "ble_mesh/mesh_1network.h"
 #include "ble_mesh/mesh_2transport.h"
@@ -69,8 +68,6 @@ uint32_t GET_MILLIS(void) {
     return (uint32_t)(funSysTick64() / DELAY_MS_TIME);
 }
 
-#define GAP_RADIO_BUFFER_ATTR ISLER_BUF_ATTR
-#include "ble_lib/ble_gap.h"
 #include "ble_mesh/mesh_gatt.h"
 
 // Supply a trusted monotonic second count that survives reboot. Until a clock

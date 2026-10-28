@@ -4,6 +4,19 @@
 #ifndef GAP_H
 #define GAP_H
 
+// CH582 users include this header before iSLER.h to install GAP radio callbacks.
+#if defined(CH582_CH583)
+#ifndef ISLER_CALLBACK_TX
+#define ISLER_CALLBACK_TX iSLER_Radio_Transmitted_Cb
+#endif
+#ifndef ISLER_CALLBACK_RX
+#define ISLER_CALLBACK_RX iSLER_Rx_Received_Cb
+#endif
+#ifndef ISLER_CALLBACK_TMR0
+#define ISLER_CALLBACK_TMR0 iSLER_Connect_Tx_Timer_Cb
+#endif
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -198,6 +211,11 @@ int8_t GAP_HW_RSSI(void);
 void GAP_HW_INIT(void);
 void GAP_HW_STOP(void);
 int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel);
+#if GAP_CENTRAL_SUPPORT
+void GAP_HW_CONNECT_TX_TIMER_BEGIN(void);
+int GAP_HW_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel);
+void GAP_HW_CONNECT_TX_TIMER_CANCEL(void);
+#endif
 int GAP_HW_ADV_TX_PHY(
     uint8_t *frame, uint8_t len, uint8_t channel, uint8_t phy);
 void GAP_HW_LINK_CONFIG(
@@ -216,8 +234,6 @@ void GAP_HW_TX_CLEAR_DONE(void);
 uint64_t GAP_HW_TICKS(void);
 uint64_t HW_TICKS_FROM_US(uint32_t us);
 void GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]);
-void GAP_HW_PACKET_READY(void);
-void GAP_HW_PACKET_CLEAR(void);
 // Provide cryptographically secure random bytes or fail without using a weak fallback.
 int GAP_RANDOM_BYTES(uint8_t *out, size_t len);
 // Protect foreground key updates from interrupt handlers.

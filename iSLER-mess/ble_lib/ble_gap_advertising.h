@@ -909,7 +909,6 @@ int gap_scan_take_ad(
         gap_rx_armed = 0;
 
     gap_rx.ready = 0;
-    GAP_HW_PACKET_CLEAR();
     gap_receive_report(frame, payload_len, packet_rssi);
 
     // ADV_NONCONN_IND contains AdvA (6 bytes) followed by AD structures.

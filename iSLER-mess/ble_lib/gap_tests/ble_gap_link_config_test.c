@@ -26,6 +26,11 @@ void GAP_HW_STOP(void) {}
 int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
     (void)frame; (void)len; (void)channel; return 1;
 }
+void GAP_HW_CONNECT_TX_TIMER_BEGIN(void) {}
+int GAP_HW_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel) {
+    (void)frame; (void)len; (void)channel; return 1;
+}
+void GAP_HW_CONNECT_TX_TIMER_CANCEL(void) {}
 int GAP_HW_ADV_TX_PHY(uint8_t *frame, uint8_t len, uint8_t channel, uint8_t phy) {
     (void)frame; (void)len; (void)channel; (void)phy; return 1;
 }
@@ -46,8 +51,6 @@ void GAP_HW_TX_CLEAR_DONE(void) {}
 uint64_t GAP_HW_TICKS(void) { return radio_ticks++; }
 uint64_t HW_TICKS_FROM_US(uint32_t us) { return us; }
 void GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]) { memset(address, 0, 6); }
-void GAP_HW_PACKET_READY(void) {}
-void GAP_HW_PACKET_CLEAR(void) {}
 int GAP_RANDOM_BYTES(uint8_t *out, size_t len) {
     memset(out, 0, len); return 1;
 }
