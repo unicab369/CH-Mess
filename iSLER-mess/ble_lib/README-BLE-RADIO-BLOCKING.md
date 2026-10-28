@@ -29,6 +29,12 @@ replies now use the shared CH582 IFS TX timer. The PAwR `AUX_CONNECT_RSP`
 still runs from scan polling, so it needs an RX-time preparation path before
 the timer can meet its response deadline.
 
+Extended active scanning now arms `AUX_SCAN_REQ` from the `AUX_ADV_IND` RX
+callback and processes `AUX_SCAN_RSP` after TX completion. Extended initiation
+arms `AUX_CONNECT_REQ` there, validates `AUX_CONNECT_RSP`, then creates the
+connection in polling. The 120 us timer target remains provisional until
+RX-end to TX-start timing is measured on CH582 hardware.
+
 ## Exchanges that require interframe timing
 
 `T_IFS` is measured from the end of the previous packet's last bit to the
