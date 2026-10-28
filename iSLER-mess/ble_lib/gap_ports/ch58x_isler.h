@@ -104,17 +104,37 @@ int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
     gap_link.receive_after_tx = 0;
     frame[1] = (uint8_t)(len - 2);
     iSLERLinkConfig(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M, frame, 0);
-    iSLERLinkTX();
 
-#ifdef ISLER_IDLE_WHILE_TX
-    while (!tx_done) {
-        NVIC->SCTLR &= ~(1 << 2);
-        NVIC->SCTLR &= ~(1 << 3);
-        __WFI();
-    }
-#else
-    for (int timeout = Ticks_from_Ms(5); !tx_done && timeout >= 0; timeout--);
-#endif
+// iSLERLinkTX()
+    iSLERStop();
+    iSLERSetMode(DEVMODE_TX);
+
+    // Wait for the radio to settle after switching to TX mode.
+    // RF26 bit 24 still needs verification on CH582.
+    for (int timeout = Ticks_from_Us(100);
+         !(RF->RF26 & 0x1000000) && timeout >= 0; timeout--);
+
+// #if defined(CH584_CH585) || defined(CH591_CH592)
+//     BB->CTRL_CFG = (gs_iSLERLink.phy_mode == PHY_2M) ?
+//                    CTRL_CFG_PHY_2M : CTRL_CFG_PHY_1M;
+// #endif
+
+    tx_done = 0;
+    BB->CTRL_CFG |= CTRL_CFG_START_TX;
+    BB->CTRL_TX &= ~((1 << 0) | (1 << 1));
+    LL->LL0 = LL_TX;
+
+// End iSLERLinkTX()
+
+// #ifdef ISLER_IDLE_WHILE_TX
+//     while (!tx_done) {
+//         NVIC->SCTLR &= ~(1 << 2);
+//         NVIC->SCTLR &= ~(1 << 3);
+//         __WFI();
+//     }
+// #else
+//     for (int timeout = Ticks_from_Ms(5); !tx_done && timeout >= 0; timeout--);
+// #endif
     gs_iSLERLink.is_open = 0;
     return tx_done != 0;
 }
