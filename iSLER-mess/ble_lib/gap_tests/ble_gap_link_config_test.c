@@ -26,7 +26,7 @@ void GAP_HW_STOP(void) {}
 int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
     (void)frame; (void)len; (void)channel; return 1;
 }
-void GAP_HW_CONNECT_TX_TIMER_BEGIN(void) {}
+void GAP_HW_TX_TIMER_BEGIN(void) {}
 int GAP_HW_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel) {
     (void)frame; (void)len; (void)channel; return 1;
 }
@@ -42,6 +42,7 @@ void GAP_HW_LINK_CONFIG(uint32_t aa, uint8_t channel, uint8_t *frame,
 }
 uint8_t GAP_HW_PHY_MASK(void) { return GAP_PHY_1M; }
 void GAP_HW_LINK_TX(void) { tx_started++; }
+int GAP_HW_CONN_REPLY_TIMER_ARM(void) { GAP_HW_LINK_TX(); return 1; }
 void GAP_HW_LINK_RX(void) { rx_started++; }
 void GAP_HW_SCAN_RX(uint8_t channel) { (void)channel; }
 void GAP_HW_TX_BUFFER(const uint8_t *frame) { (void)frame; }

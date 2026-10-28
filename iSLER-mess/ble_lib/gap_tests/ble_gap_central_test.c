@@ -232,6 +232,11 @@ void GAP_HW_SCAN_RX(uint8_t channel) {
     scan_rx_count++;
 }
 void GAP_HW_TX_BUFFER(const uint8_t *frame) { tx_buffer = frame; }
+void GAP_HW_TX_TIMER_BEGIN(void) {}
+int GAP_HW_CONN_REPLY_TIMER_ARM(void) {
+    GAP_HW_LINK_TX();
+    return 1;
+}
 void GAP_HW_LINK_TX(void) {
     link_tx_count++;
     if (inject_peripheral_connect_request && adv_evt.rx_event) {
@@ -367,7 +372,6 @@ int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
         fake_radio_ticks += ((uint32_t)len + 8u) * 8u;
     return 1;
 }
-void GAP_HW_CONNECT_TX_TIMER_BEGIN(void) {}
 int GAP_HW_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel) {
     return GAP_HW_ADV_TX(frame, len, channel);
 }
