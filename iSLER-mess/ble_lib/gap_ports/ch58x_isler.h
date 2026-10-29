@@ -94,6 +94,10 @@ void iSLER_Radio_Transmitted_Cb(void) {
 #endif
 
 #if GAP_EXT_ADV_SUPPORT
+    if (gap_ext_aux.phase == GAP_EXT_AUX_PRIMARY) {
+        gap_ext_aux_primary_done();
+        return;
+    }
 #if GAP_CENTRAL_SUPPORT
     if (gap_ext_pawr.connect.phase == GAP_PAWR_CONNECT_TX_PENDING) {
         gap_ext_pawr.connect.request_end_ticks = GAP_HW_TICKS();

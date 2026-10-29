@@ -76,11 +76,10 @@ These are the remaining waits, with their locations:
 
 - PAwR connection exchange: request TX is timer-armed; polling records TX completion, response, or timeout and creates the connection without waiting in place. The radio remains reserved for the short response window. Validate scheduled start and TX-end anchor timing on CH582 hardware. The AUX_CONNECT_RSP reply timing remains on the separate IFS timer.
 - PAwR advertiser subevents and response slots: advanced by `gap_pawr_advertiser_poll()` at each call to `gap_send_due()`; TX completion and the response-slot window no longer hold that caller in a wait loop.
-- AUX chain timing: ble_gap_extension.h:1585 arms each configured chain PDU at its scheduled start tick. TX completion is still polled synchronously.
+- AUX chain timing: each configured chain PDU is timer-armed and completed on a later poll.
 - PAwR response TX: ble_gap_extension.h:2028 arms transmission at the scheduled response time; TX completion is still polled in the RX callback.
-- Primary to AUX advertising offset: ble_gap_extension.h:2533 (iSLER-mess/ble_lib/ble_gap_extension.h:2533), line 2612, and line 2716 wait for the 480 µs AuxPtr schedule.
-- Extended advertising TX completion: ble_gap_extension.h:2579 (iSLER-mess/ble_lib/ble_gap_extension.h:2579) and line 2628.
-- Connectable extended advertising RX window: ble_gap_extension.h:2625 (iSLER-mess/ble_lib/ble_gap_extension.h:2625) waits for a request or window timeout.
+- Primary to AUX advertising offset: primary TX completion arms AUX TX for the 480 µs AuxPtr schedule; polling resumes the event after AUX TX completes.
+- Extended advertising scan and connection response TX completion and request RX windows still wait in the caller.
 - Legacy advertising TX completion: ble_gap_connection_poll.h:2100 (iSLER-mess/ble_lib/ble_gap_connection_poll.h:2100) and line 2148.
 
 These waits handle scheduled offsets, TX completion, or listening windows. They do not themselves require IFS. The specific IFS reply handlers are separate—for example, the PAwR AUX_CONNECT_RSP timer at ble_gap_extension.h:1359.

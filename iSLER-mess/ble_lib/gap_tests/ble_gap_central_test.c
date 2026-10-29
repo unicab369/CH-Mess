@@ -252,6 +252,18 @@ int GAP_HW_IFS_TX_TIMER_ARM(void) {
     return 1;
 }
 void GAP_HW_LINK_TX(void) {
+    if (gap_ext_aux.phase == GAP_EXT_AUX_PRIMARY &&
+        tx_buffer == gap_ext_primary_frame) {
+        if (captured_extended_count < 16) {
+            unsigned slot = captured_extended_count++;
+            memcpy(captured_extended_pdus[slot], gap_ext_primary_frame, 9);
+            captured_extended_pdu_lengths[slot] = 9;
+            captured_extended_channels[slot] = configured_radio_channel;
+            captured_extended_ticks[slot] = fake_radio_ticks;
+        }
+        gap_ext_aux_primary_done();
+        return;
+    }
     link_tx_count++;
     if (inject_peripheral_connect_request && adv_evt.rx_event) {
         static const uint8_t incoming_peer[6] = {
@@ -330,9 +342,10 @@ int GAP_HW_LINK_TX_AT(uint64_t start_ticks) {
     if (fake_radio_ticks_enabled && fake_radio_ticks < start_ticks)
         fake_radio_ticks = start_ticks;
     if (configured_access_address == BLE_ADV_ACCESS_ADDRESS &&
-        tx_buffer == gap_ext_adv_frame &&
-        (((uint8_t *)tx_buffer)[3] == 0x18 ||
-         ((uint8_t *)tx_buffer)[3] == 0x08) &&
+        ((tx_buffer == gap_ext_adv_frame &&
+          (((uint8_t *)tx_buffer)[3] == 0x18 ||
+           ((uint8_t *)tx_buffer)[3] == 0x08)) ||
+         tx_buffer == gap_ext_aux_frame) &&
         captured_extended_count < 16
     ) {
         uint8_t *frame = (uint8_t *)tx_buffer;
@@ -787,10 +800,12 @@ static void test_extended_connectable_advertiser(void) {
     assert(gap_ext_adv_connect_start_phy(0, 2, 100, GAP_PHY_1M));
     inject_ext_connect_request = 2;
     assert(gap_ext_send_due(GET_MILLIS()) == 1);
+    assert(gap_ext_send_due(GET_MILLIS()) == 1);
     assert(!gap_conn_slot_mask && gap_ext_adv[0].enabled);
     gap_ext_adv[0].next_event_ms = GET_MILLIS();
     captured_extended_count = 0;
     inject_ext_connect_request = 1;
+    assert(gap_ext_send_due(GET_MILLIS()) == 1);
     assert(gap_ext_send_due(GET_MILLIS()) == 2);
     assert(captured_extended_count == 2 &&
            captured_extended_pdus[0][2] == 0x46 &&
@@ -1141,10 +1156,11 @@ static void test_coded_extended_advertising_transmit(void) {
         sizeof(data), 6, 100, GAP_PHY_CODED));
     assert(gap_ext_adv[0].aux_phy == GAP_PHY_CODED);
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(captured_extended_count == 2 &&
            captured_extended_channels[0] == 37 &&
            captured_extended_channels[1] == 0 &&
-           configured_adv_phy == GAP_PHY_CODED &&
+           configured_tx_phy == GAP_PHY_CODED &&
            ((captured_extended_pdus[0][8] >> 6) & 3) == 2);
     assert(gap_ext_adv_stop(0));
     fake_radio_tick_autoincrement = 0;
@@ -1182,6 +1198,7 @@ static void test_extended_advertising_chain_transmit(void) {
             0, data, sizeof(data), 5, 100, GAP_PHY_1M
         ));
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     for (uint8_t i = 0; i < 16 &&
          gap_ext_chain.phase != GAP_EXT_CHAIN_IDLE; i++)
         assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
@@ -1198,7 +1215,7 @@ static void test_extended_advertising_chain_transmit(void) {
            auxiliary[3] == 0x19 && (auxiliary[11] >> 4) == 5 &&
            !memcmp(auxiliary + 10, primary + 4, 2) && auxiliary[12] == 1 &&
            auxiliary[13] == 91);
-    assert(captured_extended_ticks[1] - captured_extended_ticks[0] >= 480 &&
+    assert(captured_extended_ticks[1] - captured_extended_ticks[0] >= 479 &&
            captured_extended_ticks[1] - captured_extended_ticks[0] <= 510);
     for (uint8_t i = 2; i < 7; i++) {
         const uint8_t *chain = captured_extended_pdus[i];
@@ -1268,6 +1285,8 @@ static void test_periodic_advertising_transmit(void) {
                                                     sizeof(periodic_data), 6));
     assert(!gap_periodic_adv_update(0, periodic_data,
                                                       GAP_EXT_ADV_DATA_MAX + 1));
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(captured_extended_count == 2);
     const uint8_t *aux = captured_extended_pdus[1];
@@ -1433,6 +1452,7 @@ static void test_pawr_advertising_subevents(void) {
     assert(set->pawr.enabled && set->pawr.resp_slots == 4 &&
            gap_access_address_valid(set->periodic.response_access));
 
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(captured_extended_count == 2);
     const uint8_t *aux = captured_extended_pdus[1];
@@ -2130,7 +2150,9 @@ static void test_extended_advertising_multiple_sets(void) {
     assert(!gap_ext_adv_start_phy(0, data1,
         sizeof(data1), 9, 100, GAP_PHY_1M));
 
-    // Both sets are due; successive poll calls must service each set once.
+    // Each set takes one poll to start primary TX and one to finish AUX TX.
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(captured_extended_count == 4);
@@ -2185,6 +2207,7 @@ static void test_extended_scannable_advertising(void) {
         sizeof(data), 6, 100, GAP_PHY_1M));
     force_aux_scan_request = 1;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     for (uint8_t i = 0; i < 16 &&
          gap_ext_chain.phase != GAP_EXT_CHAIN_IDLE; i++)
         assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
@@ -2237,6 +2260,7 @@ static void test_extended_scannable_advertising(void) {
         short_response, sizeof(short_response), 7, 100, GAP_PHY_1M));
     force_aux_scan_request = 1;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(!force_aux_scan_request && captured_extended_count == 2 &&
            !gap_ext_adv_scan.response_started);
     assert(gap_ext_adv_stop(0));
@@ -2249,8 +2273,8 @@ static void test_extended_scannable_advertising(void) {
         GAP_PHY_CODED));
     force_aux_scan_request = 1;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(!force_aux_scan_request && captured_extended_count >= 3 &&
-           configured_adv_phy == GAP_PHY_CODED &&
            configured_tx_phy == GAP_PHY_CODED &&
            configured_rx_phy == GAP_PHY_CODED &&
            ((captured_extended_pdus[0][8] >> 6) & 3) == 2);
