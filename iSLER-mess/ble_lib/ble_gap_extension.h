@@ -166,6 +166,11 @@ static struct {
 #endif
 
 // PAwR response and connection state
+enum {
+    GAP_PAWR_CONNECT_IDLE = 0,
+    GAP_PAWR_CONNECT_TX_PENDING,
+    GAP_PAWR_CONNECT_RESPONSE_PENDING
+};
 static struct {
     struct {
         volatile uint8_t listening, ready;
@@ -177,6 +182,11 @@ static struct {
         volatile uint8_t waiting, response_ready;
         uint8_t response[16];
         uint64_t request_end_ticks;
+#if GAP_CENTRAL_SUPPORT
+        volatile uint8_t phase, tx_end_valid;
+        uint8_t set_id;
+        uint64_t response_deadline_ticks;
+#endif
 #if GAP_PERIPHERAL_SUPPORT
         volatile uint8_t reply_armed;
         uint32_t reply_deadline_ms;
@@ -1386,14 +1396,14 @@ static int gap_pawr_conn_req_finish(
 }
 #endif // GAP_PERIPHERAL_SUPPORT
 
-// Send one PAwR AUX_CONNECT_REQ and receive its AUX_CONNECT_RSP on the same
-// periodic channel before starting the Central connection state.
+// Arm one PAwR AUX_CONNECT_REQ. Completion and response handling happen later
+// from polling so the caller can return while the radio exchange is active.
 #if GAP_CENTRAL_SUPPORT
 static int gap_pawr_exchange(
     gap_extended_adv_set *set, uint8_t channel, uint64_t request_start_ticks
 ) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!set || !set->pawr_connect.pending ||
+        gap_ext_pawr.connect.phase != GAP_PAWR_CONNECT_IDLE ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         GAP_HW_DATA_MAX < 27
     ) return 0;
@@ -1417,7 +1427,10 @@ static int gap_pawr_exchange(
     memcpy(request + 2, local_address, 6);
     memcpy(request + 8, peer_address, 6);
     write_u32_le(request + 14, access_address);
-    if (!GAP_RANDOM_BYTES(crc_init, sizeof(crc_init))) return 0;
+    if (!GAP_RANDOM_BYTES(crc_init, sizeof(crc_init))) {
+        set->pawr_connect.pending = 0;
+        return 0;
+    }
     memcpy(request + 18, crc_init, sizeof(crc_init));
 
     request[21] = 1;
@@ -1434,7 +1447,12 @@ static int gap_pawr_exchange(
     }
 
     gap_ext_pawr.connect.response_ready = 0;
+    gap_ext_pawr.connect.request_end_ticks = 0;
+    gap_ext_pawr.connect.tx_end_valid = 0;
+    gap_ext_pawr.connect.set_id = (uint8_t)(set - gap_ext_adv);
+    gap_ext_pawr.connect.response_deadline_ticks = request_start_ticks + HW_TICKS_FROM_US(1000);
     gap_ext_pawr.connect.waiting = 1;
+    gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_TX_PENDING;
     GAP_HW_TX_CLEAR_DONE();
     GAP_HW_CRC_INIT(set->periodic.params.crc_init);
     GAP_HW_LINK_CONFIG(set->periodic.params.access_address, channel,
@@ -1442,61 +1460,14 @@ static int gap_pawr_exchange(
 
     if (!GAP_HW_LINK_TX_AT(request_start_ticks)) {
         gap_ext_pawr.connect.waiting = 0;
+        gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_IDLE;
         set->pawr_connect.pending = 0;
         GAP_HW_STOP();
         return 0;
     }
-    uint64_t tx_deadline = request_start_ticks + HW_TICKS_FROM_US(1000);
-    while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < tx_deadline) {}
-
-    if (GAP_HW_TX_DONE())
-        gap_ext_pawr.connect.request_end_ticks = GAP_HW_TICKS();
-
-    uint64_t response_deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
-    while (GAP_HW_TX_DONE() && !gap_ext_pawr.connect.response_ready &&
-           GAP_HW_TICKS() < response_deadline) {}
-
-    gap_ext_pawr.connect.waiting = 0;
-    set->pawr_connect.pending = 0;
-    GAP_HW_STOP();
-
-    if (!GAP_HW_TX_DONE() || !gap_ext_pawr.connect.response_ready)
-        return 0;
-
-    const uint8_t *response = gap_ext_pawr.connect.response;
-    uint8_t expected_header = ADV_EXT_IND | (peer_type << 6) | (local_type << 7);
-
-    if ((response[0] & 0xcf) != expected_header ||
-        response[1] != 14 ||
-        response[2] != 13 ||
-        response[3] != 0x03 ||
-        memcmp(response + 4, peer_address, 6) != 0 ||
-        memcmp(response + 10, local_address, 6) != 0
-    ) return 0;
-
-    if (!gap_conn_accept(request, gap_ext_pawr.connect.request_end_ticks,
-                        HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(2500))
-    ) return 0;
-
-    conn->is_central = 1;
-    conn->central.central_anchor_set = 0;
-    conn->link_layer.peer_sca_ppm = 500;
-
-#if GAP_IDENTITY_COUNT > 0
-    if (peer_slot >= 0) {
-        conn->peer = gap_identities[peer_slot].peer;
-    }
-    else
-#endif
-    {
-        conn->peer.type = peer_type;
-        memcpy(conn->peer.address, peer_address, 6);
-    }
-    gap_scanner.scanning = 0;
-    gap_scanner.active = 0;
-    gap_scanner.generation++;
     return 1;
 }
+
 #endif // GAP_CENTRAL_SUPPORT
 
 // -----------------------------------------------------------------------------
@@ -1521,11 +1492,12 @@ static int gap_aux_tx(
     GAP_HW_CRC_INIT(set->periodic.params.crc_init);
     GAP_HW_LINK_CONFIG(set->periodic.params.access_address, channel, frame, 0,
                        set->aux_phy, set->aux_phy);
-    while (GAP_HW_TICKS() < start_ticks) {}
+    if (!GAP_HW_LINK_TX_AT(start_ticks)) return 0;
 
-    if (actual_start) *actual_start = GAP_HW_TICKS();
-    GAP_HW_LINK_TX();
-    uint64_t deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
+    // The timer targets this event's scheduled start. Use that same anchor for
+    // the PAwR response schedule instead of the later foreground poll time.
+    if (actual_start) *actual_start = start_ticks;
+    uint64_t deadline = start_ticks + HW_TICKS_FROM_US(1000);
     while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < deadline) {}
     return GAP_HW_TX_DONE() && length >= 2;
 }
@@ -1577,10 +1549,16 @@ static int gap_ext_chain_send(
         data_offset += chunk;
         remaining -= chunk;
 
-        while (GAP_HW_TICKS() < next_start) {}
-        uint64_t pdu_start = GAP_HW_TICKS();
-        if (!GAP_HW_ADV_TX_PHY(frame, (uint8_t)(frame[1] + 2), channel, phy))
+        GAP_HW_TX_CLEAR_DONE();
+        GAP_HW_CRC_INIT(0x555555); // Advertising-channel CRCInit.
+        GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel, frame, 0, phy, phy);
+
+        if (!GAP_HW_LINK_TX_AT(next_start))
             return 0;
+        uint64_t pdu_start = next_start;
+        uint64_t tx_deadline = next_start + HW_TICKS_FROM_US(1000);
+        while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < tx_deadline) {}
+        if (!GAP_HW_TX_DONE()) return 0;
         // Return success only after the final PDU has been transmitted.
         if (!has_chain) return 1;
 
@@ -2018,10 +1996,8 @@ static void gap_ext_scan_process(void) {
                     GAP_HW_LINK_CONFIG(sync->pawr.timing.resp_access_addr, response_channel,
                                         response, 0, sync->phy, sync->phy);
 
-                    if (GAP_HW_TICKS() < response_start) {
-                        while (GAP_HW_TICKS() < response_start) {}
-                        GAP_HW_LINK_TX();
-                        uint64_t deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
+                    if (GAP_HW_LINK_TX_AT(response_start)) {
+                        uint64_t deadline = response_start + HW_TICKS_FROM_US(1000);
                         while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < deadline) {}
                         (void)GAP_HW_TX_DONE();
                     }
@@ -2406,6 +2382,83 @@ static int gap_sync_conn_overlap(uint64_t start_ticks, uint64_t end_ticks) {
 // Return zero when none are due, one when handled, -1 on failure, or 2 to retry.
 static int gap_ext_send_due(uint32_t now) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+#if GAP_CENTRAL_SUPPORT
+    if (gap_ext_pawr.connect.phase != GAP_PAWR_CONNECT_IDLE) {
+        uint64_t ticks = GAP_HW_TICKS();
+
+        if (gap_ext_pawr.connect.phase == GAP_PAWR_CONNECT_TX_PENDING) {
+            if (!GAP_HW_TX_DONE()) {
+                if (ticks < gap_ext_pawr.connect.response_deadline_ticks)
+                    return 1;
+
+                gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_IDLE;
+                gap_ext_pawr.connect.waiting = 0;
+                gap_ext_adv[gap_ext_pawr.connect.set_id].pawr_connect.pending = 0;
+                GAP_HW_STOP();
+            }
+            else {
+                if (!gap_ext_pawr.connect.tx_end_valid) {
+                    gap_ext_pawr.connect.request_end_ticks = ticks;
+                    gap_ext_pawr.connect.tx_end_valid = 1;
+                }
+                gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_RESPONSE_PENDING;
+                gap_ext_pawr.connect.response_deadline_ticks =
+                    gap_ext_pawr.connect.request_end_ticks + HW_TICKS_FROM_US(1000);
+            }
+        }
+
+        if (gap_ext_pawr.connect.phase != GAP_PAWR_CONNECT_IDLE) {
+            if (!gap_ext_pawr.connect.response_ready &&
+                ticks < gap_ext_pawr.connect.response_deadline_ticks
+            ) return 1;
+
+            gap_ext_pawr.connect.waiting = 0;
+            gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_IDLE;
+            GAP_HW_STOP();
+
+            gap_extended_adv_set *set = &gap_ext_adv[gap_ext_pawr.connect.set_id];
+            set->pawr_connect.pending = 0;
+            const uint8_t *request = adv_tx.connect_request;
+            const uint8_t *response = gap_ext_pawr.connect.response;
+            uint8_t peer_type = (request[0] >> 7) & 1;
+            const uint8_t *peer_address = request + 8;
+            uint8_t local_type = (request[0] >> 6) & 1;
+            const uint8_t *local_address = request + 2;
+            uint8_t expected_header = ADV_EXT_IND | (peer_type << 6) | (local_type << 7);
+
+            if (gap_ext_pawr.connect.response_ready &&
+                gap_ext_pawr.connect.tx_end_valid &&
+                (response[0] & 0xcf) == expected_header &&
+                response[1] == 14 && response[2] == 13 && response[3] == 0x03 &&
+                memcmp(response + 4, peer_address, 6) == 0 &&
+                memcmp(response + 10, local_address, 6) == 0 &&
+                gap_conn_accept(request, gap_ext_pawr.connect.request_end_ticks,
+                                HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(2500))
+            ) {
+                conn = &gap_conn_ctx[gap_conn_slot];
+                conn->is_central = 1;
+                conn->central.central_anchor_set = 0;
+                conn->link_layer.peer_sca_ppm = 500;
+
+#if GAP_IDENTITY_COUNT > 0
+                int peer_slot = gap_identity_find(peer_address, peer_type);
+                if (peer_slot >= 0) {
+                    conn->peer = gap_identities[peer_slot].peer;
+                }
+                else
+#endif
+                {
+                    conn->peer.type = peer_type;
+                    memcpy(conn->peer.address, peer_address, 6);
+                }
+                gap_scanner.scanning = 0;
+                gap_scanner.active = 0;
+                gap_scanner.generation++;
+            }
+            return 1;
+        }
+    }
+#endif
     // Periodic events use controller ticks so their interval does not inherit
     // millisecond scheduler jitter. Advance the event counter across missed
     // intervals as required by the periodic channel selection algorithm.

@@ -94,6 +94,12 @@ void iSLER_Radio_Transmitted_Cb(void) {
 #endif
 
 #if GAP_EXT_ADV_SUPPORT
+#if GAP_CENTRAL_SUPPORT
+    if (gap_ext_pawr.connect.phase == GAP_PAWR_CONNECT_TX_PENDING) {
+        gap_ext_pawr.connect.request_end_ticks = GAP_HW_TICKS();
+        gap_ext_pawr.connect.tx_end_valid = 1;
+    }
+#endif
     if (gap_ext_adv_scan.response_started)
         gap_ext_adv_scan.waiting = 0;
 #if GAP_PERIPHERAL_SUPPORT
@@ -210,9 +216,9 @@ int GAP_HW_IFS_TX_TIMER_ARM(void) {
     return 1;
 }
 
-// Start the currently configured link TX at an absolute controller tick.
-// Keep the same radio timer path as IFS replies so the foreground can return
-// while the packet is pending. Link configuration must be complete first.
+// Start the configured link TX at an absolute controller tick. This has a
+// separate logical arm state from IFS replies, though both use hardware TMR0.
+// Link configuration must be complete first.
 int GAP_HW_LINK_TX_AT(uint64_t start_ticks) {
     // TMR0 is a shared hardware resource, but this absolute event has its own
     // logical arm state and must not replace an IFS reply already in flight.

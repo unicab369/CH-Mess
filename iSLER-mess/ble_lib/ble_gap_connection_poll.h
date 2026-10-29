@@ -1592,6 +1592,10 @@ static inline void gap_conn_poll_all(void) {
     if (gap_connect_tx.phase != GAP_CONNECT_TX_IDLE) return;
 #endif
 #if GAP_EXT_ADV_SUPPORT
+    // The PAwR Central exchange owns the radio until its response arrives or
+    // times out. Application polling continues; only radio reconfiguration is
+    // deferred during this short receive window.
+    if (gap_ext_pawr.connect.waiting) return;
     if (gap_ext_scan.request_phase != GAP_EXT_REQ_NONE) return;
 #endif
     // Sort live links by their next receive-window deadline before polling.
@@ -1639,6 +1643,12 @@ static inline void gap_conn_poll_all(void) {
 
 void gap_hw_scan_poll(void) {
     uint32_t now = GET_MILLIS();
+
+#if GAP_EXT_ADV_SUPPORT && GAP_CENTRAL_SUPPORT
+    // Leave the periodic-channel receiver active until the PAwR Central
+    // exchange is completed by gap_ext_send_due().
+    if (gap_ext_pawr.connect.waiting) return;
+#endif
 
 #if GAP_EXT_ADV_SUPPORT && GAP_PERIPHERAL_SUPPORT
     if (gap_ext_pawr.connect.reply_armed) {

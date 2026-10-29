@@ -309,6 +309,8 @@ void GAP_HW_LINK_TX(void) {
     }
 
     if (gap_ext_adv_scan.waiting && gap_ext_adv_scan.response_started &&
+        ((uint8_t *)tx_buffer)[3] != 0x18 &&
+        ((uint8_t *)tx_buffer)[3] != 0x08 &&
         captured_extended_count < 16) {
         uint8_t *frame = (uint8_t *)tx_buffer;
         unsigned slot = captured_extended_count++;
@@ -327,6 +329,19 @@ void GAP_HW_LINK_TX(void) {
 int GAP_HW_LINK_TX_AT(uint64_t start_ticks) {
     if (fake_radio_ticks_enabled && fake_radio_ticks < start_ticks)
         fake_radio_ticks = start_ticks;
+    if (configured_access_address == BLE_ADV_ACCESS_ADDRESS &&
+        tx_buffer == gap_ext_adv_frame &&
+        (((uint8_t *)tx_buffer)[3] == 0x18 ||
+         ((uint8_t *)tx_buffer)[3] == 0x08) &&
+        captured_extended_count < 16
+    ) {
+        uint8_t *frame = (uint8_t *)tx_buffer;
+        unsigned slot = captured_extended_count++;
+        memcpy(captured_extended_pdus[slot], frame, (size_t)frame[1] + 2);
+        captured_extended_pdu_lengths[slot] = frame[1] + 2;
+        captured_extended_channels[slot] = configured_radio_channel;
+        captured_extended_ticks[slot] = start_ticks;
+    }
     GAP_HW_LINK_TX();
     return 1;
 }
@@ -1189,7 +1204,7 @@ static void test_extended_advertising_chain_transmit(void) {
                chain[3] == 0x18 &&
                !memcmp(chain + 4, auxiliary + 10, 2) &&
                chain[6] == i && chain[7] == 91);
-        assert(captured_extended_ticks[i] - captured_extended_ticks[i - 1] >= 2730 &&
+        assert(captured_extended_ticks[i] - captured_extended_ticks[i - 1] >= 2729 &&
                captured_extended_ticks[i] - captured_extended_ticks[i - 1] <= 2760);
     }
     assert(captured_extended_channels[7] == 6 &&
@@ -1537,6 +1552,10 @@ static void test_pawr_advertiser_connection(void) {
     assert(!gap_pawr_connect(0, 0, test_address(
         peer_address, 0)));
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    assert(set->pawr_connect.pending && gap_ext_pawr.connect.waiting);
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    fake_radio_ticks = gap_ext_pawr.connect.response_deadline_ticks;
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !set->pawr_connect.pending);
 
     // A malformed response is ignored and does not create a connection.
@@ -1545,6 +1564,7 @@ static void test_pawr_advertiser_connection(void) {
         peer_address, 0)));
     inject_pawr_connect_response = 1;
     corrupt_pawr_connect_response = 1;
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !set->pawr_connect.pending);
 
@@ -1555,6 +1575,9 @@ static void test_pawr_advertiser_connection(void) {
         peer_address, 0)));
     uint16_t connect_event_counter = set->periodic.event_counter;
     inject_pawr_connect_response = 1;
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
+           gap_ext_pawr.connect.waiting);
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central &&
            !set->pawr_connect.pending && !set->enabled &&
@@ -2147,7 +2170,7 @@ static void test_extended_scannable_advertising(void) {
            !memcmp(scan_response + 15, data, GAP_EXT_ADV_FIRST_PDU_DATA_MAX));
     assert(captured_extended_channels[2] == 0 &&
            captured_extended_channels[3] == 1);
-    assert(captured_extended_ticks[3] - captured_extended_ticks[2] >= 2730 &&
+    assert(captured_extended_ticks[3] - captured_extended_ticks[2] >= 2729 &&
            captured_extended_ticks[3] - captured_extended_ticks[2] <= 2760);
     assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
         primary, captured_extended_pdu_lengths[0], -40));

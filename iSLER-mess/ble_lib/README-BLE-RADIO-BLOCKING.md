@@ -74,10 +74,11 @@ Source: [Bluetooth Core 5.4, Link Layer §§4.1.1 and 4.2.1](https://www.bluetoo
 
 These are the remaining waits, with their locations:
 
-- PAwR connection exchange: the request start is now armed with the CH582 radio timer at ble_gap_extension.h:1443 rather than busy-waited. TX completion and the response window are still polled synchronously at lines 1449 and 1455; convert the full exchange to event-driven state and validate scheduled start timing on hardware. The AUX_CONNECT_RSP reply timing is handled by the IFS timer at line 1359.
-- AUX chain timing: ble_gap_extension.h:1520 (iSLER-mess/ble_lib/ble_gap_extension.h:1520) and line 1576 wait for scheduled packet starts. Line 1525 waits for TX completion.
+- PAwR connection exchange: request TX is timer-armed; polling records TX completion, response, or timeout and creates the connection without waiting in place. The radio remains reserved for the short response window. Validate scheduled start and TX-end anchor timing on CH582 hardware. The AUX_CONNECT_RSP reply timing remains on the separate IFS timer.
+- Periodic and PAwR subevent TX: ble_gap_extension.h:1524 arms the configured link TX at its absolute start tick. TX completion is still polled synchronously.
+- AUX chain timing: ble_gap_extension.h:1585 arms each configured chain PDU at its scheduled start tick. TX completion is still polled synchronously.
 - PAwR response slots: ble_gap_extension.h:1636 (iSLER-mess/ble_lib/ble_gap_extension.h:1636) waits for the slot start; line 1645 listens through the scheduled slot window.
-- PAwR response TX: ble_gap_extension.h:2018 (iSLER-mess/ble_lib/ble_gap_extension.h:2018) waits for the scheduled response time; line 2021 waits for TX completion.
+- PAwR response TX: ble_gap_extension.h:2028 arms transmission at the scheduled response time; TX completion is still polled in the RX callback.
 - Primary to AUX advertising offset: ble_gap_extension.h:2533 (iSLER-mess/ble_lib/ble_gap_extension.h:2533), line 2612, and line 2716 wait for the 480 µs AuxPtr schedule.
 - Extended advertising TX completion: ble_gap_extension.h:2579 (iSLER-mess/ble_lib/ble_gap_extension.h:2579) and line 2628.
 - Connectable extended advertising RX window: ble_gap_extension.h:2625 (iSLER-mess/ble_lib/ble_gap_extension.h:2625) waits for a request or window timeout.
