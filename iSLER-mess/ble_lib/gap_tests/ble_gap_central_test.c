@@ -356,6 +356,10 @@ int GAP_HW_LINK_TX_AT(uint64_t start_ticks) {
         captured_extended_ticks[slot] = start_ticks;
     }
     GAP_HW_LINK_TX();
+    if (tx_buffer == gap_ext_aux_frame &&
+        gap_ext_aux.phase == GAP_EXT_AUX_PENDING &&
+        gap_ext_adv[gap_ext_aux.set_id].scannable)
+        gap_ext_aux_scan_rx_start();
     return 1;
 }
 int GAP_HW_TX_DONE(void) { return 1; }
@@ -2278,6 +2282,18 @@ static void test_extended_scannable_advertising(void) {
            configured_tx_phy == GAP_PHY_CODED &&
            configured_rx_phy == GAP_PHY_CODED &&
            ((captured_extended_pdus[0][8] >> 6) & 3) == 2);
+    assert(gap_ext_adv_stop(0));
+    assert(gap_ext_adv_scan_start_phy(0,
+        short_response, sizeof(short_response), 9, 100, GAP_PHY_1M));
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    assert(gap_ext_aux.phase == GAP_EXT_AUX_SCAN_WINDOW &&
+           gap_ext_adv_scan.waiting);
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    assert(gap_ext_aux.phase == GAP_EXT_AUX_SCAN_WINDOW);
+    fake_radio_ticks = gap_ext_aux.scan_deadline;
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    assert(gap_ext_aux.phase == GAP_EXT_AUX_IDLE &&
+           !gap_ext_adv_scan.waiting);
     assert(gap_ext_adv_stop(0));
     assert(gap_use_public_address());
     fake_radio_tick_autoincrement = 0;

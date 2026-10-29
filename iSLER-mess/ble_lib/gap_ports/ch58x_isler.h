@@ -98,6 +98,11 @@ void iSLER_Radio_Transmitted_Cb(void) {
         gap_ext_aux_primary_done();
         return;
     }
+    if (gap_ext_aux.phase == GAP_EXT_AUX_PENDING &&
+        gap_ext_adv[gap_ext_aux.set_id].scannable) {
+        gap_ext_aux_scan_rx_start();
+        return;
+    }
 #if GAP_CENTRAL_SUPPORT
     if (gap_ext_pawr.connect.phase == GAP_PAWR_CONNECT_TX_PENDING) {
         gap_ext_pawr.connect.request_end_ticks = GAP_HW_TICKS();
@@ -113,7 +118,24 @@ void iSLER_Radio_Transmitted_Cb(void) {
 #endif
     if (gap_link.ifs_tx_active) {
         gap_link.ifs_tx_active = 0;
+
 #if GAP_EXT_ADV_SUPPORT
+        if (gap_ext_aux.phase == GAP_EXT_AUX_SCAN_WINDOW &&
+            gap_ext_adv_scan.response_started) {
+            gap_link.receive_after_tx = 0;
+            gap_extended_adv_set *set = &gap_ext_adv[gap_ext_aux.set_id];
+            if (set->scan_resp_len > GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 4) {
+                uint16_t remaining = set->scan_resp_len - GAP_EXT_ADV_FIRST_PDU_DATA_MAX;
+                uint64_t next_start = gap_ext_adv_scan.response_ticks + HW_TICKS_FROM_US(
+                    ((gap_phy_airtime_us(gap_ext_adv_frame[1], set->aux_phy) + 629) / 30) * 30);
+                gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
+                if (!gap_ext_chain_send(gap_ext_aux.set_id, remaining, gap_ext_aux.adi,
+                                        gap_ext_aux.address_type, next_start))
+                    gap_ext_aux.phase = GAP_EXT_AUX_FAILED;
+            }
+            return;
+        }
+
         if (gap_ext_scan.request_phase == GAP_EXT_REQ_SCAN_TX)
             gap_ext_scan.request_phase = GAP_EXT_REQ_SCAN_RX;
         else if (gap_ext_scan.request_phase == GAP_EXT_REQ_CONNECT_TX) {

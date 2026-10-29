@@ -79,7 +79,7 @@ These are the remaining waits, with their locations:
 - AUX chain timing: each configured chain PDU is timer-armed and completed on a later poll.
 - PAwR response TX: ble_gap_extension.h:2028 arms transmission at the scheduled response time; TX completion is still polled in the RX callback.
 - Primary to AUX advertising offset: primary TX completion arms AUX TX for the 480 µs AuxPtr schedule; polling resumes the event after AUX TX completes.
-- Extended advertising scan and connection response TX completion and request RX windows still wait in the caller.
+- Scannable extended advertising opens RX at AUX TX completion and polls for the request window and response completion. Connectable extended advertising still waits in the caller for its request window and response TX.
 - Legacy advertising TX completion: ble_gap_connection_poll.h:2100 (iSLER-mess/ble_lib/ble_gap_connection_poll.h:2100) and line 2148.
 
 These waits handle scheduled offsets, TX completion, or listening windows. They do not themselves require IFS. The specific IFS reply handlers are separate—for example, the PAwR AUX_CONNECT_RSP timer at ble_gap_extension.h:1359.
