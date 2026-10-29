@@ -147,6 +147,8 @@ static struct {
     volatile uint8_t request_phase;
     uint32_t request_deadline_ms;
     uint64_t request_end_ticks;
+    uint8_t pawr_response_tx_pending;
+    uint64_t pawr_response_deadline;
 } gap_ext_scan;
 
 // Extended advertising scan-response state
@@ -1949,6 +1951,7 @@ static void gap_ext_scan_report_process(
 
 // Handle a received extended scan PDU, including follow-on AuxPtr and sync work.
 static void gap_ext_scan_process(void) {
+    if (gap_ext_scan.pawr_response_tx_pending) return;
     if (!gap_ext_scan.ready) return;
 
     uint8_t kind = gap_ext_scan.kind;
@@ -2132,9 +2135,8 @@ static void gap_ext_scan_process(void) {
                                         response, 0, sync->phy, sync->phy);
 
                     if (GAP_HW_LINK_TX_AT(response_start)) {
-                        uint64_t deadline = response_start + HW_TICKS_FROM_US(1000);
-                        while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < deadline) {}
-                        (void)GAP_HW_TX_DONE();
+                        gap_ext_scan.pawr_response_deadline = response_start + HW_TICKS_FROM_US(1000);
+                        gap_ext_scan.pawr_response_tx_pending = 1;
                     }
                 }
 
@@ -2562,6 +2564,7 @@ static void gap_ext_aux_primary_start(
 
 static int gap_ext_send_due(uint32_t now) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    if (gap_ext_scan.pawr_response_tx_pending) return 1;
 #if GAP_CENTRAL_SUPPORT || GAP_PERIPHERAL_SUPPORT
     if (gap_ext_pawr.advertiser.phase != GAP_PAWR_ADV_IDLE) {
         (void)gap_pawr_advertiser_poll();

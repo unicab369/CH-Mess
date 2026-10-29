@@ -78,6 +78,7 @@ static uint32_t now_ms;
 static uint64_t fake_radio_ticks;
 static uint8_t fake_radio_ticks_enabled;
 static uint8_t fake_radio_tick_autoincrement;
+static uint8_t fake_tx_done = 1;
 static uint8_t radio_phy_mask = GAP_PHY_1M | GAP_PHY_2M;
 static uint8_t configured_tx_phy, configured_rx_phy, configured_adv_phy;
 static uint8_t configured_receive_after_tx;
@@ -363,7 +364,7 @@ int GAP_HW_LINK_TX_AT(uint64_t start_ticks) {
         gap_ext_aux_rx_start();
     return 1;
 }
-int GAP_HW_TX_DONE(void) { return 1; }
+int GAP_HW_TX_DONE(void) { return fake_tx_done; }
 void GAP_HW_TX_CLEAR_DONE(void) {}
 void GAP_HW_CRC_INIT(uint32_t crc_init) { configured_crc_init = crc_init; }
 void GAP_HW_LINK_CONFIG(
@@ -1819,6 +1820,7 @@ static void test_pawr_observer_response(void) {
     gap_ext_scan.ticks = fake_radio_ticks;
     gap_ext_scan.rssi = -42;
     gap_ext_scan.ready = 1;
+    fake_tx_done = 0;
     gap_ext_scan_process();
     assert(captured_extended_count == 1 &&
            configured_access_address == sync->pawr.timing.resp_access_addr &&
@@ -1838,6 +1840,12 @@ static void test_pawr_observer_response(void) {
     assert(gap_report_poll(&report) && report.slot == 0 &&
            report.event_counter == 12 && report.data_len == 3 &&
            !memcmp(report.data, (uint8_t[]){2, 0x01, 0x06}, 3));
+    assert(gap_ext_scan.pawr_response_tx_pending);
+    gap_hw_scan_poll();
+    assert(gap_ext_scan.pawr_response_tx_pending);
+    fake_tx_done = 1;
+    gap_hw_scan_poll();
+    assert(!gap_ext_scan.pawr_response_tx_pending);
 
     // Repeating mode sends the configured response at each selected subevent.
     memcpy(gap_ext_scan.frame, subevent_pdu, sizeof(subevent_pdu));
@@ -1850,6 +1858,8 @@ static void test_pawr_observer_response(void) {
     gap_ext_scan_process();
     assert(captured_extended_count == 2 && sync->pawr.pending &&
            sync->event_counter == 14);
+    assert(gap_ext_scan.pawr_response_tx_pending);
+    gap_hw_scan_poll();
 
     // Disabling repeat leaves one final transmission, then consumes the data.
     assert(gap_sync_pawr_repeat(0, 0));
@@ -1860,9 +1870,15 @@ static void test_pawr_observer_response(void) {
     gap_ext_scan.ticks = fake_radio_ticks;
     gap_ext_scan.rssi = -42;
     gap_ext_scan.ready = 1;
+    fake_tx_done = 0;
     gap_ext_scan_process();
     assert(captured_extended_count == 3 && !sync->pawr.pending &&
            sync->event_counter == 15);
+    assert(gap_ext_scan.pawr_response_tx_pending);
+    fake_radio_ticks = gap_ext_scan.pawr_response_deadline;
+    gap_hw_scan_poll();
+    assert(!gap_ext_scan.pawr_response_tx_pending);
+    fake_tx_done = 1;
     gap_sync_reports.head = gap_sync_reports.count = 0;
     fake_radio_tick_autoincrement = 0;
     fake_radio_ticks_enabled = 0;

@@ -77,7 +77,7 @@ These are the remaining waits, with their locations:
 - PAwR connection exchange: request TX is timer-armed; polling records TX completion, response, or timeout and creates the connection without waiting in place. The radio remains reserved for the short response window. Validate scheduled start and TX-end anchor timing on CH582 hardware. The AUX_CONNECT_RSP reply timing remains on the separate IFS timer.
 - PAwR advertiser subevents and response slots: advanced by `gap_pawr_advertiser_poll()` at each call to `gap_send_due()`; TX completion and the response-slot window no longer hold that caller in a wait loop.
 - AUX chain timing: each configured chain PDU is timer-armed and completed on a later poll.
-- PAwR response TX: ble_gap_extension.h:2028 arms transmission at the scheduled response time; TX completion is still polled in the RX callback.
+- PAwR observer response TX: transmission is timer-armed at the response slot, then `gap_hw_scan_poll()` checks completion or timeout without holding the processing callback.
 - Primary to AUX advertising offset: primary TX completion arms AUX TX for the 480 µs AuxPtr schedule; polling resumes the event after AUX TX completes.
 - Scannable and connectable extended advertising open RX at AUX TX completion and poll for the request window and response completion.
 - Legacy advertising TX completion: ble_gap_connection_poll.h:2100 (iSLER-mess/ble_lib/ble_gap_connection_poll.h:2100) and line 2148.
