@@ -841,7 +841,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             if (!GAP_HW_IFS_TX_TIMER_ARM()) {
                 gap_ext_adv_connect.response_started = 0;
                 gap_ext_adv_connect.waiting = 0;
-            }
+            } else gap_ext_aux.window_deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1150);
         }
         gap_conn_slot = previous_slot;
         return;
