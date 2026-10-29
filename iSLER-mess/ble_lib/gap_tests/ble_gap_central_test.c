@@ -1182,6 +1182,9 @@ static void test_extended_advertising_chain_transmit(void) {
             0, data, sizeof(data), 5, 100, GAP_PHY_1M
         ));
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    for (uint8_t i = 0; i < 16 &&
+         gap_ext_chain.phase != GAP_EXT_CHAIN_IDLE; i++)
+        assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(captured_extended_count == 8);
 
     const uint8_t *primary = captured_extended_pdus[0];
@@ -2182,6 +2185,9 @@ static void test_extended_scannable_advertising(void) {
         sizeof(data), 6, 100, GAP_PHY_1M));
     force_aux_scan_request = 1;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    for (uint8_t i = 0; i < 16 &&
+         gap_ext_chain.phase != GAP_EXT_CHAIN_IDLE; i++)
+        assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(!force_aux_scan_request && captured_extended_count == 9);
 
     const uint8_t *primary = captured_extended_pdus[0];

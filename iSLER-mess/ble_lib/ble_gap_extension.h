@@ -152,6 +152,13 @@ static struct {
 // Extended advertising scan-response state
 static GAP_RADIO_BUFFER_ATTR uint8_t gap_ext_primary_frame[9];
 static GAP_RADIO_BUFFER_ATTR uint8_t gap_ext_adv_frame[255];
+enum { GAP_EXT_CHAIN_IDLE, GAP_EXT_CHAIN_TX_PENDING };
+static struct {
+    volatile uint8_t phase;
+    uint16_t remaining, adi;
+    uint8_t address_type, channel, set_id;
+    uint64_t pdu_start;
+} gap_ext_chain;
 static struct {
     volatile uint8_t waiting, response_started;
     uint8_t address_type, address[6];
@@ -631,6 +638,12 @@ int gap_ext_adv_connect_start_phy(
 int gap_ext_adv_stop(uint8_t set_id) {
     if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
     gap_extended_adv_set *set = &gap_ext_adv[set_id];
+    if (gap_ext_chain.phase != GAP_EXT_CHAIN_IDLE &&
+        gap_ext_chain.set_id == set_id
+    ) {
+        GAP_HW_STOP();
+        gap_ext_chain.phase = GAP_EXT_CHAIN_IDLE;
+    }
     set->enabled = 0;
 
     if (!set->periodic.sync_info_sent) {
@@ -1681,38 +1694,45 @@ static uint16_t gap_ext_chain_pdu_build(
     return chunk;
 }
 
-static int gap_ext_chain_send(
-    uint8_t *frame, const uint8_t *data, uint16_t data_offset,
-    uint16_t remaining, uint16_t adi, uint8_t address_type,
-    uint8_t phy, uint64_t next_start
-) {
-    uint8_t channel = 1;
+static int gap_ext_chain_arm(uint64_t start_ticks) {
+    gap_extended_adv_set *set = &gap_ext_adv[gap_ext_chain.set_id];
+    uint16_t data_len = set->scannable ? set->scan_resp_len : set->data_len;
+    uint16_t offset = data_len - gap_ext_chain.remaining;
+    uint8_t has_chain;
+    uint16_t chunk = gap_ext_chain_pdu_build(gap_ext_adv_frame,
+        set->data, offset, gap_ext_chain.remaining,
+        gap_ext_chain.adi, gap_ext_chain.address_type, set->aux_phy,
+        gap_ext_chain.channel, &has_chain);
+    gap_ext_chain.remaining -= chunk;
 
-    while (remaining) {
-        uint8_t has_chain;
-        uint16_t chunk = gap_ext_chain_pdu_build(frame, data, data_offset,
-                                remaining, adi, address_type, phy, channel, &has_chain);
-        data_offset += chunk;
-        remaining -= chunk;
-
-        GAP_HW_TX_CLEAR_DONE();
-        GAP_HW_CRC_INIT(0x555555); // Advertising-channel CRCInit.
-        GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel, frame, 0, phy, phy);
-
-        if (!GAP_HW_LINK_TX_AT(next_start))
-            return 0;
-        uint64_t pdu_start = next_start;
-        uint64_t tx_deadline = next_start + HW_TICKS_FROM_US(1000);
-        while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < tx_deadline) {}
-        if (!GAP_HW_TX_DONE()) return 0;
-        // Return success only after the final PDU has been transmitted.
-        if (!has_chain) return 1;
-
-        channel = (channel + 1) % 37;
-        next_start = pdu_start + HW_TICKS_FROM_US(
-                            ((gap_phy_airtime_us(frame[1], phy) + 629) / 30) * 30);
+    GAP_HW_TX_CLEAR_DONE();
+    GAP_HW_CRC_INIT(0x555555); // Advertising-channel CRCInit.
+    GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, gap_ext_chain.channel,
+        gap_ext_adv_frame, 0, set->aux_phy, set->aux_phy);
+    if (!GAP_HW_LINK_TX_AT(start_ticks)) {
+        gap_ext_chain.phase = GAP_EXT_CHAIN_IDLE;
+        return 0;
     }
+
+    gap_ext_chain.pdu_start = start_ticks;
+    gap_ext_chain.phase = GAP_EXT_CHAIN_TX_PENDING;
     return 1;
+}
+
+// Start or advance one AUX_CHAIN_IND at a time. Return 2 while a chain is in
+// flight; gap_ext_send_due() resumes it on later polls.
+static int gap_ext_chain_send(
+    uint8_t set_id, uint16_t remaining, uint16_t adi,
+    uint8_t address_type, uint64_t next_start
+) {
+    if (gap_ext_chain.phase != GAP_EXT_CHAIN_IDLE) return 0;
+    gap_ext_chain.remaining = remaining;
+    gap_ext_chain.adi = adi;
+    gap_ext_chain.address_type = address_type;
+    gap_ext_chain.channel = 1;
+    gap_ext_chain.set_id = set_id;
+    if (!gap_ext_chain_arm(next_start)) return 0;
+    return 2;
 }
 
 // Send one periodic event, chaining AUX_CHAIN_IND packets when data needs it.
@@ -2454,6 +2474,15 @@ static int gap_sync_conn_overlap(uint64_t start_ticks, uint64_t end_ticks) {
 
 // Send periodic and extended advertisements before regular advertising.
 // Return zero when none are due, one when handled, -1 on failure, or 2 to retry.
+static void gap_ext_adv_event_reschedule(uint8_t set_id) {
+    uint32_t random;
+    uint8_t event_jitter = GAP_RANDOM_BYTES((uint8_t *)&random, sizeof(random)) ?
+                           random % 11 : 0;
+    gap_ext_adv[set_id].next_event_ms = GET_MILLIS() + event_jitter +
+                                        gap_ext_adv[set_id].interval_ms;
+    gap_ext_adv_next_set = (set_id + 1) % GAP_EXT_ADV_SET_COUNT;
+}
+
 static int gap_ext_send_due(uint32_t now) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 #if GAP_CENTRAL_SUPPORT || GAP_PERIPHERAL_SUPPORT
@@ -2462,6 +2491,29 @@ static int gap_ext_send_due(uint32_t now) {
         return 1;
     }
 #endif
+    if (gap_ext_chain.phase != GAP_EXT_CHAIN_IDLE) {
+        if (!GAP_HW_TX_DONE()) {
+            if (GAP_HW_TICKS() < gap_ext_chain.pdu_start + HW_TICKS_FROM_US(1000))
+                return 1;
+            GAP_HW_STOP();
+            gap_ext_chain.phase = GAP_EXT_CHAIN_IDLE;
+            return -1;
+        }
+
+        if (!gap_ext_chain.remaining) {
+            uint8_t set_id = gap_ext_chain.set_id;
+            gap_ext_chain.phase = GAP_EXT_CHAIN_IDLE;
+            gap_ext_adv_event_reschedule(set_id);
+            return 1;
+        }
+
+        gap_ext_chain.channel = (gap_ext_chain.channel + 1) % 37;
+        gap_extended_adv_set *set = &gap_ext_adv[gap_ext_chain.set_id];
+        uint64_t next_start = gap_ext_chain.pdu_start + HW_TICKS_FROM_US(
+            ((gap_phy_airtime_us(gap_ext_adv_frame[1], set->aux_phy) + 629) / 30) * 30);
+        if (!gap_ext_chain_arm(next_start)) return -1;
+        return 1;
+    }
 #if GAP_CENTRAL_SUPPORT
     if (gap_ext_pawr.connect.phase != GAP_PAWR_CONNECT_IDLE) {
         uint64_t ticks = GAP_HW_TICKS();
@@ -2739,14 +2791,13 @@ static int gap_ext_send_due(uint32_t now) {
             if (!GAP_HW_TX_DONE()) return -1;
 
             if (has_chain) {
-                uint16_t data_offset = first_chunk;
                 remaining -= first_chunk;
                 uint64_t next_start = gap_ext_adv_scan.response_ticks + HW_TICKS_FROM_US(
                         ((gap_phy_airtime_us(frame[1], set->aux_phy) + 629) / 30) * 30);
-                int transmit_result = gap_ext_chain_send(frame, set->data, data_offset, remaining,
-                                                         adi, address_type, set->aux_phy, next_start);
+                int transmit_result = gap_ext_chain_send((uint8_t)send_extended,
+                    remaining, adi, address_type, next_start);
                 if (!transmit_result) return -1;
-                if (transmit_result == 2) return 2;
+                if (transmit_result == 2) return 1;
             }
         }
     }
@@ -2864,7 +2915,6 @@ static int gap_ext_send_due(uint32_t now) {
         }
 
         if (first_chunk) memcpy(frame + header_offset, set->data, first_chunk);
-        uint16_t data_offset = first_chunk;
         remaining -= first_chunk;
         uint64_t primary_start = GAP_HW_TICKS();
 
@@ -2920,19 +2970,14 @@ static int gap_ext_send_due(uint32_t now) {
         if (has_chain) {
             uint64_t next_start = pdu_start + HW_TICKS_FROM_US(
                             ((gap_phy_airtime_us(frame[1], set->aux_phy) + 629) / 30) * 30);
-            int transmit_result = gap_ext_chain_send(frame, set->data, data_offset, remaining,
-                                                     adi, address_type, set->aux_phy, next_start);
+            int transmit_result = gap_ext_chain_send((uint8_t)send_extended,
+                remaining, adi, address_type, next_start);
             if (!transmit_result) return -1;
-            if (transmit_result == 2) return 2;
+            if (transmit_result == 2) return 1;
         }
     }
 
-    uint32_t random;
-    uint8_t event_jitter = GAP_RANDOM_BYTES((uint8_t *)&random, sizeof(random)) ?
-                           random % 11 : 0;
-    gap_ext_adv[send_extended].next_event_ms = GET_MILLIS() + event_jitter +
-                                                gap_ext_adv[send_extended].interval_ms;
-    gap_ext_adv_next_set = (send_extended + 1) % GAP_EXT_ADV_SET_COUNT;
+    gap_ext_adv_event_reschedule((uint8_t)send_extended);
     return 1;
 }
 #endif // GAP_EXT_ADV_SUPPORT
