@@ -1385,6 +1385,29 @@ static void test_periodic_advertising_with_central_connection(void) {
     fake_radio_ticks_enabled = 0;
 }
 
+static void drain_pawr_advertiser_event(void) {
+    for (uint8_t i = 0; i < 32 &&
+         gap_ext_pawr.advertiser.phase != GAP_PAWR_ADV_IDLE; i++) {
+        if (gap_ext_pawr.advertiser.phase == GAP_PAWR_ADV_SLOT_WAIT) {
+            gap_extended_adv_set *set =
+                &gap_ext_adv[gap_ext_pawr.advertiser.set_id];
+            uint64_t interval = HW_TICKS_FROM_US(
+                (uint32_t)(set->pawr.subevents > 1 ? set->pawr.subevent_int :
+                           set->periodic.params.interval) * 1250);
+            uint64_t slot = gap_ext_pawr.advertiser.event_start_ticks +
+                (uint64_t)gap_ext_pawr.advertiser.subevent * interval +
+                HW_TICKS_FROM_US((uint32_t)set->pawr.resp_delay * 1250);
+            if (!gap_ext_pawr.response.listening)
+                fake_radio_ticks = slot - HW_TICKS_FROM_US(150);
+            else
+                fake_radio_ticks = slot + HW_TICKS_FROM_US(
+                    (uint32_t)set->pawr.resp_slots * set->pawr.resp_spacing * 125);
+        }
+        (void)gap_send_due(NULL, 0, now_ms, NULL, NULL);
+    }
+    assert(gap_ext_pawr.advertiser.phase == GAP_PAWR_ADV_IDLE);
+}
+
 static void test_pawr_advertising_subevents(void) {
     static const uint8_t adv_data[] = {2, 0x01, 0x06};
     static const uint8_t periodic_data[] = {2, 0x09, 'P'};
@@ -1425,6 +1448,7 @@ static void test_pawr_advertising_subevents(void) {
     fake_radio_ticks = event_start;
     inject_pawr_response = 1;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    drain_pawr_advertiser_event();
     assert(captured_extended_count == 5);
     for (uint8_t subevent = 0; subevent < 3; subevent++) {
         const uint8_t *pdu = captured_extended_pdus[2 + subevent];
@@ -1491,6 +1515,7 @@ static void test_pawr_interleaved_advertising_sets(void) {
     set1->periodic.next_ticks = base_ticks + 40000;
     fake_radio_ticks = set0->periodic.next_ticks;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    drain_pawr_advertiser_event();
     assert(captured_extended_count == 2 &&
            (captured_extended_pdus[0][5] >> 4) == 3 &&
            (captured_extended_pdus[1][5] >> 4) == 3 &&
@@ -1499,6 +1524,7 @@ static void test_pawr_interleaved_advertising_sets(void) {
 
     fake_radio_ticks = set1->periodic.next_ticks;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    drain_pawr_advertiser_event();
     assert(captured_extended_count == 4 &&
            (captured_extended_pdus[2][5] >> 4) == 8 &&
            (captured_extended_pdus[3][5] >> 4) == 8 &&
@@ -1576,6 +1602,7 @@ static void test_pawr_advertiser_connection(void) {
     uint16_t connect_event_counter = set->periodic.event_counter;
     inject_pawr_connect_response = 1;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    drain_pawr_advertiser_event();
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
            gap_ext_pawr.connect.waiting);
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);

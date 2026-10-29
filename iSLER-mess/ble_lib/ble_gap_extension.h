@@ -171,6 +171,12 @@ enum {
     GAP_PAWR_CONNECT_TX_PENDING,
     GAP_PAWR_CONNECT_RESPONSE_PENDING
 };
+enum {
+    GAP_PAWR_ADV_IDLE = 0,
+    GAP_PAWR_ADV_SEND,
+    GAP_PAWR_ADV_TX_PENDING,
+    GAP_PAWR_ADV_SLOT_WAIT
+};
 static struct {
     struct {
         volatile uint8_t listening, ready;
@@ -193,6 +199,12 @@ static struct {
         uint64_t reply_received_ticks;
 #endif
     } connect;
+    struct {
+        volatile uint8_t phase;
+        uint8_t set_id, subevent;
+        uint16_t event_counter;
+        uint64_t event_start_ticks;
+    } advertiser;
 } gap_ext_pawr;
 
 // Extended scan report and decoded advertising header types.
@@ -523,6 +535,15 @@ int gap_periodic_adv_stop(uint8_t set_id) {
     if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
     gap_extended_adv_set *set = &gap_ext_adv[set_id];
     if (!set->periodic.enabled) return 0;
+
+    if (gap_ext_pawr.advertiser.phase != GAP_PAWR_ADV_IDLE &&
+        gap_ext_pawr.advertiser.set_id == set_id
+    ) {
+        GAP_HW_STOP();
+        gap_rx_armed = 0;
+        gap_ext_pawr.response.listening = 0;
+        gap_ext_pawr.advertiser.phase = GAP_PAWR_ADV_IDLE;
+    }
 
     memset(&set->pawr, 0, sizeof(set->pawr));
     memset(&set->pawr_connect, 0, sizeof(set->pawr_connect));
@@ -1492,14 +1513,139 @@ static int gap_aux_tx(
     GAP_HW_CRC_INIT(set->periodic.params.crc_init);
     GAP_HW_LINK_CONFIG(set->periodic.params.access_address, channel, frame, 0,
                        set->aux_phy, set->aux_phy);
-    if (!GAP_HW_LINK_TX_AT(start_ticks)) return 0;
+    uint64_t now = GAP_HW_TICKS();
+    uint64_t tx_start = start_ticks;
+    if (start_ticks > now + HW_TICKS_FROM_US(10)) {
+        if (!GAP_HW_LINK_TX_AT(start_ticks)) return 0;
+    }
+    else {
+        // Periodic events are selected when due, so start immediately if their
+        // anchor is already here instead of asking TMR0 to arm a missed target.
+        tx_start = now;
+        GAP_HW_LINK_TX();
+    }
 
-    // The timer targets this event's scheduled start. Use that same anchor for
-    // the PAwR response schedule instead of the later foreground poll time.
-    if (actual_start) *actual_start = start_ticks;
-    uint64_t deadline = start_ticks + HW_TICKS_FROM_US(1000);
+    if (actual_start) *actual_start = tx_start;
+    uint64_t deadline = tx_start + HW_TICKS_FROM_US(1000);
     while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < deadline) {}
     return GAP_HW_TX_DONE() && length >= 2;
+}
+
+// Advance a PAwR advertising event without holding the caller through TX or
+// response-slot windows. The scheduled TX timer starts each PDU; polling owns
+// the receive-window boundaries and report extraction.
+static int gap_pawr_advertiser_poll(void) {
+    if (gap_ext_pawr.advertiser.phase == GAP_PAWR_ADV_IDLE) return 0;
+
+    for (;;) {
+        gap_extended_adv_set *set = &gap_ext_adv[gap_ext_pawr.advertiser.set_id];
+        uint64_t now = GAP_HW_TICKS();
+        uint8_t subevent = gap_ext_pawr.advertiser.subevent;
+
+        uint64_t interval_ticks = HW_TICKS_FROM_US(
+            (uint32_t)(set->pawr.subevents > 1 ? set->pawr.subevent_int :
+                       set->periodic.params.interval) * 1250);
+        uint64_t tx_start_ticks = gap_ext_pawr.advertiser.event_start_ticks +
+                                  (uint64_t)subevent * interval_ticks;
+
+        uint64_t slot_ticks = tx_start_ticks +
+            HW_TICKS_FROM_US((uint32_t)set->pawr.resp_delay * 1250);
+        uint64_t slot_start_ticks = subtract_clamp0_64(slot_ticks, HW_TICKS_FROM_US(150));
+        uint64_t slot_end_ticks = slot_ticks + HW_TICKS_FROM_US((uint32_t)set->pawr.resp_slots *
+                                                set->pawr.resp_spacing * 125);
+        uint8_t channel = gap_sync_channel(&set->periodic.params,
+            (uint16_t)(gap_ext_pawr.advertiser.event_counter ^ subevent));
+
+        if (gap_ext_pawr.advertiser.phase == GAP_PAWR_ADV_SEND) {
+            if (subevent >= set->pawr.subevents) {
+                gap_ext_pawr.advertiser.phase = GAP_PAWR_ADV_IDLE;
+                return 1;
+            }
+
+#if GAP_CENTRAL_SUPPORT
+            if (set->pawr_connect.pending &&
+                subevent == set->pawr_connect.subevent
+            ) {
+                gap_ext_pawr.advertiser.phase = GAP_PAWR_ADV_IDLE;
+                if (gap_pawr_exchange(set, channel, tx_start_ticks)) return 1;
+                gap_ext_pawr.advertiser.subevent++;
+                gap_ext_pawr.advertiser.phase = GAP_PAWR_ADV_SEND;
+                continue;
+            }
+#endif
+
+            uint16_t adi = (uint16_t)(((set->sid & 0x0f) << 12) |
+                                      (set->periodic.did & 0x0fff));
+            uint16_t data_len = set->pawr.data_pending ? set->periodic.data_len : 0;
+            uint8_t *frame = gap_ext_adv_frame;
+            frame[0] = ADV_EXT_IND;
+            frame[1] = (uint8_t)(1 + 3 + data_len);
+            frame[2] = 3;
+            frame[3] = 0x08;
+            frame[4] = (uint8_t)adi;
+            frame[5] = (uint8_t)(adi >> 8);
+            if (data_len) memcpy(frame + 6, set->periodic.data, data_len);
+
+            GAP_HW_TX_CLEAR_DONE();
+            GAP_HW_CRC_INIT(set->periodic.params.crc_init);
+            GAP_HW_LINK_CONFIG(set->periodic.params.access_address, channel,
+                               frame, 0, set->aux_phy, set->aux_phy);
+            if (!GAP_HW_LINK_TX_AT(tx_start_ticks)) {
+                gap_ext_pawr.advertiser.phase = GAP_PAWR_ADV_IDLE;
+                GAP_HW_STOP();
+                return 1;
+            }
+
+            gap_ext_pawr.advertiser.phase = GAP_PAWR_ADV_TX_PENDING;
+            return 1;
+        }
+
+        if (gap_ext_pawr.advertiser.phase == GAP_PAWR_ADV_TX_PENDING) {
+            if (!GAP_HW_TX_DONE()) {
+                if (now < tx_start_ticks + HW_TICKS_FROM_US(1000)) return 1;
+                gap_ext_pawr.advertiser.phase = GAP_PAWR_ADV_IDLE;
+                GAP_HW_STOP();
+                return 1;
+            }
+
+            set->pawr.data_pending = 0;
+            gap_ext_pawr.advertiser.phase = GAP_PAWR_ADV_SLOT_WAIT;
+        }
+
+        if (gap_ext_pawr.advertiser.phase == GAP_PAWR_ADV_SLOT_WAIT) {
+            if (!gap_ext_pawr.response.listening) {
+                if (now < slot_start_ticks) return 1;
+                if (now >= slot_end_ticks) {
+                    gap_ext_pawr.advertiser.subevent++;
+                    gap_ext_pawr.advertiser.phase = GAP_PAWR_ADV_SEND;
+                    continue;
+                }
+
+                gap_ext_pawr.response.ready = 0;
+                gap_ext_pawr.response.listening = 1;
+                GAP_HW_CRC_INIT(set->periodic.params.crc_init);
+                GAP_HW_LINK_CONFIG(set->periodic.response_access, channel, NULL, 0,
+                    set->aux_phy, set->aux_phy);
+                GAP_HW_LINK_RX();
+                gap_rx_armed = 1;
+                return 1;
+            }
+
+            if (gap_ext_pawr.response.ready) {
+                gap_pawr_report_push(set, gap_ext_pawr.advertiser.set_id,
+                    gap_ext_pawr.advertiser.event_counter, subevent,
+                    tx_start_ticks);
+                gap_ext_pawr.response.ready = 0;
+            }
+            if (now < slot_end_ticks) return 1;
+
+            if (gap_rx_armed) GAP_HW_STOP();
+            gap_rx_armed = 0;
+            gap_ext_pawr.response.listening = 0;
+            gap_ext_pawr.advertiser.subevent++;
+            gap_ext_pawr.advertiser.phase = GAP_PAWR_ADV_SEND;
+        }
+    }
 }
 
 // Build one data PDU for an extended or periodic advertising chain.
@@ -1571,78 +1717,6 @@ static int gap_ext_chain_send(
 
 // Send one periodic event, chaining AUX_CHAIN_IND packets when data needs it.
 static int gap_periodic_tx(gap_extended_adv_set *set) {
-    if (set->pawr.enabled) {
-        uint8_t *frame = gap_ext_adv_frame;
-        uint16_t adi = (uint16_t)(((set->sid & 0x0f) << 12) |
-                                  (set->periodic.did & 0x0fff));
-        uint32_t interval_us = (uint32_t)(set->pawr.subevents > 1 ?
-                    set->pawr.subevent_int : set->periodic.params.interval) * 1250;
-
-        for (uint8_t subevent = 0; subevent < set->pawr.subevents; subevent++) {
-            uint64_t subevent_start = set->periodic.next_ticks + HW_TICKS_FROM_US(
-                                    (uint32_t)subevent * interval_us);
-            uint8_t channel = gap_sync_channel(&set->periodic.params,
-                            (uint16_t)(set->periodic.event_counter ^ subevent));
-
-#if GAP_CENTRAL_SUPPORT
-            if (set->pawr_connect.pending && subevent == set->pawr_connect.subevent) {
-                if (gap_pawr_exchange(set, channel, subevent_start))
-                    return 1;
-                continue;
-            }
-#endif
-            uint16_t data_len = set->pawr.data_pending ? set->periodic.data_len : 0;
-            // AUX_SYNC_SUBEVENT_IND uses the extended advertising PDU format.
-            frame[0] = ADV_EXT_IND;
-            frame[1] = (uint8_t)(1 + 3 + data_len);
-            frame[2] = 3; // Flags and ADI.
-            frame[3] = 0x08; // ADI; no AuxPtr, SyncInfo, or ACAD here.
-            frame[4] = (uint8_t)adi;
-            frame[5] = (uint8_t)(adi >> 8);
-
-            if (data_len) memcpy(frame + 6, set->periodic.data, data_len);
-            uint64_t subevent_ticks = 0;
-
-            if (!gap_aux_tx(frame, (uint8_t)(frame[1] + 2), set,
-                            channel, subevent_start, &subevent_ticks)
-            ) return 0;
-
-            // PAwR data is sent once, then later subevents are empty until the
-            // Host queues another payload with periodic_advertising_update_set.
-            set->pawr.data_pending = 0;
-            // Listen continuously so adjacent response slots have no retune gap.
-            uint64_t slot_ticks = subevent_ticks + HW_TICKS_FROM_US(
-                                        (uint32_t)set->pawr.resp_delay * 1250);
-            uint64_t start_ticks = subtract_clamp0_64(slot_ticks, HW_TICKS_FROM_US(150));
-
-            while (GAP_HW_TICKS() < start_ticks) {}
-            gap_ext_pawr.response.ready = 0;
-            gap_ext_pawr.response.listening = 1;
-            GAP_HW_CRC_INIT(set->periodic.params.crc_init);
-            GAP_HW_LINK_CONFIG(set->periodic.response_access, channel, NULL, 0,
-                                set->aux_phy, set->aux_phy);
-            GAP_HW_LINK_RX();
-            gap_rx_armed = 1;
-
-            while (GAP_HW_TICKS() < slot_ticks + HW_TICKS_FROM_US(
-                    (uint32_t)set->pawr.resp_slots * set->pawr.resp_spacing * 125)
-            ) {
-                if (gap_ext_pawr.response.ready)
-                    gap_pawr_report_push(set, (uint8_t)(set - gap_ext_adv),
-                                    set->periodic.event_counter, subevent, subevent_ticks);
-            }
-
-            if (gap_rx_armed) GAP_HW_STOP();
-            gap_rx_armed = 0;
-            gap_ext_pawr.response.listening = 0;
-
-            if (gap_ext_pawr.response.ready)
-                gap_pawr_report_push(set, (uint8_t)(set - gap_ext_adv),
-                                    set->periodic.event_counter, subevent, subevent_ticks);
-        }
-        return 1;
-    }
-
     uint8_t *frame = gap_ext_adv_frame;
     uint16_t remaining = set->periodic.data_len;
     uint16_t offset = 0;
@@ -2382,6 +2456,12 @@ static int gap_sync_conn_overlap(uint64_t start_ticks, uint64_t end_ticks) {
 // Return zero when none are due, one when handled, -1 on failure, or 2 to retry.
 static int gap_ext_send_due(uint32_t now) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+#if GAP_CENTRAL_SUPPORT || GAP_PERIPHERAL_SUPPORT
+    if (gap_ext_pawr.advertiser.phase != GAP_PAWR_ADV_IDLE) {
+        (void)gap_pawr_advertiser_poll();
+        return 1;
+    }
+#endif
 #if GAP_CENTRAL_SUPPORT
     if (gap_ext_pawr.connect.phase != GAP_PAWR_CONNECT_IDLE) {
         uint64_t ticks = GAP_HW_TICKS();
@@ -2476,10 +2556,14 @@ static int gap_ext_send_due(uint32_t now) {
         for (uint8_t offset = 0; offset < GAP_EXT_ADV_SET_COUNT; offset++) {
             uint8_t i = (gap_periodic_advertising_next_set + offset) % GAP_EXT_ADV_SET_COUNT;
             gap_extended_adv_set *candidate = &gap_ext_adv[i];
+            uint64_t launch_limit = ticks;
+            if (candidate->pawr.enabled &&
+                UINT64_MAX - ticks >= HW_TICKS_FROM_US(3000)
+            ) launch_limit += HW_TICKS_FROM_US(3000);
 
             if (!candidate->periodic.enabled ||
                 !candidate->periodic.sync_info_sent ||
-                candidate->periodic.next_ticks > ticks ||
+                candidate->periodic.next_ticks > launch_limit ||
                 candidate->periodic.next_ticks >= periodic_target
             ) continue;
 
@@ -2491,7 +2575,8 @@ static int gap_ext_send_due(uint32_t now) {
             gap_extended_adv_set *set = &gap_ext_adv[periodic_set];
             uint64_t interval = HW_TICKS_FROM_US((uint32_t)set->periodic.params.interval * 1250);
             uint64_t missed = 0;
-            if (interval) missed = (ticks - set->periodic.next_ticks) / interval;
+            if (interval && ticks > set->periodic.next_ticks)
+                missed = (ticks - set->periodic.next_ticks) / interval;
             set->periodic.event_counter = (uint16_t)(set->periodic.event_counter + missed);
             set->periodic.next_ticks += missed * interval;
 
@@ -2524,6 +2609,23 @@ static int gap_ext_send_due(uint32_t now) {
             if (gap_rx_armed) {
                 GAP_HW_STOP();
                 gap_rx_armed = 0;
+            }
+
+            if (set->pawr.enabled) {
+                gap_ext_pawr.advertiser.set_id = (uint8_t)periodic_set;
+                gap_ext_pawr.advertiser.subevent = 0;
+                gap_ext_pawr.advertiser.event_counter = set->periodic.event_counter;
+                gap_ext_pawr.advertiser.event_start_ticks = set->periodic.next_ticks;
+                gap_ext_pawr.advertiser.phase = GAP_PAWR_ADV_SEND;
+
+                // Advance the event schedule when the event is reserved, while
+                // the state machine handles its subevents and response windows.
+                set->periodic.event_counter++;
+                set->periodic.next_ticks += interval;
+                gap_periodic_advertising_next_set =
+                    (periodic_set + 1) % GAP_EXT_ADV_SET_COUNT;
+                (void)gap_pawr_advertiser_poll();
+                return 1;
             }
 
             // Advance periodic state even when transmission fails.
