@@ -60,6 +60,7 @@ static struct {
     uint8_t channel, tx_phy, rx_phy, receive_after_tx;
     volatile uint8_t reply_armed;
     volatile uint8_t ifs_tx_active;
+    volatile uint8_t scheduled_tx_armed;
     const uint8_t *tx_frame;
 } gap_link;
 
@@ -133,6 +134,7 @@ void GAP_HW_INIT(void) { iSLERInit(LL_TX_POWER_0_DBM); }
 void GAP_HW_STOP(void) {
     gap_link.reply_armed = 0;
     gap_link.ifs_tx_active = 0;
+    gap_link.scheduled_tx_armed = 0;
     gap_link.receive_after_tx = 0;
     iSLERStop();
     gs_iSLERLink.is_open = 0;
@@ -208,9 +210,34 @@ int GAP_HW_IFS_TX_TIMER_ARM(void) {
     return 1;
 }
 
+// Start the currently configured link TX at an absolute controller tick.
+// Keep the same radio timer path as IFS replies so the foreground can return
+// while the packet is pending. Link configuration must be complete first.
+int GAP_HW_LINK_TX_AT(uint64_t start_ticks) {
+    // TMR0 is a shared hardware resource, but this absolute event has its own
+    // logical arm state and must not replace an IFS reply already in flight.
+    if (gap_link.reply_armed || gap_link.ifs_tx_active ||
+        gap_link.scheduled_tx_armed
+    ) return 0;
+
+    gap_link.tx_due_ticks = start_ticks;
+    iSLERStop();
+    iSLERSetMode(DEVMODE_TX);
+    LL->LL1 &= ~LL_AUTO;
+
+    if (!gap_tx_timer_arm()) {
+        GAP_HW_STOP();
+        return 0;
+    }
+    gap_link.scheduled_tx_armed = 1;
+    return 1;
+}
+
 __HIGH_CODE void iSLER_Tx_Timer_Cb(void) {
     if (gap_link.reply_armed) {
         gap_link.reply_armed = 0;
+    } else if (gap_link.scheduled_tx_armed) {
+        gap_link.scheduled_tx_armed = 0;
     }
 #if GAP_CENTRAL_SUPPORT
     else if (gap_connect_tx.phase == GAP_CONNECT_TX_ARMED) {

@@ -1440,9 +1440,13 @@ static int gap_pawr_exchange(
     GAP_HW_LINK_CONFIG(set->periodic.params.access_address, channel,
                         request, 1, set->aux_phy, set->aux_phy);
 
-    while (GAP_HW_TICKS() < request_start_ticks) {}
-    GAP_HW_LINK_TX();
-    uint64_t tx_deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
+    if (!GAP_HW_LINK_TX_AT(request_start_ticks)) {
+        gap_ext_pawr.connect.waiting = 0;
+        set->pawr_connect.pending = 0;
+        GAP_HW_STOP();
+        return 0;
+    }
+    uint64_t tx_deadline = request_start_ticks + HW_TICKS_FROM_US(1000);
     while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < tx_deadline) {}
 
     if (GAP_HW_TX_DONE())

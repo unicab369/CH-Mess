@@ -225,6 +225,7 @@ void GAP_HW_LINK_CONFIG(
 // 1M PHY is mandatory; masks report supported PHYs.
 uint8_t GAP_HW_PHY_MASK(void);
 void GAP_HW_LINK_TX(void);
+int GAP_HW_LINK_TX_AT(uint64_t start_ticks);
 int GAP_HW_IFS_TX_TIMER_ARM(void);
 void GAP_HW_LINK_RX(void);
 void GAP_HW_SCAN_RX(uint8_t channel);

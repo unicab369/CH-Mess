@@ -70,3 +70,17 @@ frame space, not T_IFS. The separate response-slot schedule controls when a
 PAwR response slot begins.
 
 Source: [Bluetooth Core 5.4, Link Layer §§4.1.1 and 4.2.1](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/low-energy-controller/link-layer-specification.html).
+
+
+These are the remaining waits, with their locations:
+
+- PAwR connection exchange: the request start is now armed with the CH582 radio timer at ble_gap_extension.h:1443 rather than busy-waited. TX completion and the response window are still polled synchronously at lines 1449 and 1455; convert the full exchange to event-driven state and validate scheduled start timing on hardware. The AUX_CONNECT_RSP reply timing is handled by the IFS timer at line 1359.
+- AUX chain timing: ble_gap_extension.h:1520 (iSLER-mess/ble_lib/ble_gap_extension.h:1520) and line 1576 wait for scheduled packet starts. Line 1525 waits for TX completion.
+- PAwR response slots: ble_gap_extension.h:1636 (iSLER-mess/ble_lib/ble_gap_extension.h:1636) waits for the slot start; line 1645 listens through the scheduled slot window.
+- PAwR response TX: ble_gap_extension.h:2018 (iSLER-mess/ble_lib/ble_gap_extension.h:2018) waits for the scheduled response time; line 2021 waits for TX completion.
+- Primary to AUX advertising offset: ble_gap_extension.h:2533 (iSLER-mess/ble_lib/ble_gap_extension.h:2533), line 2612, and line 2716 wait for the 480 µs AuxPtr schedule.
+- Extended advertising TX completion: ble_gap_extension.h:2579 (iSLER-mess/ble_lib/ble_gap_extension.h:2579) and line 2628.
+- Connectable extended advertising RX window: ble_gap_extension.h:2625 (iSLER-mess/ble_lib/ble_gap_extension.h:2625) waits for a request or window timeout.
+- Legacy advertising TX completion: ble_gap_connection_poll.h:2100 (iSLER-mess/ble_lib/ble_gap_connection_poll.h:2100) and line 2148.
+
+These waits handle scheduled offsets, TX completion, or listening windows. They do not themselves require IFS. The specific IFS reply handlers are separate—for example, the PAwR AUX_CONNECT_RSP timer at ble_gap_extension.h:1359.

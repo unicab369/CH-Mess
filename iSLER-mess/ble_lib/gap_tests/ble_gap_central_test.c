@@ -324,6 +324,12 @@ void GAP_HW_LINK_TX(void) {
 #endif
     }
 }
+int GAP_HW_LINK_TX_AT(uint64_t start_ticks) {
+    if (fake_radio_ticks_enabled && fake_radio_ticks < start_ticks)
+        fake_radio_ticks = start_ticks;
+    GAP_HW_LINK_TX();
+    return 1;
+}
 int GAP_HW_TX_DONE(void) { return 1; }
 void GAP_HW_TX_CLEAR_DONE(void) {}
 void GAP_HW_CRC_INIT(uint32_t crc_init) { configured_crc_init = crc_init; }
