@@ -1593,6 +1593,7 @@ static inline void gap_conn_poll_all(void) {
 #endif
 #if GAP_EXT_ADV_SUPPORT
     if (gap_ext_scan.pawr_response_tx_pending) return;
+    if (gap_periodic_train.active) return;
     if (gap_ext_pawr.advertiser.phase != GAP_PAWR_ADV_IDLE) return;
     if (gap_ext_aux.phase != GAP_EXT_AUX_IDLE) return;
     if (gap_ext_chain.phase != GAP_EXT_CHAIN_IDLE) return;
@@ -1657,6 +1658,7 @@ void gap_hw_scan_poll(void) {
         GAP_HW_STOP();
         gap_ext_scan.pawr_response_tx_pending = 0;
     }
+    if (gap_periodic_train.active) return;
     // Leave the periodic-channel receiver active until the PAwR Central
     // exchange or advertiser response window is completed by polling.
     if (gap_ext_pawr.advertiser.phase != GAP_PAWR_ADV_IDLE) return;

@@ -155,6 +155,11 @@ static struct {
 static GAP_RADIO_BUFFER_ATTR uint8_t gap_ext_primary_frame[9];
 static GAP_RADIO_BUFFER_ATTR uint8_t gap_ext_adv_frame[255];
 static GAP_RADIO_BUFFER_ATTR uint8_t gap_ext_aux_frame[255];
+static volatile struct {
+    uint8_t active, failed, set_id, channel;
+    uint16_t offset, adi;
+    uint64_t pdu_start;
+} gap_periodic_train;
 enum {
     GAP_EXT_AUX_IDLE, GAP_EXT_AUX_PRIMARY, GAP_EXT_AUX_PENDING,
     GAP_EXT_AUX_SCAN_WINDOW, GAP_EXT_AUX_CONNECT_WINDOW, GAP_EXT_AUX_FAILED
@@ -535,6 +540,7 @@ int gap_periodic_adv_update(
     // PAwR stores one unchained PDU. Reject an impossible length before
     // walking the caller's AD structures through gap_ext_data_valid().
     if (!set->periodic.enabled ||
+        (gap_periodic_train.active && gap_periodic_train.set_id == set_id) ||
         (set->pawr.enabled && len > GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 3) ||
         !gap_ext_data_valid(data, len))
         return 0;
@@ -569,6 +575,12 @@ int gap_periodic_adv_stop(uint8_t set_id) {
     if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
     gap_extended_adv_set *set = &gap_ext_adv[set_id];
     if (!set->periodic.enabled) return 0;
+
+    if (gap_periodic_train.active && gap_periodic_train.set_id == set_id) {
+        GAP_HW_STOP();
+        gap_periodic_train.active = 0;
+    }
+    if (gap_periodic_train.set_id == set_id) gap_periodic_train.failed = 0;
 
     if (gap_ext_pawr.advertiser.phase != GAP_PAWR_ADV_IDLE &&
         gap_ext_pawr.advertiser.set_id == set_id
@@ -1561,32 +1573,6 @@ static void gap_aux_ptr_write(
     field[2] = (uint8_t)(((offset_units >> 8) & 0x1f) | (aux_phy << 6));
 }
 
-static int gap_aux_tx(
-    uint8_t *frame, uint8_t length, const gap_extended_adv_set *set, uint8_t channel,
-    uint64_t start_ticks, uint64_t *actual_start
-) {
-    GAP_HW_TX_CLEAR_DONE();
-    GAP_HW_CRC_INIT(set->periodic.params.crc_init);
-    GAP_HW_LINK_CONFIG(set->periodic.params.access_address, channel, frame, 0,
-                       set->aux_phy, set->aux_phy);
-    uint64_t now = GAP_HW_TICKS();
-    uint64_t tx_start = start_ticks;
-    if (start_ticks > now + HW_TICKS_FROM_US(10)) {
-        if (!GAP_HW_LINK_TX_AT(start_ticks)) return 0;
-    }
-    else {
-        // Periodic events are selected when due, so start immediately if their
-        // anchor is already here instead of asking TMR0 to arm a missed target.
-        tx_start = now;
-        GAP_HW_LINK_TX();
-    }
-
-    if (actual_start) *actual_start = tx_start;
-    uint64_t deadline = tx_start + HW_TICKS_FROM_US(1000);
-    while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < deadline) {}
-    return GAP_HW_TX_DONE() && length >= 2;
-}
-
 // Advance a PAwR advertising event without holding the caller through TX or
 // response-slot windows. The scheduled TX timer starts each PDU; polling owns
 // the receive-window boundaries and report extraction.
@@ -1778,35 +1764,43 @@ static int gap_ext_chain_send(
     return 2;
 }
 
-// Send one periodic event, chaining AUX_CHAIN_IND packets when data needs it.
-static int gap_periodic_tx(gap_extended_adv_set *set) {
+// Build and arm one PDU of a non-PAwR periodic train.
+static int gap_periodic_tx_arm(uint64_t start_ticks, uint8_t first) {
+    gap_extended_adv_set *set = &gap_ext_adv[gap_periodic_train.set_id];
     uint8_t *frame = gap_ext_adv_frame;
-    uint16_t remaining = set->periodic.data_len;
-    uint16_t offset = 0;
-    uint16_t adi = (uint16_t)(((set->sid & 0x0f) << 12) | (set->periodic.did & 0x0fff));
-    uint8_t channel = gap_sync_channel(&set->periodic.params, set->periodic.event_counter);
-    uint64_t next_start = GAP_HW_TICKS();
+    uint16_t remaining = set->periodic.data_len - gap_periodic_train.offset;
+    uint8_t has_chain;
+    uint16_t chunk = gap_ext_chain_pdu_build(frame, set->periodic.data,
+        gap_periodic_train.offset, remaining, gap_periodic_train.adi, 0,
+        set->aux_phy, gap_periodic_train.channel, &has_chain);
 
-    while (remaining || offset == 0) {
-        // AUX_SYNC_IND starts the train; later packets use AUX_CHAIN_IND.
-        uint8_t has_chain;
-        uint16_t chunk = gap_ext_chain_pdu_build(frame, set->periodic.data, offset,
-                                    remaining, adi, 0, set->aux_phy, channel, &has_chain);
-        uint64_t pdu_start = 0;
+    GAP_HW_TX_CLEAR_DONE();
+    GAP_HW_CRC_INIT(set->periodic.params.crc_init);
+    GAP_HW_LINK_CONFIG(set->periodic.params.access_address,
+        gap_periodic_train.channel, frame, 0, set->aux_phy, set->aux_phy);
+    uint64_t now = GAP_HW_TICKS();
 
-        if (!gap_aux_tx(frame, (uint8_t)(frame[1] + 2), set, channel, next_start, &pdu_start))
-            return 0;
-
-        offset += chunk;
-        remaining -= chunk;
-        if (!has_chain) return 1;
-
-        channel = (uint8_t)((channel + 1) % 37);
-        // Divide first to round the 629 us adjusted airtime to 30 us units.
-        next_start = pdu_start + HW_TICKS_FROM_US(30 *
-                        ((gap_phy_airtime_us(frame[1], set->aux_phy) + 629) / 30));
+    if (first && start_ticks <= now + HW_TICKS_FROM_US(10)) {
+        start_ticks = now;
+        GAP_HW_LINK_TX();
+    } else if (!GAP_HW_LINK_TX_AT(start_ticks)) {
+        GAP_HW_STOP();
+        return 0;
     }
+
+    gap_periodic_train.offset += chunk;
+    gap_periodic_train.pdu_start = start_ticks;
+    gap_periodic_train.active = 1;
     return 1;
+}
+
+static int gap_periodic_train_arm_next(void) {
+    gap_extended_adv_set *set = &gap_ext_adv[gap_periodic_train.set_id];
+    uint32_t airtime_us = gap_phy_airtime_us(gap_ext_adv_frame[1], set->aux_phy);
+    uint64_t next_start = gap_periodic_train.pdu_start + HW_TICKS_FROM_US(
+        30 * ((airtime_us + 629) / 30));
+    gap_periodic_train.channel = (uint8_t)((gap_periodic_train.channel + 1) % 37);
+    return gap_periodic_tx_arm(next_start, 0);
 }
 
 // -----------------------------------------------------------------------------
@@ -2565,6 +2559,34 @@ static void gap_ext_aux_primary_start(
 static int gap_ext_send_due(uint32_t now) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_ext_scan.pawr_response_tx_pending) return 1;
+    if (gap_periodic_train.failed) {
+        gap_periodic_train.failed = 0;
+        return -1;
+    }
+
+    if (gap_periodic_train.active) {
+        gap_extended_adv_set *set = &gap_ext_adv[gap_periodic_train.set_id];
+        uint32_t airtime_us = gap_phy_airtime_us(gap_ext_adv_frame[1], set->aux_phy);
+
+        if (!GAP_HW_TX_DONE()) {
+            if (GAP_HW_TICKS() < gap_periodic_train.pdu_start +
+                HW_TICKS_FROM_US(airtime_us + 400)) return 1;
+            GAP_HW_STOP();
+            gap_periodic_train.active = 0;
+            return -1;
+        }
+
+        if (gap_periodic_train.offset >= set->periodic.data_len) {
+            gap_periodic_train.active = 0;
+            return 1;
+        }
+
+        if (!gap_periodic_train_arm_next()) {
+            gap_periodic_train.active = 0;
+            return -1;
+        }
+        return 1;
+    }
 #if GAP_CENTRAL_SUPPORT || GAP_PERIPHERAL_SUPPORT
     if (gap_ext_pawr.advertiser.phase != GAP_PAWR_ADV_IDLE) {
         (void)gap_pawr_advertiser_poll();
@@ -2845,8 +2867,15 @@ static int gap_ext_send_due(uint32_t now) {
                 return 1;
             }
 
-            // Advance periodic state even when transmission fails.
-            int transmitted = gap_periodic_tx(set);
+            gap_periodic_train.set_id = (uint8_t)periodic_set;
+            gap_periodic_train.failed = 0;
+            gap_periodic_train.offset = 0;
+            gap_periodic_train.adi = (uint16_t)(((set->sid & 0x0f) << 12) |
+                                                  (set->periodic.did & 0x0fff));
+            gap_periodic_train.channel = gap_sync_channel(&set->periodic.params,
+                                                          set->periodic.event_counter);
+            // Reserve the event now; later polls finish its PDU chain.
+            int transmitted = gap_periodic_tx_arm(set->periodic.next_ticks, 1);
             set->periodic.event_counter++;
             set->periodic.next_ticks += interval;
             gap_periodic_advertising_next_set = (periodic_set + 1) % GAP_EXT_ADV_SET_COUNT;

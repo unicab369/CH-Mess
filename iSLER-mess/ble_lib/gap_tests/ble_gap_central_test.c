@@ -1322,6 +1322,13 @@ static void test_periodic_advertising_transmit(void) {
     fake_radio_ticks = set->periodic.next_ticks;
     uint64_t scheduled_event = set->periodic.next_ticks;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    fake_tx_done = 0;
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    assert(gap_periodic_train.active && captured_extended_count == 3);
+    fake_tx_done = 1;
+    for (uint8_t i = 0; i < 8 && gap_periodic_train.active; i++)
+        assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    assert(!gap_periodic_train.active);
     assert(captured_extended_count == 4);
     assert(configured_access_address == access_address &&
            captured_extended_channels[2] ==
@@ -1342,6 +1349,9 @@ static void test_periodic_advertising_transmit(void) {
         (uint32_t)set->periodic.params.interval * 1250u);
     fake_radio_ticks = set->periodic.next_ticks + 2 * interval_ticks;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    for (uint8_t i = 0; i < 8 && gap_periodic_train.active; i++)
+        assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    assert(!gap_periodic_train.active);
     assert(captured_extended_count == 6 &&
            captured_extended_channels[4] == gap_sync_channel(&set->periodic.params, 3) &&
            set->periodic.event_counter == 4);
@@ -1356,6 +1366,14 @@ static void test_periodic_advertising_transmit(void) {
     assert(gap_periodic_adv_update(0, adv_data,
                                                      sizeof(adv_data)) &&
            set->periodic.did != old_periodic_did);
+    fake_radio_ticks = set->periodic.next_ticks;
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    fake_tx_done = 0;
+    fake_radio_ticks = gap_periodic_train.pdu_start + HW_TICKS_FROM_US(
+        gap_phy_airtime_us(gap_ext_adv_frame[1], set->aux_phy) + 400);
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == -1);
+    assert(!gap_periodic_train.active);
+    fake_tx_done = 1;
     assert(gap_periodic_adv_stop(0));
     assert(!gap_periodic_adv_stop(0));
     assert(gap_ext_adv_stop(0));
@@ -1394,6 +1412,8 @@ static void test_periodic_advertising_with_central_connection(void) {
     assert(captured_extended_count == 1 &&
            captured_extended_pdus[0][0] == 0x07 &&
            set->periodic.event_counter == 1);
+    assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
+    assert(!gap_periodic_train.active);
 
     // If a periodic event overlaps a connection event, skip that event and
     // preserve the connection radio window.

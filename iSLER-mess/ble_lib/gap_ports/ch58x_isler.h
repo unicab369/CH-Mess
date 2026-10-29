@@ -94,19 +94,35 @@ void iSLER_Radio_Transmitted_Cb(void) {
 #endif
 
 #if GAP_EXT_ADV_SUPPORT
+    if (gap_periodic_train.active) {
+        gap_extended_adv_set *set = &gap_ext_adv[gap_periodic_train.set_id];
+        if (gap_periodic_train.offset < set->periodic.data_len &&
+            !gap_periodic_train_arm_next()) {
+            gap_periodic_train.active = 0;
+            gap_periodic_train.failed = 1;
+        }
+        return;
+    }
     if (gap_ext_aux.phase == GAP_EXT_AUX_PRIMARY) {
         gap_ext_aux_primary_done();
         return;
     }
     if (gap_ext_aux.phase == GAP_EXT_AUX_PENDING &&
-        (gap_ext_adv[gap_ext_aux.set_id].scannable
-#if GAP_PERIPHERAL_SUPPORT
-         || gap_ext_adv[gap_ext_aux.set_id].connectable
-#endif
-        )) {
+        gap_ext_adv[gap_ext_aux.set_id].scannable) {
         gap_ext_aux_rx_start();
         return;
     }
+
+#if GAP_PERIPHERAL_SUPPORT
+    if (gap_ext_aux.phase == GAP_EXT_AUX_PENDING &&
+        gap_ext_adv[gap_ext_aux.set_id].connectable) {
+        gap_ext_aux_rx_start();
+        return;
+    }
+    if (gap_ext_adv_connect.response_started)
+        gap_ext_adv_connect.waiting = 0;
+#endif
+
 #if GAP_CENTRAL_SUPPORT
     if (gap_ext_pawr.connect.phase == GAP_PAWR_CONNECT_TX_PENDING) {
         gap_ext_pawr.connect.request_end_ticks = GAP_HW_TICKS();
@@ -115,11 +131,8 @@ void iSLER_Radio_Transmitted_Cb(void) {
 #endif
     if (gap_ext_adv_scan.response_started)
         gap_ext_adv_scan.waiting = 0;
-#if GAP_PERIPHERAL_SUPPORT
-    if (gap_ext_adv_connect.response_started)
-        gap_ext_adv_connect.waiting = 0;
 #endif
-#endif
+
     if (gap_link.ifs_tx_active) {
         gap_link.ifs_tx_active = 0;
 
