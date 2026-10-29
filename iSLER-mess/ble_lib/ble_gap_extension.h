@@ -157,6 +157,13 @@ static struct {
     uint8_t address_type, address[6];
     uint64_t response_ticks;
 } gap_ext_adv_scan;
+#if GAP_PERIPHERAL_SUPPORT
+static struct {
+    volatile uint8_t waiting, response_started;
+    uint8_t address_type, phy, address[6], request[36];
+    uint64_t request_ticks;
+} gap_ext_adv_connect;
+#endif
 
 // PAwR response and connection state
 static struct {
@@ -170,6 +177,11 @@ static struct {
         volatile uint8_t waiting, response_ready;
         uint8_t response[16];
         uint64_t request_end_ticks;
+#if GAP_PERIPHERAL_SUPPORT
+        volatile uint8_t reply_armed;
+        uint32_t reply_deadline_ms;
+        uint64_t reply_received_ticks;
+#endif
     } connect;
 } gap_ext_pawr;
 
@@ -295,7 +307,7 @@ int gap_periodic_adv_start(
     if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
     gap_extended_adv_set *set = &gap_ext_adv[set_id];
 
-    if (!set->enabled || set->scannable ||
+    if (!set->enabled || set->scannable || set->connectable ||
         set->periodic.enabled || interval < 6 ||
         !gap_ext_data_valid(data, len) ||
         (uint32_t)interval * 1250 < gap_periodic_tx_us(len, set->aux_phy) ||
@@ -542,6 +554,7 @@ int gap_ext_adv_start_phy(
     set->data_len = (uint16_t)len;
     set->scan_resp_len = 0;
     set->scannable = 0;
+    set->connectable = 0;
     set->aux_phy = aux_phy;
     set->sid = sid;
     set->interval_ms = interval_ms;
@@ -569,6 +582,19 @@ int gap_ext_adv_scan_start_phy(
     set->scannable = 1;
     return 1;
 }
+
+#if GAP_PERIPHERAL_SUPPORT
+// Start a connectable extended set. Its AUX_ADV_IND carries no AdvData.
+int gap_ext_adv_connect_start_phy(
+    uint8_t set_id, uint8_t sid, uint16_t interval_ms, uint8_t aux_phy
+) {
+    if (GAP_HW_DATA_MAX < 27 ||
+        !gap_ext_adv_start_phy(set_id, NULL, 0, sid, interval_ms, aux_phy))
+        return 0;
+    gap_ext_adv[set_id].connectable = 1;
+    return 1;
+}
+#endif
 
 // Application facing
 int gap_ext_adv_stop(uint8_t set_id) {
@@ -1275,9 +1301,7 @@ static void gap_pawr_report_push(
 
 // Answer an advertiser's AUX_CONNECT_REQ received in a selected PAwR subevent.
 #if GAP_PERIPHERAL_SUPPORT
-static int gap_pawr_conn_req(
-    uint8_t slot, const uint8_t *request, size_t request_len, uint64_t received_ticks
-) {
+static int gap_pawr_conn_req_start(uint8_t slot, const uint8_t *request, size_t request_len) {
 #if GAP_CENTRAL_SUPPORT
     if (gap_initiator.active) return 0;
 #endif
@@ -1326,26 +1350,25 @@ static int gap_pawr_conn_req(
 
     uint8_t channel = gap_sync_channel(&sync->params,
                         (uint16_t)(sync->last_event_counter ^ sync->pawr.subevent));
-    // The received AUX_CONNECT_REQ is the previous packet on air.
-    // AUX_CONNECT_RSP must start T_IFS after the request's on-air end.
-    // TODO: This handler runs from scan polling. Move the response preparation
-    // onto the RX timing path before replacing this wait with the TX timer.
-    uint64_t response_start = received_ticks + HW_TICKS_FROM_US(150);
-
     GAP_HW_TX_CLEAR_DONE();
-    GAP_HW_CRC_INIT(sync->params.crc_init);
     GAP_HW_LINK_CONFIG(sync->params.access_address, channel,
                         gap_ext_adv_frame, 0, sync->phy, sync->phy);
+    GAP_HW_CRC_INIT(sync->params.crc_init);
+    // The received AUX_CONNECT_REQ is the previous packet on air. Start the
+    // response at T_IFS from the RX callback, while that deadline is usable.
+    if (!GAP_HW_IFS_TX_TIMER_ARM()) return 0;
+    gap_ext_pawr.connect.reply_armed = 1;
+    gap_ext_pawr.connect.reply_deadline_ms = GET_MILLIS() + 5;
+    return 1;
+}
 
-    if (GAP_HW_TICKS() >= response_start)
-        return 0;
+static int gap_pawr_conn_req_finish(
+    const uint8_t *request, uint64_t received_ticks
+) {
+    if (!gap_ext_pawr.connect.reply_armed || !GAP_HW_TX_DONE()) return 0;
+    gap_ext_pawr.connect.reply_armed = 0;
+    GAP_HW_STOP();
 
-    while (GAP_HW_TICKS() < response_start) {}
-    GAP_HW_LINK_TX();
-    uint64_t deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
-    while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < deadline) {}
-
-    if (!GAP_HW_TX_DONE()) return 0;
     if (!gap_conn_accept(request, received_ticks, HW_TICKS_FROM_US(1250),
                                                 HW_TICKS_FROM_US(2500))
     ) return 0;
@@ -1847,7 +1870,7 @@ static void gap_ext_scan_process(void) {
 
 #if GAP_PERIPHERAL_SUPPORT
     if (periodic && (pdu[0] & 0x0f) == CONNECT_IND) {
-        (void)gap_pawr_conn_req((uint8_t)slot, pdu, pdu_len, gap_ext_scan.ticks);
+        (void)gap_pawr_conn_req_finish(pdu, gap_ext_pawr.connect.reply_received_ticks);
         return;
     }
 #endif // GAP_PERIPHERAL_SUPPORT
@@ -2568,6 +2591,59 @@ static int gap_ext_send_due(uint32_t now) {
             }
         }
     }
+#if GAP_PERIPHERAL_SUPPORT
+    else if (set->connectable) {
+        primary[0] = adv_header;
+        primary[1] = 7;
+        primary[2] = 0x46; // Connectable, ADI and AuxPtr.
+        primary[3] = 0x18;
+        write_u16_le(primary + 4, adi);
+        gap_aux_ptr_write(primary + 6, 0, 480, set->aux_phy);
+
+        frame[0] = adv_header;
+        frame[1] = 10;
+        frame[2] = 0x49; // Connectable AUX_ADV_IND, AdvA and ADI.
+        frame[3] = 0x09;
+        memcpy(frame + 4, address, 6);
+        write_u16_le(frame + 10, adi);
+        uint64_t primary_start = GAP_HW_TICKS();
+        if (!GAP_HW_ADV_TX_PHY(primary, sizeof(gap_ext_primary_frame), 37,
+                               GAP_PHY_1M)) return -1;
+        while (GAP_HW_TICKS() < primary_start + HW_TICKS_FROM_US(480)) {}
+        if (!GAP_HW_ADV_TX_PHY(frame, 12, 0, set->aux_phy)) return -1;
+
+        gap_ext_adv_connect.address_type = address_type;
+        gap_ext_adv_connect.phy = set->aux_phy;
+        memcpy(gap_ext_adv_connect.address, address, 6);
+        gap_ext_adv_connect.response_started = 0;
+        gap_ext_adv_connect.waiting = 1;
+        GAP_HW_TX_CLEAR_DONE();
+        GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, 0, NULL, 0,
+                           set->aux_phy, set->aux_phy);
+        GAP_HW_LINK_RX();
+        uint64_t rx_deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1500);
+        while (gap_ext_adv_connect.waiting && GAP_HW_TICKS() < rx_deadline) {}
+        if (gap_ext_adv_connect.response_started) {
+            uint64_t tx_deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
+            while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < tx_deadline) {}
+        }
+        GAP_HW_STOP();
+        gap_ext_adv_connect.waiting = 0;
+        if (gap_ext_adv_connect.response_started && GAP_HW_TX_DONE() &&
+            gap_conn_accept(gap_ext_adv_connect.request,
+                            gap_ext_adv_connect.request_ticks,
+                            HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(2500))) {
+            gap_conn_context *accepted = &gap_conn_ctx[gap_conn_slot];
+            accepted->is_central = 0;
+            accepted->link_layer.peer_sca_ppm = 500;
+            set->enabled = 0;
+            gap_scanner.scanning = 0;
+            gap_scanner.active = 0;
+            gap_scanner.generation++;
+            return 2;
+        }
+    }
+#endif
     else {
         // ADV_EXT_IND carries the ADI and points to AUX_ADV_IND at 480 us.
         primary[0] = adv_header;

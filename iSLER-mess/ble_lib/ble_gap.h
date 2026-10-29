@@ -299,7 +299,7 @@ typedef struct {
 
 // Extended advertising set configuration and scheduler state.
 typedef struct {
-    uint8_t enabled, sid, scannable, aux_phy;
+    uint8_t enabled, sid, scannable, connectable, aux_phy;
     struct {
         uint8_t enabled, sync_info_sent;
         uint16_t data_len, event_counter, did;

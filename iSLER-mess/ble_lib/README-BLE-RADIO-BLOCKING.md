@@ -24,16 +24,20 @@ timer-driven `CONNECT_IND` turnaround on the device.
 The `GAP_HW_TX_DONE()` check in `ble_gap_connection_poll.h:1191`
 already returns when TX is pending; it is not a busy wait.
 
-Legacy `SCAN_REQ` and `SCAN_RSP`, extended `AUX_SCAN_RSP`, and ACL connection
-replies now use the shared CH582 IFS TX timer. The PAwR `AUX_CONNECT_RSP`
-still runs from scan polling, so it needs an RX-time preparation path before
-the timer can meet its response deadline.
+Legacy `SCAN_REQ` and `SCAN_RSP`, extended `AUX_SCAN_RSP` and
+`AUX_CONNECT_RSP`, and ACL connection replies now use the shared CH582 IFS TX
+timer. The PAwR `AUX_CONNECT_RSP` is prepared in the RX callback; connection
+creation remains in polling after response TX completes.
 
 Extended active scanning now arms `AUX_SCAN_REQ` from the `AUX_ADV_IND` RX
 callback and processes `AUX_SCAN_RSP` after TX completion. Extended initiation
 arms `AUX_CONNECT_REQ` there, validates `AUX_CONNECT_RSP`, then creates the
 connection in polling. The 120 us timer target remains provisional until
 RX-end to TX-start timing is measured on CH582 hardware.
+Connectable extended advertising can be started with
+`gap_ext_adv_connect_start_phy()`; it sends `AUX_CONNECT_RSP` from the RX timer
+path when a valid `AUX_CONNECT_REQ` arrives. This first implementation sends
+an empty connectable `AUX_ADV_IND` and supports one connection per set event.
 
 ## Exchanges that require interframe timing
 

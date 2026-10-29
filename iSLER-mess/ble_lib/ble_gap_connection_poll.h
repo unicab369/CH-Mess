@@ -799,6 +799,9 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     }
 
 #if GAP_EXT_ADV_SUPPORT
+    uint8_t periodic_scan = (gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC);
+    uint8_t aux_scan = (gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX);
+
     if (pdu_type == ADV_EXT_IND && frame[1] == 14 &&
         gap_ext_pawr.connect.waiting
     ) {
@@ -807,6 +810,56 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         gap_conn_slot = previous_slot;
         return;
     }
+
+#if GAP_PERIPHERAL_SUPPORT
+    if (pdu_type == CONNECT_IND && gap_ext_adv_connect.waiting &&
+        !gap_ext_adv_connect.response_started && frame[1] == 34 &&
+        ((frame[0] >> 7) & 1) == gap_ext_adv_connect.address_type &&
+        memcmp(frame + 8, gap_ext_adv_connect.address, 6) == 0 &&
+        gap_conn_request_valid(frame) && gap_conn_free_slot() >= 0) {
+        uint8_t initiator_type = (frame[0] >> 6) & 1;
+        int peer_slot = gap_identity_find(frame + 2, initiator_type);
+        if (gap_peer_allowed(peer_slot, frame + 2, initiator_type) &&
+#if GAP_PRIVACY_SUPPORT
+            (!gap_privacy.connection_filter || peer_slot >= 0) &&
+#endif
+            (!gap_adv_filter.connection_accept ||
+             gap_accept_list_match(frame + 2, initiator_type, peer_slot))) {
+            memcpy(gap_ext_adv_connect.request, frame, 36);
+            gap_ext_adv_connect.request_ticks = received_ticks;
+            gap_ext_adv_frame[0] = ADV_EXT_IND |
+                (gap_ext_adv_connect.address_type << 6) | (initiator_type << 7);
+            gap_ext_adv_frame[1] = 14;
+            gap_ext_adv_frame[2] = 13;
+            gap_ext_adv_frame[3] = 0x03; // AdvA and TargetA.
+            memcpy(gap_ext_adv_frame + 4, gap_ext_adv_connect.address, 6);
+            memcpy(gap_ext_adv_frame + 10, frame + 2, 6);
+            GAP_HW_TX_CLEAR_DONE();
+            GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, 0, gap_ext_adv_frame, 0,
+                               gap_ext_adv_connect.phy, gap_ext_adv_connect.phy);
+            gap_ext_adv_connect.response_started = 1;
+            if (!GAP_HW_IFS_TX_TIMER_ARM()) {
+                gap_ext_adv_connect.response_started = 0;
+                gap_ext_adv_connect.waiting = 0;
+            }
+        }
+        gap_conn_slot = previous_slot;
+        return;
+    }
+    if (periodic_scan && pdu_type == CONNECT_IND && frame[1] == 34 &&
+        !gap_ext_scan.ready &&
+        gap_pawr_conn_req_start(gap_ext_scan.periodic_slot, frame, 36)) {
+        gap_ext_scan.kind = GAP_EXT_ADV_PERIODIC_PDU;
+        gap_ext_scan.rssi = GAP_HW_RSSI();
+        memcpy(gap_ext_scan.frame, frame, 36);
+        gap_ext_scan.ticks = received_ticks;
+        gap_ext_pawr.connect.reply_received_ticks = received_ticks;
+        gap_ext_scan.ready = 1;
+        gap_rx_armed = 0;
+        gap_conn_slot = previous_slot;
+        return;
+    }
+#endif
 
     if (pdu_type == SCAN_REQ && gap_ext_adv_scan.waiting) {
         if (frame[1] != 12 ||
@@ -847,9 +900,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         gap_conn_slot = previous_slot;
         return;
     }
-
-    uint8_t periodic_scan = (gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC);
-    uint8_t aux_scan = (gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX);
 
     if (aux_scan && pdu_type == ADV_EXT_IND &&
         (gap_scanner.active
@@ -1131,6 +1181,11 @@ void gap_hw_init(void) {
 #if GAP_EXT_ADV_SUPPORT
     gap_ext_adv_scan.waiting = 0;
     gap_ext_adv_scan.response_started = 0;
+#if GAP_PERIPHERAL_SUPPORT
+    gap_ext_adv_connect.waiting = 0;
+    gap_ext_adv_connect.response_started = 0;
+    gap_ext_pawr.connect.reply_armed = 0;
+#endif
     gap_ext_scan.ready = 0;
     gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
     gap_ext_scan.request_phase = GAP_EXT_REQ_NONE;
@@ -1584,6 +1639,18 @@ static inline void gap_conn_poll_all(void) {
 
 void gap_hw_scan_poll(void) {
     uint32_t now = GET_MILLIS();
+
+#if GAP_EXT_ADV_SUPPORT && GAP_PERIPHERAL_SUPPORT
+    if (gap_ext_pawr.connect.reply_armed) {
+        if (!GAP_HW_TX_DONE()) {
+            if ((int32_t)(now - gap_ext_pawr.connect.reply_deadline_ms) < 0)
+                return;
+            gap_ext_pawr.connect.reply_armed = 0;
+            gap_ext_scan.ready = 0;
+            GAP_HW_STOP();
+        }
+    }
+#endif
 
 #if GAP_CENTRAL_SUPPORT
     if (gap_connect_tx.phase == GAP_CONNECT_TX_DONE) {

@@ -95,6 +95,10 @@ void iSLER_Radio_Transmitted_Cb(void) {
 #if GAP_EXT_ADV_SUPPORT
     if (gap_ext_adv_scan.response_started)
         gap_ext_adv_scan.waiting = 0;
+#if GAP_PERIPHERAL_SUPPORT
+    if (gap_ext_adv_connect.response_started)
+        gap_ext_adv_connect.waiting = 0;
+#endif
 #endif
     if (gap_link.ifs_tx_active) {
         gap_link.ifs_tx_active = 0;

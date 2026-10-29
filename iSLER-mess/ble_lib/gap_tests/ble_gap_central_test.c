@@ -95,6 +95,7 @@ static uint8_t inject_pawr_response;
 static uint8_t inject_pawr_connect_response;
 static uint8_t corrupt_pawr_connect_response;
 static uint8_t inject_peripheral_connect_request;
+static uint8_t inject_ext_connect_request;
 static uint16_t radio_data_max = GAP_CONN_DATA_MAX;
 static uint8_t rx_frame[6 + (GAP_CONN_DATA_MAX > 37 ? GAP_CONN_DATA_MAX : 37)], random_seed;
 static const uint8_t *tx_buffer;
@@ -234,6 +235,9 @@ void GAP_HW_SCAN_RX(uint8_t channel) {
 void GAP_HW_TX_BUFFER(const uint8_t *frame) { tx_buffer = frame; }
 void GAP_HW_TX_TIMER_BEGIN(void) {}
 int GAP_HW_IFS_TX_TIMER_ARM(void) {
+    if (fake_radio_ticks_enabled && fake_radio_tick_autoincrement &&
+        configured_access_address != BLE_ADV_ACCESS_ADDRESS)
+        fake_radio_ticks += HW_TICKS_FROM_US(150);
     if (gap_ext_scan.request_phase == GAP_EXT_REQ_SCAN_TX)
         gap_ext_scan.request_phase = GAP_EXT_REQ_SCAN_RX;
     else if (gap_ext_scan.request_phase == GAP_EXT_REQ_CONNECT_TX) {
@@ -241,6 +245,10 @@ int GAP_HW_IFS_TX_TIMER_ARM(void) {
         gap_ext_scan.request_phase = GAP_EXT_REQ_CONNECT_RX;
     }
     GAP_HW_LINK_TX();
+#if GAP_PERIPHERAL_SUPPORT
+    if (gap_ext_adv_connect.response_started)
+        gap_ext_adv_connect.waiting = 0;
+#endif
     return 1;
 }
 void GAP_HW_LINK_TX(void) {
@@ -332,6 +340,25 @@ void GAP_HW_LINK_CONFIG(
 }
 void GAP_HW_LINK_RX(void) {
     link_rx_count++;
+    if (inject_ext_connect_request && gap_ext_adv_connect.waiting) {
+        static const uint8_t initiator[6] = {0x51, 0x52, 0x53, 0x54, 0x55, 0x56};
+        memset(rx_frame, 0, sizeof(rx_frame));
+        rx_frame[0] = CONNECT_IND | (gap_ext_adv_connect.address_type << 7);
+        rx_frame[1] = 34;
+        memcpy(rx_frame + 2, initiator, 6);
+        memcpy(rx_frame + 8, gap_ext_adv_connect.address, 6);
+        if (inject_ext_connect_request == 2) rx_frame[8] ^= 1;
+        write_u32_le(rx_frame + 14, 0x12345678);
+        rx_frame[18] = 0x56; rx_frame[19] = 0x34; rx_frame[20] = 0x12;
+        rx_frame[21] = 1;
+        write_u16_le(rx_frame + 24, 24);
+        write_u16_le(rx_frame + 28, 200);
+        memset(rx_frame + 30, 0xff, 5);
+        rx_frame[34] = 0x1f;
+        rx_frame[35] = 5;
+        inject_ext_connect_request = 0;
+        gap_hw_received();
+    }
     if (inject_pawr_response && gap_ext_pawr.response.listening) {
         memset(rx_frame, 0, sizeof(rx_frame));
         rx_frame[0] = 0x07;
@@ -723,6 +750,38 @@ static void test_extended_immediate_requests(void) {
     gap_hw_scan_poll();
     assert(gap_conn_slot_mask && !gap_initiator.active);
     gap_conn_end();
+}
+
+static void test_extended_connectable_advertiser(void) {
+    gap_scan_stop();
+    memset(gap_ext_adv, 0, sizeof(gap_ext_adv));
+    gap_adv_filter.connection_accept = 0;
+    gap_privacy.connection_filter = 0;
+    gap_own_address.type = 0;
+    assert(!gap_conn_slot_mask);
+    fake_radio_ticks = 8000000;
+    fake_radio_ticks_enabled = 1;
+    fake_radio_tick_autoincrement = 1;
+    captured_extended_count = 0;
+    assert(gap_ext_adv_connect_start_phy(0, 2, 100, GAP_PHY_1M));
+    inject_ext_connect_request = 2;
+    assert(gap_ext_send_due(GET_MILLIS()) == 1);
+    assert(!gap_conn_slot_mask && gap_ext_adv[0].enabled);
+    gap_ext_adv[0].next_event_ms = GET_MILLIS();
+    captured_extended_count = 0;
+    inject_ext_connect_request = 1;
+    assert(gap_ext_send_due(GET_MILLIS()) == 2);
+    assert(captured_extended_count == 2 &&
+           captured_extended_pdus[0][2] == 0x46 &&
+           captured_extended_pdus[1][2] == 0x49);
+    assert(gap_conn_slot_mask && !gap_conn_ctx[gap_conn_slot].is_central &&
+           !gap_ext_adv[0].enabled);
+    assert(gap_ext_adv_frame[0] == ADV_EXT_IND &&
+           gap_ext_adv_frame[1] == 14 && gap_ext_adv_frame[2] == 13 &&
+           gap_ext_adv_frame[3] == 0x03);
+    gap_conn_end();
+    fake_radio_tick_autoincrement = 0;
+    fake_radio_ticks_enabled = 0;
 }
 
 static void test_extended_advertising_reassembly(void) {
@@ -1564,21 +1623,20 @@ static void test_pawr_connection_accept(void) {
 
     captured_extended_count = 0;
     assert(gap_sync_pawr_accept(0, 0));
-    assert(!gap_pawr_conn_req(0, request, sizeof(request),
-                                               8000000));
+    assert(!gap_pawr_conn_req_start(0, request, sizeof(request)));
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !captured_extended_count);
     assert(gap_sync_pawr_accept(0, 1));
 
     fake_radio_ticks = 8000000;
     fake_radio_ticks_enabled = 1;
     fake_radio_tick_autoincrement = 1;
-    memcpy(gap_ext_scan.frame, request, sizeof(request));
-    gap_ext_scan.kind = GAP_EXT_ADV_PERIODIC_PDU;
+    memcpy(rx_frame, request, sizeof(request));
+    gap_ext_scan.listen_state = GAP_EXT_SCAN_PERIODIC;
     gap_ext_scan.periodic_slot = 0;
-    gap_ext_scan.ticks = fake_radio_ticks;
-    gap_ext_scan.rssi = -40;
-    gap_ext_scan.ready = 1;
+    gap_ext_scan.ready = 0;
     gap_rx_armed = 1;
+    gap_hw_received();
+    assert(gap_ext_pawr.connect.reply_armed && gap_ext_scan.ready);
     gap_ext_scan_process();
 
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !conn->is_central && sync->used &&
@@ -5551,6 +5609,7 @@ int main(void) {
     test_accept_list_capacity();
 #if GAP_EXT_ADV_SUPPORT
     test_extended_immediate_requests();
+    test_extended_connectable_advertiser();
     test_extended_advertising_reassembly();
     test_extended_advertising_radio_followup();
     test_extended_advertising_transmit();
