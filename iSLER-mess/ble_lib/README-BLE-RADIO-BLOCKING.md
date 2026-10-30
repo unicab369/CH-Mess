@@ -81,6 +81,6 @@ These are the remaining waits, with their locations:
 - PAwR observer response TX: transmission is timer-armed at the response slot, then `gap_hw_scan_poll()` checks completion or timeout without holding the processing callback.
 - Primary to AUX advertising offset: primary TX completion arms AUX TX for the 480 µs AuxPtr schedule; polling resumes the event after AUX TX completes.
 - Scannable and connectable extended advertising open RX at AUX TX completion and poll for the request window and response completion.
-- Legacy advertising TX completion: ble_gap_connection_poll.h:2100 (iSLER-mess/ble_lib/ble_gap_connection_poll.h:2100) and line 2148.
+- Legacy advertising across channels 37–39: `gap_legacy_adv_poll()` advances one TX and, for scannable/connectable PDUs, one RX window per call to `gap_send_due()`. Scan responses still start through the T_IFS timer in the RX callback.
 
 These waits handle scheduled offsets, TX completion, or listening windows. They do not themselves require IFS. The specific IFS reply handlers are separate—for example, the PAwR AUX_CONNECT_RSP timer at ble_gap_extension.h:1359.

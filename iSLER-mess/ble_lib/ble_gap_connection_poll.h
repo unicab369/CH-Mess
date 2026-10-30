@@ -1588,6 +1588,9 @@ static void gap_conn_poll(void) {
 // Run housekeeping for every live link and let the first due link claim the
 // shared radio until its connection event finishes.
 static inline void gap_conn_poll_all(void) {
+#if GAP_LEGACY_ADV_SUPPORT
+    if (adv_evt.phase) return;
+#endif
 #if GAP_CENTRAL_SUPPORT
     if (gap_connect_tx.phase != GAP_CONNECT_TX_IDLE) return;
 #endif
@@ -1648,6 +1651,10 @@ static inline void gap_conn_poll_all(void) {
 
 void gap_hw_scan_poll(void) {
     uint32_t now = GET_MILLIS();
+
+#if GAP_LEGACY_ADV_SUPPORT
+    if (adv_evt.phase) return;
+#endif
 
 #if GAP_EXT_ADV_SUPPORT
     if (gap_ext_scan.pawr_response_tx_pending) {
@@ -2047,6 +2054,106 @@ int gap_send_due(
 ) {
     if (gap_poll.slot_valid) return 0;
 
+#if GAP_LEGACY_ADV_SUPPORT
+    if (adv_evt.phase) {
+        if (adv_evt.phase == GAP_LEGACY_ADV_TX) {
+            if (!GAP_HW_TX_DONE()) {
+                if (GAP_HW_TICKS() < adv_evt.deadline) return 0;
+                GAP_HW_STOP();
+                adv_evt.rx_event = 0;
+                adv_evt.phase = 0;
+                return -1;
+            }
+            GAP_HW_TX_CLEAR_DONE();
+
+            if ((adv_evt.adv_frame[0] & 0x0f) == ADV_NONCONN_IND) {
+                GAP_HW_STOP();
+                adv_evt.phase = 0;
+            } else {
+                adv_evt.phase = GAP_LEGACY_ADV_RX;
+                adv_evt.deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(800);
+            }
+        }
+
+        if (adv_evt.conn_req_ready) {
+            GAP_HW_STOP();
+            adv_evt.rx_event = adv_evt.phase = 0;
+
+            if (gap_conn_accept(adv_evt.conn_req_frame, adv_evt.conn_req_ticks,
+                                HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))
+            ) {
+#if GAP_CENTRAL_SUPPORT
+                gap_initiator.active = 0;
+                gap_initiator.mode = GAP_CONN_MODE_DIRECT;
+#endif
+                adv_evt.conn_req_ready = 0;
+                gap_rx.ready = gap_adv_scan.ready = gap_scan.active_pending = 0;
+                gap_rx_armed = gap_scanner.scanning = gap_scanner.active = 0;
+                gap_scanner.generation++;
+                gap_conn_poll();
+                return 2;
+            }
+            adv_evt.conn_req_ready = 0;
+            adv_evt.channel = 39;
+            adv_evt.phase = 0;
+        }
+
+        if (adv_evt.phase == GAP_LEGACY_ADV_RX && adv_evt.scan_resp_started) {
+            adv_evt.phase = GAP_LEGACY_ADV_SCAN_RESPONSE_TX;
+            adv_evt.deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
+        }
+
+        if (adv_evt.phase == GAP_LEGACY_ADV_SCAN_RESPONSE_TX) {
+            if (!GAP_HW_TX_DONE()) {
+                if (GAP_HW_TICKS() < adv_evt.deadline) return 0;
+                GAP_HW_STOP();
+                adv_evt.rx_event = adv_evt.phase = 0;
+                return -1;
+            }
+        }
+        else {
+            if (adv_evt.phase == GAP_LEGACY_ADV_RX) {
+                if (gap_rx.ready)
+                    adv_evt.channel = 39;
+                else if (GAP_HW_TICKS() < adv_evt.deadline)
+                    return 0;
+            }
+        }
+        GAP_HW_STOP();
+
+        adv_evt.phase = 0;
+        adv_evt.rx_event = 0;
+
+        if (adv_evt.channel < 39) {
+            adv_evt.channel++;
+            gap_rx.ready = adv_evt.scan_resp_started = adv_evt.conn_req_ready = 0;
+
+            uint8_t receive_after_tx = (adv_evt.adv_frame[0] & 0x0f) != ADV_NONCONN_IND;
+            GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, adv_evt.channel,
+                               adv_evt.adv_frame, receive_after_tx, GAP_PHY_1M, GAP_PHY_1M);
+            GAP_HW_TX_CLEAR_DONE();
+            GAP_HW_LINK_TX();
+            adv_evt.rx_event = 1;
+            adv_evt.phase = GAP_LEGACY_ADV_TX;
+            adv_evt.deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
+            return 0;
+        }
+
+        uint32_t completed_at = GET_MILLIS();
+        uint32_t random;
+        uint8_t event_jitter = GAP_RANDOM_BYTES((uint8_t *)&random, sizeof(random)) ?
+                               random % 11 : 0;
+        if (adv_evt.send_gap) {
+            gap_adv.next_event_ms = completed_at + gap_adv.interval_ms + event_jitter;
+            return 0;
+        } else {
+            if (sent_at) *sent_at = completed_at;
+            if (jitter) *jitter = event_jitter;
+            return 1;
+        }
+    }
+#endif
+
 #if GAP_PRIVACY_SUPPORT
     gap_privacy_poll(now);
 #endif // GAP_PRIVACY_SUPPORT
@@ -2109,101 +2216,21 @@ int gap_send_due(
         memcpy(adv_evt.adv_frame + 8, data, len);
     }
 
-    if (pdu_type == ADV_NONCONN_IND) {
-        for (uint8_t channel = 37; channel <= 39; channel++) {
-            if (!GAP_HW_ADV_TX(adv_evt.adv_frame, 8 + len, channel)) return -1;
-        }
-    }
-    else {
-        adv_evt.rx_event = 1;
+    uint8_t receive_after_tx = pdu_type != ADV_NONCONN_IND;
+    adv_evt.channel = 37;
+    adv_evt.send_gap = send_gap;
+    adv_evt.rx_event = receive_after_tx;
+    gap_rx.ready = adv_evt.scan_resp_started = adv_evt.conn_req_ready = 0;
 
-        for (uint8_t channel = 37; channel <= 39; channel++) {
-            gap_rx.ready = 0;
-            adv_evt.scan_resp_started = 0;
-            adv_evt.conn_req_ready = 0;
+    GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, adv_evt.channel,
+                       adv_evt.adv_frame, receive_after_tx,
+                       GAP_PHY_1M, GAP_PHY_1M);
+    GAP_HW_TX_CLEAR_DONE();
+    GAP_HW_LINK_TX();
+    adv_evt.phase = GAP_LEGACY_ADV_TX;
+    adv_evt.deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
+    return 0;
 
-            GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel,
-                            adv_evt.adv_frame, 1, GAP_PHY_1M, GAP_PHY_1M);
-            GAP_HW_LINK_TX();
-            int timeout = HW_TICKS_FROM_US(1000);
-            while (!GAP_HW_TX_DONE() && timeout-- > 0) {}
-
-            if (!GAP_HW_TX_DONE()) {
-                GAP_HW_STOP();
-                adv_evt.rx_event = 0;
-                return -1;
-            }
-
-            GAP_HW_TX_CLEAR_DONE();
-            timeout = HW_TICKS_FROM_US(800);
-            while (!adv_evt.scan_resp_started &&
-                   !adv_evt.conn_req_ready && !gap_rx.ready &&
-                   timeout-- > 0
-            ) {}
-
-            if (adv_evt.conn_req_ready) {
-                GAP_HW_STOP();
-                adv_evt.rx_event = 0;
-
-                if (gap_conn_accept(adv_evt.conn_req_frame, adv_evt.conn_req_ticks,
-                                    HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))
-                ) {
-#if GAP_CENTRAL_SUPPORT
-                    // An incoming Peripheral connection wins over any
-                    // simultaneous Central initiation or discovery scan.
-                    gap_initiator.active = 0;
-                    gap_initiator.mode = GAP_CONN_MODE_DIRECT;
-#endif // GAP_CENTRAL_SUPPORT
-                    adv_evt.conn_req_ready = 0;
-                    gap_rx.ready = 0;
-                    gap_adv_scan.ready = 0;
-                    gap_scan.active_pending = 0;
-                    gap_rx_armed = 0;
-                    gap_scanner.scanning = 0;
-                    gap_scanner.active = 0;
-                    gap_scanner.generation++;
-                    gap_conn_poll();
-                    adv_evt.rx_event = 0;
-                    return 2;
-                }
-                else {
-                    adv_evt.conn_req_ready = 0;
-                }
-                break;
-            }
-
-            if (adv_evt.scan_resp_started) {
-                timeout = HW_TICKS_FROM_US(1000);
-                while (!GAP_HW_TX_DONE() && timeout-- > 0) {}
-
-                if (!GAP_HW_TX_DONE()) {
-                    GAP_HW_STOP();
-                    adv_evt.rx_event = 0;
-                    return -1;
-                }
-            }
-
-            GAP_HW_STOP();
-
-            if (!adv_evt.scan_resp_started && gap_rx.ready)
-                break;
-        }
-        adv_evt.rx_event = 0;
-    }
-
-    uint32_t completed_at = GET_MILLIS();
-    uint32_t random;
-    uint8_t event_jitter = GAP_RANDOM_BYTES((uint8_t *)&random, sizeof(random)) ?
-                           random % 11 : 0;
-
-    if (send_gap) {
-        gap_adv.next_event_ms = completed_at + gap_adv.interval_ms + event_jitter;
-        return 0;
-    }
-
-    if (sent_at) *sent_at = completed_at;
-    if (jitter) *jitter = event_jitter;
-    return 1;
 #else
     (void)fallback_ad;
     (void)fallback_len;

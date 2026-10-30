@@ -1024,7 +1024,7 @@ static void test_scanning_and_advertising_coexistence(void) {
     static const uint8_t data[] = {2, 0x01, 0x06};
     now_ms = 100;
     unsigned scan_before = scan_rx_count;
-    unsigned tx_before = advertising_tx_count;
+    unsigned tx_before = link_tx_count;
     assert(gap_scan_configure(20, 20, GAP_DISCOVERY_ALL, 0));
     assert(gap_adv_start(
         ADV_NONCONN_IND, data, sizeof(data), NULL, 0, 100));
@@ -1035,23 +1035,26 @@ static void test_scanning_and_advertising_coexistence(void) {
     uint32_t sent_at = 0;
     uint8_t jitter = 0;
     assert(gap_send_due(NULL, 0, now_ms, &sent_at, &jitter) == 0);
+    while (adv_evt.phase) assert(gap_send_due(NULL, 0, now_ms, &sent_at, &jitter) == 0);
     assert(gap_scanner.scanning && gap_adv.enabled &&
-           advertising_tx_count == tx_before + 3);
+           link_tx_count == tx_before + 3);
     gap_hw_scan_poll();
     assert(gap_rx_armed && scan_rx_count == scan_before + 2);
 
     now_ms = gap_adv.next_event_ms;
     assert(gap_send_due(NULL, 0, now_ms, &sent_at, &jitter) == 0);
+    while (adv_evt.phase) assert(gap_send_due(NULL, 0, now_ms, &sent_at, &jitter) == 0);
     assert(gap_scanner.scanning && gap_adv.enabled &&
-           advertising_tx_count == tx_before + 6);
+           link_tx_count == tx_before + 6);
 
     gap_scan_stop();
     const uint8_t peer[6] = {1, 2, 3, 4, 5, 6};
     assert(!gap_conn_start(test_address(peer, 0)));
     now_ms = gap_adv.next_event_ms;
     assert(gap_send_due(NULL, 0, now_ms, &sent_at, &jitter) == 0);
+    while (adv_evt.phase) assert(gap_send_due(NULL, 0, now_ms, &sent_at, &jitter) == 0);
     assert(!gap_initiator.active && !gap_scanner.scanning &&
-           gap_adv.enabled && advertising_tx_count == tx_before + 9);
+           gap_adv.enabled && link_tx_count == tx_before + 9);
 
     gap_adv_stop();
     assert(gap_conn_start(test_address(peer, 0)));

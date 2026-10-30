@@ -101,11 +101,20 @@ static struct {
 } gap_poll;
 
 #if GAP_LEGACY_ADV_SUPPORT
+enum {
+    GAP_LEGACY_ADV_TX = 1,
+    GAP_LEGACY_ADV_RX,
+    GAP_LEGACY_ADV_SCAN_RESPONSE_TX
+};
+
 static struct {
     GAP_RADIO_BUFFER_ATTR uint8_t adv_frame[8 + GAP_ADV_DATA_MAX];
     GAP_RADIO_BUFFER_ATTR uint8_t scan_frame[8 + GAP_ADV_DATA_MAX];
     volatile uint8_t rx_event, scan_resp_started;
     volatile uint8_t conn_req_ready;
+    volatile uint8_t phase;
+    uint8_t channel, send_gap;
+    uint64_t deadline;
     uint8_t conn_req_frame[36];
     uint64_t conn_req_ticks;
 } adv_evt;
