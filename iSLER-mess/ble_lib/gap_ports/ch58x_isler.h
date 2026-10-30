@@ -82,8 +82,7 @@ static uint8_t gap_phy_mode(uint8_t phy) {
 
 // For different TX/RX rates, arm RX from TX completion within the peer's IFS.
 void iSLER_Radio_Transmitted_Cb(void) {
-    uint32_t status = tx_done;
-    if (!(status & LL_TX)) return;
+    if (!(tx_done & LL_TX)) return;
 #if GAP_CENTRAL_SUPPORT
     if (gap_connect_tx.phase == GAP_CONNECT_TX_SENDING) {
         gap_connect_tx.end_ticks = RADIO_TICKS();
@@ -175,9 +174,17 @@ void iSLER_Radio_Transmitted_Cb(void) {
     }
 }
 
-const uint8_t *RADIO_RX_FRAME(void) { return (const uint8_t *)LLE_BUF; }
-int8_t RADIO_RSSI(void) { return (int8_t)iSLERRSSI(); }
-void RADIO_INIT(void) { iSLERInit(LL_TX_POWER_0_DBM); }
+const uint8_t *RADIO_RX_FRAME(void) {
+    return (const uint8_t *)LLE_BUF;
+}
+
+int8_t RADIO_RSSI(void) {
+    return (int8_t)iSLERRSSI();
+}
+
+void RADIO_INIT(void) {
+    iSLERInit(LL_TX_POWER_0_DBM);
+}
 
 void RADIO_STOP(void) {
     gap_link.reply_armed = 0;
@@ -353,13 +360,14 @@ void RADIO_LINK_CONFIG(
 }
 
 uint8_t RADIO_PHY_MASK(void) {
-#ifdef CH571_CH573
-    return GAP_PHY_1M;
-#elif defined(CH582_CH583) || defined(CH32V208)
-    return GAP_PHY_1M | GAP_PHY_2M | GAP_PHY_CODED;
-#else
-    return GAP_PHY_1M | GAP_PHY_2M;
+    uint8_t phy_mask = GAP_PHY_1M;
+#ifndef CH571_CH573
+    phy_mask |= GAP_PHY_2M;
 #endif
+#if defined(CH582_CH583) || defined(CH32V208)
+    phy_mask |= GAP_PHY_CODED;
+#endif
+    return phy_mask;
 }
 
 void RADIO_LINK_TX(void) {
@@ -373,7 +381,9 @@ void RADIO_LINK_TX(void) {
     iSLERLinkTX();
 }
 
-void RADIO_LINK_RX(void) { iSLERLinkRX(); }
+void RADIO_LINK_RX(void) {
+    iSLERLinkRX();
+}
 
 void RADIO_SCAN_RX(uint8_t channel) {
     gap_link.receive_after_tx = 0;
@@ -381,10 +391,20 @@ void RADIO_SCAN_RX(uint8_t channel) {
     iSLERLinkRX();
 }
 
-int RADIO_TX_DONE(void) { return (tx_done & LL_TX) != 0; }
-void RADIO_TX_CLEAR_DONE(void) { tx_done = 0; }
-uint64_t RADIO_TICKS(void) { return funSysTick64(); }
-uint64_t HW_TICKS_FROM_US(uint32_t us) { return Ticks_from_Us(us); }
+int RADIO_TX_DONE(void) {
+    return (tx_done & LL_TX) != 0;
+}
+void RADIO_TX_CLEAR_DONE(void) {
+    tx_done = 0;
+}
+
+uint64_t RADIO_TICKS(void) {
+    return funSysTick64();
+}
+
+uint64_t HW_TICKS_FROM_US(uint32_t us) {
+    return Ticks_from_Us(us);
+}
 
 void RADIO_PUBLIC_ADDRESS(uint8_t address[6]) {
     const uint8_t *stored = (const uint8_t *)ROM_CFG_MAC_ADDR;
