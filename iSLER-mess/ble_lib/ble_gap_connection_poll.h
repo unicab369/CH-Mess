@@ -46,6 +46,7 @@ static void gap_conn_send_queued(void) {
         // Exchange features before sending the application's timing range.
         if (!conn->c_features.known) {
             gap_send_feature_request(conn);
+            return;
         }
         else if (!(conn->c_features.peer_feature_0 & 0x02)) {
             conn->queue_state.local_params = 0;
@@ -68,15 +69,16 @@ static void gap_conn_send_queued(void) {
             conn->tx_frame[12] = 0;
             conn->tx_frame[13] = 0;
             memset(conn->tx_frame + 14, 0xff, 12); // No anchor offset preference.
+            return;
         }
     }
-    if (conn->tx_frame[1]) return;
 
     if (conn->queue_state.length) {
         gap_send_data_length(conn, LL_LENGTH_REQ);
-        if (conn->tx_frame[1]) return;
+        return;
     }
 
+    // Higher-priority queued procedures are handled above before sending PHY.
     if (conn->queue_state.phy_queued) {
         // Encode local preferences once earlier TX has been acknowledged.
         conn->queue_state.phy_queued = 0;
@@ -92,10 +94,12 @@ static void gap_conn_send_queued(void) {
     }
 
     if (!conn->c_features.request_pending) {
+        //! subrate
         if (conn->c_subrate.queued_flags) {
             // Wait for the peer Link Layer and Host to confirm subrating support.
             if (!conn->c_features.known) {
                 gap_send_feature_request(conn);
+                return;
             }
             else {
                 if (GAP_LL_FEATURES_SUBRATING_MASK !=
@@ -109,6 +113,7 @@ static void gap_conn_send_queued(void) {
                 else if (conn->is_central) {
                     if (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE) {
                         gap_send_subrate_update(conn);
+                        if (conn->tx_frame[1]) return;
                     }
                 }
 #endif // GAP_CENTRAL_SUPPORT
@@ -127,16 +132,17 @@ static void gap_conn_send_queued(void) {
                     write_u16_le(conn->tx_frame + 7, conn->peripheral.subrate_request.latency);
                     write_u16_le(conn->tx_frame + 9, conn->peripheral.subrate_request.continuation);
                     write_u16_le(conn->tx_frame + 11, conn->peripheral.subrate_request.timeout_10ms);
+                    return;
                 }
 #endif // GAP_PERIPHERAL_SUPPORT
             }
         }
 
-        if (conn->tx_frame[1]) return;
-
+        //! rate
         if (conn->c_rate.queued_flags && !conn->c_features.ext_pending) {
             if (!conn->c_features.known) {
                 gap_send_feature_request(conn);
+                return;
             }
             else if (!(conn->c_features.peer_feature_7 & GAP_LL_FEATURES_EXTENDED)) {
                 conn->c_rate.queued_flags = 0;
@@ -155,6 +161,7 @@ static void gap_conn_send_queued(void) {
                 conn->tx_frame[5] = 0;
                 conn->tx_frame[6] = GAP_LL_FEATURE_PAGE1_SHORTER_INTERVALS;
                 memset(conn->tx_frame + 7, 0, 6);
+                return;
             }
             else if (!(conn->c_features.peer_page1[1] & 0x02)) {
                 conn->c_rate.queued_flags = 0;
@@ -164,9 +171,11 @@ static void gap_conn_send_queued(void) {
             else if (conn->is_central) {
                 if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_SET) {
                     gap_send_rate_ind(conn, 0, NULL);
+                    if (conn->tx_frame[1]) return;
                 }
             }
 #endif // GAP_CENTRAL_SUPPORT
+
 #if GAP_PERIPHERAL_SUPPORT
             else if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_REQUEST) {
                 conn->tx_frame[0] = 0x03;
@@ -190,12 +199,11 @@ static void gap_conn_send_queued(void) {
                 conn->c_rate.queued_flags &= (uint8_t)~GAP_RATE_QUEUED_REQUEST;
                 conn->peripheral.rate_req_pending = 1;
                 conn->params_started_ms = GET_MILLIS();
+                return;
             }
 #endif // GAP_PERIPHERAL_SUPPORT
         }
     }
-
-    if (conn->tx_frame[1]) return;
 
 #if GAP_CENTRAL_SUPPORT
     if (!conn->is_central || !conn->central.channel_report_queued ||
@@ -204,6 +212,7 @@ static void gap_conn_send_queued(void) {
 
     if (!conn->c_features.known) {
         gap_send_feature_request(conn);
+        return;
     }
     else if (!(conn->c_features.peer_feature_4 & GAP_LL_FEATURES_CH_CLASS)) {
         conn->central.channel_report_queued = 0;
@@ -221,6 +230,7 @@ static void gap_conn_send_queued(void) {
         conn->tx_frame[3] = conn->channel_report.enabled;
         conn->tx_frame[4] = conn->channel_report.min_spacing_200ms;
         conn->tx_frame[5] = conn->channel_report.max_delay_200ms;
+        return;
     }
 #endif // GAP_CENTRAL_SUPPORT
 }
