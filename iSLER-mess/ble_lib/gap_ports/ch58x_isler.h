@@ -73,11 +73,9 @@ static struct {
 #endif
 
 static uint8_t gap_phy_mode(uint8_t phy) {
-    if (phy == GAP_PHY_2M)
-        return PHY_2M;
-    if (phy == GAP_PHY_CODED)
-        return GAP_CODED_PHY_MODE;
-    return PHY_1M;
+    return phy == GAP_PHY_CODED ? GAP_CODED_PHY_MODE
+                                : phy == GAP_PHY_2M
+                                ? PHY_2M : PHY_1M;
 }
 
 // For different TX/RX rates, arm RX from TX completion within the peer's IFS.
