@@ -60,7 +60,12 @@ static void gap_conn_send_queued(void) {
         }
     }
 #endif // GAP_SECURITY_SUPPORT >= 1
-    if (gap_conn_security_busy(conn) || conn->tx_frame[1]) return;
+    if (
+#if GAP_SECURITY_SUPPORT >= 1
+        conn->security.phase ||
+#endif
+        conn->tx_frame[1]
+    ) return;
     // Wait for feature exchanges before starting Central updates, channel-map changes, or other LL procedures.
     if (conn->c_features.request_pending || conn->c_features.ext_pending) return;
 
@@ -750,7 +755,10 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 
 #if GAP_EXT_ADV_SUPPORT
                 if (!conn->tx_frame[1] &&
-                    !gap_conn_security_busy(conn) && conn->sync_transfer_queued
+#if GAP_SECURITY_SUPPORT >= 1
+                    !conn->security.phase &&
+#endif
+                    conn->sync_transfer_queued
                 ) {
                     uint8_t slot = conn->sync_transfer_slot;
 
@@ -764,7 +772,11 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 #endif // GAP_EXT_ADV_SUPPORT
             }
 
-            if (!gap_conn_security_busy(conn)) {
+#if GAP_SECURITY_SUPPORT >= 1
+            // Let the security procedure finish before queuing ordinary traffic.
+            if (!conn->security.phase)
+#endif
+            {
 #if GAP_PERIPHERAL_SUPPORT
                 if (!conn->is_central &&
                     conn->channel_report.enabled &&

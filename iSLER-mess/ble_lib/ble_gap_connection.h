@@ -78,15 +78,6 @@ enum {
     LL_CONNECTION_RATE_IND = 0x3f
 };
 
-static inline uint8_t gap_conn_security_busy(const gap_conn_context *conn) {
-#if GAP_SECURITY_SUPPORT >= 1
-    return conn->security.phase != 0;
-#else
-    (void)conn;
-    return 0;
-#endif
-}
-
 static inline uint8_t gap_conn_central_queued(const gap_conn_context *conn) {
 #if GAP_CENTRAL_SUPPORT
     return conn->is_central && (conn->central.local_update || conn->central.local_map);
@@ -970,8 +961,12 @@ static uint8_t gap_conn_control(
 
         error = GAP_LL_ERR_COLLISION; // LL procedure collision.
 
-        if (gap_conn_security_busy(conn) ||
-            gap_conn_rate_busy(conn) ||
+#if GAP_SECURITY_SUPPORT >= 1
+        if (conn->security.phase)
+            return gap_conn_reject_resp(conn, frame[2], error);
+#endif
+
+        if (gap_conn_rate_busy(conn) ||
             gap_conn_central_queued(conn) ||
             conn->procedure_state.procedure_flags ||
             conn->procedure_state.phy_request ||
@@ -982,7 +977,9 @@ static uint8_t gap_conn_control(
                                     (conn->queued_action & GAP_QUEUED_PARAMS_MASK))
                 )
             ))
-        ) return gap_conn_reject_resp(conn, frame[2], error);
+        ) {
+            return gap_conn_reject_resp(conn, frame[2], error);
+        }
 
         if (frame[2] == LL_CONNECTION_PARAM_RSP) {
             minimum = MAX(minimum, conn->params_request.min_intvl_1p25ms);
@@ -1474,7 +1471,10 @@ static uint8_t gap_conn_control(
         else if (!(conn->c_features.peer_page1[1] & 0x02)) {
             error = GAP_LL_ERR_REMOTE_FEATURE;
         }
-        else if (gap_conn_security_busy(conn) ||
+        else if (
+#if GAP_SECURITY_SUPPORT >= 1
+            conn->security.phase ||
+#endif
             gap_conn_rate_busy(conn) ||
             gap_conn_central_queued(conn) ||
             conn->c_subrate.procedure_state != GAP_SUBRATE_IDLE ||
@@ -1626,7 +1626,10 @@ static uint8_t gap_conn_control(
                                         min_factor * (max_latency + 1)
         ) {
             error = GAP_LL_ERR_COLLISION;
-            if (!gap_conn_security_busy(conn) &&
+            if (
+#if GAP_SECURITY_SUPPORT >= 1
+                !conn->security.phase &&
+#endif
                 !gap_conn_rate_busy(conn) &&
                 !gap_conn_central_queued(conn) &&
                 !conn->procedure_state.procedure_flags &&
@@ -1832,7 +1835,10 @@ static uint8_t gap_conn_control(
             if (!conn->is_central || !conn->procedure_state.phy_request)
                 break;
         }
-        else if (gap_conn_security_busy(conn) ||
+        else if (
+#if GAP_SECURITY_SUPPORT >= 1
+            conn->security.phase ||
+#endif
             conn->procedure_state.procedure_flags ||
             conn->procedure_state.params_state != GAP_CONN_PARAMS_NONE ||
             gap_conn_central_queued(conn) ||
@@ -1975,10 +1981,13 @@ static uint8_t gap_conn_pending_procedure_busy(const gap_conn_context *conn) {
 }
 
 static uint8_t gap_conn_procedure_busy(const gap_conn_context *conn) {
+#if GAP_SECURITY_SUPPORT >= 1
+    if (conn->security.phase)
+        return 1;
+#endif
+
     return !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-            gap_conn_security_busy(conn) ||
-            conn->link_layer.first_event ||
-            gap_conn_pending_procedure_busy(conn);
+            conn->link_layer.first_event || gap_conn_pending_procedure_busy(conn);
 }
 
 static uint8_t gap_conn_timing_busy(const gap_conn_context *conn) {
@@ -2272,10 +2281,15 @@ int gap_channel_reporting_set(
     uint8_t enable, uint8_t min_spacing_200ms, uint8_t max_delay_200ms
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+
+#if GAP_SECURITY_SUPPORT >= 1
+    if (conn->security.phase)
+        return 0;
+#endif
+
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         !conn->is_central ||
         conn->link_layer.first_event ||
-        gap_conn_security_busy(conn) ||
         enable > 1 ||
         !IN_RANGE_INCLUSIVE(min_spacing_200ms, 5, 150) ||
         !IN_RANGE_INCLUSIVE(max_delay_200ms, min_spacing_200ms, 150) ||
@@ -2423,26 +2437,26 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
 // Queue one LL data fragment. LLID 2 begins an L2CAP PDU; LLID 1 continues it.
 int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    uint8_t mic_overhead = 0;
-#if GAP_SECURITY_SUPPORT >= 1
-    mic_overhead = conn->security.tx_enabled ? 4 : 0;
-#endif
-
     if (!len ||
         (llid != 1 && llid != 2) ||
         !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->link_layer.first_event) ||
-        gap_conn_security_busy(conn) ||
         conn->queue_state.tx_queued ||
         conn->link_state.terminate_queued ||
         conn->link_state.terminate_sent ||
         conn->link_state.terminate_after_reply ||
         len > conn->data_length.tx_octets ||
-        (len + 10 + mic_overhead) * 8 > conn->data_length.tx_time ||
+        (len + 10) * 8 > conn->data_length.tx_time ||
         (llid == 2 && len < 4)
     ) {
         return 0;
     }
+
+#if GAP_SECURITY_SUPPORT >= 1
+    if (conn->security.phase ||
+        (conn->security.tx_enabled && (len + 14) * 8 > conn->data_length.tx_time)
+    ) return 0;
+#endif
 
     // SMP may only send between complete application L2CAP PDUs.
 
