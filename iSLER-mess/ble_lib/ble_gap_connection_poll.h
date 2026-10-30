@@ -86,19 +86,22 @@ static void gap_conn_send_queued(void) {
         return;
     }
 
-    if (conn->queue_state.local_params) {
-        // Exchange features before sending the application's timing range.
-        if (!conn->c_features.known) {
-            gap_send_feature_request(conn);
-            return;
-        }
-        else if (!(conn->c_features.peer_feature_0 & 0x02)) {
-            conn->queue_state.local_params = 0;
+    // Queued timing actions need the peer's base feature set.
+    if ((conn->timing_queued_action & GAP_TIMING_ACTION_MASK) &&
+        !conn->c_features.known
+    ) {
+        gap_send_feature_request(conn);
+        return;
+    }
+
+    if (conn->timing_queued_action & GAP_TIMING_PARAMS_MASK) {
+        if (!(conn->c_features.peer_feature_0 & 0x02)) {
+            conn->timing_queued_action = GAP_TIMING_NONE;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
         else {
             conn->params_started_ms = GET_MILLIS();
-            conn->queue_state.local_params = 0;
+            conn->timing_queued_action = GAP_TIMING_NONE;
             conn->procedure_state.params_state = GAP_CONN_PARAMS_LOCAL;
             conn->tx_frame[0] = 3;
             conn->tx_frame[1] = 24;
@@ -115,12 +118,6 @@ static void gap_conn_send_queued(void) {
             memset(conn->tx_frame + 14, 0xff, 12); // No anchor offset preference.
             return;
         }
-    }
-
-    // Rate and subrate actions need the peer's base feature set.
-    if (conn->timing_queued_action && !conn->c_features.known) {
-        gap_send_feature_request(conn);
-        return;
     }
 
     //! subrate

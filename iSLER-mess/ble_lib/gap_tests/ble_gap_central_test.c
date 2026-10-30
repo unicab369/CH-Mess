@@ -3475,7 +3475,8 @@ static void test_connection_parameter_requests(void) {
     assert(gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
     receive_test_control(0x09, (uint8_t[8]){0}, 8);
-    assert(!conn->queue_state.local_params && conn->connection_status == 0x1a);
+    assert(conn->timing_queued_action == GAP_TIMING_NONE &&
+           conn->connection_status == 0x1a);
     assert(!gap_conn_request(48, 60, 1, 300));
     gap_conn_end();
 

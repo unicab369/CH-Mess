@@ -275,8 +275,12 @@ enum {
     GAP_TIMING_RATE_REQUEST = 1u << 1,
     GAP_TIMING_SUBRATE_UPDATE = 1u << 2,
     GAP_TIMING_SUBRATE_REQUEST = 1u << 3,
+    GAP_TIMING_PARAMS_REQUEST = 1u << 4,
     GAP_TIMING_RATE_MASK = GAP_TIMING_RATE_SET | GAP_TIMING_RATE_REQUEST,
-    GAP_TIMING_SUBRATE_MASK = GAP_TIMING_SUBRATE_UPDATE | GAP_TIMING_SUBRATE_REQUEST
+    GAP_TIMING_SUBRATE_MASK = GAP_TIMING_SUBRATE_UPDATE | GAP_TIMING_SUBRATE_REQUEST,
+    GAP_TIMING_PARAMS_MASK = GAP_TIMING_PARAMS_REQUEST,
+    GAP_TIMING_ACTION_MASK = GAP_TIMING_RATE_MASK | GAP_TIMING_SUBRATE_MASK |
+                             GAP_TIMING_PARAMS_MASK
 };
 enum {
     GAP_PENDING_TIMING_UPDATE = 1u << 0,
@@ -688,7 +692,7 @@ typedef struct {
         uint8_t update_window_active;
         // GAP_PENDING_* bits for timing, channel-map, and PHY procedures; cleared on completion.
         uint8_t procedure_flags;
-        // Tracks the local/remote parameter request associated with params_* and queue_state.local_params.
+        // Tracks the local/remote parameter request associated with params_*.
         uint8_t params_state;
         // PHY procedure response state associated with phy_state and queue_state.phy_queued.
         uint8_t phy_request;
@@ -704,8 +708,6 @@ typedef struct {
         volatile uint8_t tx_queued;
         // rx_packet contains a received packet waiting for connection processing.
         volatile uint8_t rx_ready;
-        // A local connection-parameter request is waiting; values are in params_*.
-        volatile uint8_t local_params;
         // A data-length update is waiting; local limit is in local_tx_octets.
         volatile uint8_t length;
     } queue_state;
