@@ -12,7 +12,7 @@ static uint16_t radio_data_max;
 #include "../ble_gap.h"
 
 static uint64_t radio_ticks;
-static uint8_t *configured_frame;
+static const uint8_t *transmitted_frame;
 static uint8_t configured_tx;
 static uint8_t tx_started, rx_started;
 
@@ -31,21 +31,23 @@ int RADIO_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel) {
     (void)frame; (void)len; (void)channel; return 1;
 }
 void RADIO_CONNECT_TX_TIMER_CANCEL(void) {}
-void RADIO_LINK_CONFIG(uint32_t aa, uint8_t channel, uint8_t *frame,
+void RADIO_LINK_CONFIG(uint32_t aa, uint8_t channel,
                         uint8_t tx, uint8_t tx_phy, uint8_t rx_phy,
                         uint32_t crc_init) {
     (void)aa; (void)channel; (void)tx_phy; (void)rx_phy;
     (void)crc_init;
-    configured_frame = frame;
     configured_tx = tx;
 }
 uint8_t RADIO_PHY_MASK(void) { return GAP_PHY_1M; }
-void RADIO_LINK_TX(void) { tx_started++; }
-int RADIO_LINK_TX_AT(uint64_t start_ticks) {
-    (void)start_ticks; RADIO_LINK_TX(); return 1;
+void RADIO_LINK_TX(const uint8_t *frame) {
+    transmitted_frame = frame;
+    tx_started++;
+}
+int RADIO_LINK_TX_AT(const uint8_t *frame, uint64_t start_ticks) {
+    (void)start_ticks; RADIO_LINK_TX(frame); return 1;
 }
 int RADIO_IFS_TX_TIMER_ARM(const uint8_t *frame) {
-    (void)frame; RADIO_LINK_TX(); return 1;
+    RADIO_LINK_TX(frame); return 1;
 }
 void RADIO_LINK_RX(void) { rx_started++; }
 void RADIO_SCAN_RX(uint8_t channel) { (void)channel; }
@@ -87,7 +89,7 @@ int main(void) {
 
     radio_ticks = 10000;
     gap_conn_poll();
-    assert(configured_frame == conn->tx_frame && configured_tx);
+    assert(transmitted_frame == conn->tx_frame && configured_tx);
     assert(tx_started == 1 && rx_started == 0);
 
     gap_poll.slot_valid = 0;
@@ -97,7 +99,7 @@ int main(void) {
     conn->is_central = 0;
     radio_ticks = conn->link_layer.next_ticks;
     gap_conn_poll();
-    assert(configured_frame == NULL && !configured_tx);
+    assert(!configured_tx);
     assert(tx_started == 1 && rx_started == 1);
     return 0;
 }
