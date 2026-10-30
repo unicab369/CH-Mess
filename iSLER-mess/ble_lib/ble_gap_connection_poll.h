@@ -114,7 +114,7 @@ static void gap_conn_send_queued(void) {
             else if (!(conn->c_features.peer_feature_4 & GAP_LL_FEATURES_CH_CLASS)) {
                 conn->central.channel_report_queued = 0;
                 conn->central.channel_report_pending = 0;
-                conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
+                conn->connection_status = LL_ERR_REMOTE_FEATURE;
             }
             else {
                 conn->central.channel_report_queued = 0;
@@ -160,7 +160,7 @@ static void gap_conn_send_queued(void) {
     else if (conn->queued_action & GAP_QUEUED_PARAMS_MASK) {
         if (!(conn->c_features.peer_feature_0 & 0x02)) {
             conn->queued_action = GAP_QUEUED_NONE;
-            conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
+            conn->connection_status = LL_ERR_REMOTE_FEATURE;
         }
         else {
             conn->params_started_ms = GET_MILLIS();
@@ -187,7 +187,7 @@ static void gap_conn_send_queued(void) {
             (conn->c_features.peer_feature_4 & GAP_LL_FEATURES_SUBRATING_MASK)
         ) {
             conn->queued_action = GAP_QUEUED_NONE;
-            conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
+            conn->c_subrate.status = LL_ERR_REMOTE_FEATURE;
         }
 
 #if GAP_CENTRAL_SUPPORT
@@ -219,7 +219,7 @@ static void gap_conn_send_queued(void) {
     else if (conn->queued_action & GAP_QUEUED_RATE_MASK) {
         if (!(conn->c_features.peer_feature_7 & GAP_LL_FEATURES_EXTENDED)) {
             conn->queued_action = GAP_QUEUED_NONE;
-            conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
+            conn->connection_status = LL_ERR_REMOTE_FEATURE;
         }
         else if (!conn->c_features.page1_known) {
             // Exchange page 1 after the legacy page advertised extended features.
@@ -237,7 +237,7 @@ static void gap_conn_send_queued(void) {
         }
         else if (!(conn->c_features.peer_page1[1] & 0x02)) {
             conn->queued_action = GAP_QUEUED_NONE;
-            conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
+            conn->connection_status = LL_ERR_REMOTE_FEATURE;
         }
 #if GAP_CENTRAL_SUPPORT
         else if (conn->is_central) {
