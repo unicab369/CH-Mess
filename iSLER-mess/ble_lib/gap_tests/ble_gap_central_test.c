@@ -3475,7 +3475,7 @@ static void test_connection_parameter_requests(void) {
     assert(gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
     receive_test_control(0x09, (uint8_t[8]){0}, 8);
-    assert(conn->timing_queued_action == GAP_TIMING_NONE &&
+    assert(conn->queued_action == GAP_QUEUED_NONE &&
            conn->connection_status == 0x1a);
     assert(!gap_conn_request(48, 60, 1, 300));
     gap_conn_end();
@@ -3706,7 +3706,7 @@ static void test_phy_updates(void) {
     assert(!gap_channel_map_set((uint8_t[5]){3}));
     assert(!gap_data_length_set(27));
     receive_test_link_packet(0);
-    assert(conn->queue_state.phy_queued && !conn->procedure_state.phy_request);
+    assert(conn->queued_action == GAP_QUEUED_PHY && !conn->procedure_state.phy_request);
     conn->link_layer.event_counter = 0xfffd;
     receive_test_link_packet(1);
     assert(conn->tx_frame[2] == 0x16 && conn->tx_frame[3] == 2);
@@ -3954,7 +3954,7 @@ static void test_connection_subrating(void) {
     receive_test_link_packet(1);
     receive_test_control(0x09, (uint8_t[8]){0}, 8);
     assert(gap_conn_ctx_current()->c_subrate.status == 0x1a &&
-           conn->timing_queued_action == GAP_TIMING_NONE);
+           conn->queued_action == GAP_QUEUED_NONE);
     gap_conn_end();
 
     start_test_central_link();

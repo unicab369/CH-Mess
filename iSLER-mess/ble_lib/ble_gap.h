@@ -270,17 +270,19 @@ typedef enum {
     GAP_CONN_MODE_AUTO = 0x04
 } gap_conn_mode;
 enum {
-    GAP_TIMING_NONE,
-    GAP_TIMING_RATE_SET = 1u << 0,
-    GAP_TIMING_RATE_REQUEST = 1u << 1,
-    GAP_TIMING_SUBRATE_UPDATE = 1u << 2,
-    GAP_TIMING_SUBRATE_REQUEST = 1u << 3,
-    GAP_TIMING_PARAMS_REQUEST = 1u << 4,
-    GAP_TIMING_RATE_MASK = GAP_TIMING_RATE_SET | GAP_TIMING_RATE_REQUEST,
-    GAP_TIMING_SUBRATE_MASK = GAP_TIMING_SUBRATE_UPDATE | GAP_TIMING_SUBRATE_REQUEST,
-    GAP_TIMING_PARAMS_MASK = GAP_TIMING_PARAMS_REQUEST,
-    GAP_TIMING_ACTION_MASK = GAP_TIMING_RATE_MASK | GAP_TIMING_SUBRATE_MASK |
-                             GAP_TIMING_PARAMS_MASK
+    GAP_QUEUED_NONE = 0,
+    GAP_QUEUED_RATE_SET = 1u << 0,
+    GAP_QUEUED_RATE_REQUEST = 1u << 1,
+    GAP_QUEUED_SUBRATE_UPDATE = 1u << 2,
+    GAP_QUEUED_SUBRATE_REQUEST = 1u << 3,
+    GAP_QUEUED_PARAMS_REQUEST = 1u << 4,
+    GAP_QUEUED_PHY = 1u << 5,
+    GAP_QUEUED_RATE_MASK = GAP_QUEUED_RATE_SET | GAP_QUEUED_RATE_REQUEST,
+    GAP_QUEUED_SUBRATE_MASK = GAP_QUEUED_SUBRATE_UPDATE | GAP_QUEUED_SUBRATE_REQUEST,
+    GAP_QUEUED_PARAMS_MASK = GAP_QUEUED_PARAMS_REQUEST,
+    GAP_QUEUED_TIMING_MASK = GAP_QUEUED_RATE_MASK | GAP_QUEUED_SUBRATE_MASK |
+                             GAP_QUEUED_PARAMS_MASK,
+    GAP_QUEUED_ACTION_MASK = GAP_QUEUED_TIMING_MASK | GAP_QUEUED_PHY
 };
 enum {
     GAP_PENDING_TIMING_UPDATE = 1u << 0,
@@ -694,7 +696,7 @@ typedef struct {
         uint8_t procedure_flags;
         // Tracks the local/remote parameter request associated with params_*.
         uint8_t params_state;
-        // PHY procedure response state associated with phy_state and queue_state.phy_queued.
+        // PHY procedure response state associated with phy_state.
         uint8_t phy_request;
         // Data-length exchange state associated with length_status and queue_state.length.
         uint8_t length;
@@ -702,8 +704,6 @@ typedef struct {
 
     // Radio queues and connection data.
     struct {
-        // PHY control work is waiting for the poll; parameters are in phy_state.preferred.
-        volatile uint8_t phy_queued;
         // tx_packet contains an outgoing packet waiting for radio transmission.
         volatile uint8_t tx_queued;
         // rx_packet contains a received packet waiting for connection processing.
@@ -789,10 +789,9 @@ typedef struct {
         uint8_t llid, len, data[GAP_CONN_DATA_MAX];
     } rx_packet;
 
-    // Connection-rate and subrate procedure state.
-    // Only one rate or subrate action can be queued at a time.
+    // One local LL procedure action waiting to start.
     // RX interrupt clears this action; foreground API updates it under a critical section.
-    volatile uint8_t timing_queued_action;
+    volatile uint8_t queued_action;
     struct {
         // Rate update signaled and waiting to take effect at its Instant.
         uint8_t update_pending;
