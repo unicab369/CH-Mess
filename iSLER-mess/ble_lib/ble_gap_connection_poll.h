@@ -2089,26 +2089,9 @@ int gap_send_due(
 
 #if GAP_LEGACY_ADV_SUPPORT
     if (adv_evt.phase) {
-        if (adv_evt.phase == GAP_LEGACY_ADV_TX) {
-            if (!RADIO_TX_DONE()) {
-                if (RADIO_TICKS() < adv_evt.deadline) return 0;
-                RADIO_STOP();
-                adv_evt.rx_event = 0;
-                adv_evt.phase = 0;
-                return -1;
-            }
-            RADIO_TX_CLEAR_DONE();
-
-            if ((adv_evt.adv_frame[0] & 0x0f) == ADV_NONCONN_IND) {
-                RADIO_STOP();
-                adv_evt.phase = 0;
-            } else {
-                adv_evt.phase = GAP_LEGACY_ADV_RX;
-                adv_evt.deadline = RADIO_TICKS() + HW_TICKS_FROM_US(800);
-            }
-        }
-
         if (adv_evt.conn_req_ready) {
+            if (adv_evt.phase == GAP_LEGACY_ADV_TX && RADIO_TX_DONE())
+                RADIO_TX_CLEAR_DONE();
             RADIO_STOP();
             adv_evt.rx_event = adv_evt.phase = 0;
 
@@ -2131,25 +2114,43 @@ int gap_send_due(
             adv_evt.phase = 0;
         }
 
-        if (adv_evt.phase == GAP_LEGACY_ADV_RX && adv_evt.scan_resp_started) {
-            adv_evt.phase = GAP_LEGACY_ADV_SCAN_RESPONSE_TX;
-            adv_evt.deadline = RADIO_TICKS() + HW_TICKS_FROM_US(1000);
+        if (adv_evt.phase == GAP_LEGACY_ADV_TX) {
+            if (!RADIO_TX_DONE()) {
+                if (RADIO_TICKS() < adv_evt.deadline) return 0;
+                RADIO_STOP();
+                adv_evt.rx_event = 0;
+                adv_evt.phase = 0;
+                return -1;
+            }
+            RADIO_TX_CLEAR_DONE();
+
+            if ((adv_evt.adv_frame[0] & 0x0f) == ADV_NONCONN_IND) {
+                RADIO_STOP();
+                adv_evt.phase = 0;
+            } else {
+                adv_evt.phase = GAP_LEGACY_ADV_RX;
+                adv_evt.deadline = RADIO_TICKS() + HW_TICKS_FROM_US(800);
+            }
+        }
+
+        if (adv_evt.phase == GAP_LEGACY_ADV_RX) {
+            if (adv_evt.scan_resp_started) {
+                adv_evt.phase = GAP_LEGACY_ADV_SCAN_RESPONSE_TX;
+                adv_evt.deadline = RADIO_TICKS() + HW_TICKS_FROM_US(1000);
+            }
+            else if (gap_rx.ready)
+                adv_evt.channel = 39;
+            else if (RADIO_TICKS() < adv_evt.deadline)
+                return 0;
         }
 
         if (adv_evt.phase == GAP_LEGACY_ADV_SCAN_RESPONSE_TX) {
             if (!RADIO_TX_DONE()) {
-                if (RADIO_TICKS() < adv_evt.deadline) return 0;
+                if (RADIO_TICKS() < adv_evt.deadline)
+                    return 0;
                 RADIO_STOP();
                 adv_evt.rx_event = adv_evt.phase = 0;
                 return -1;
-            }
-        }
-        else {
-            if (adv_evt.phase == GAP_LEGACY_ADV_RX) {
-                if (gap_rx.ready)
-                    adv_evt.channel = 39;
-                else if (RADIO_TICKS() < adv_evt.deadline)
-                    return 0;
             }
         }
         RADIO_STOP();
@@ -2246,7 +2247,8 @@ int gap_send_due(
     }
 
     if (pdu_type == ADV_DIRECT_IND) {
-        if (target_type) adv_evt.adv_frame[0] |= 0x80;
+        if (target_type)
+            adv_evt.adv_frame[0] |= 0x80;
         adv_evt.adv_frame[1] = 12;
         memcpy(adv_evt.adv_frame + 8, gap_adv.target.address, 6);
     }
