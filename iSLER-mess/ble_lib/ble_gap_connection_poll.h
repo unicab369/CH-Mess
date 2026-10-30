@@ -14,6 +14,18 @@ static void gap_conn_send_queued(void) {
     if (gap_conn_security_busy(conn) || conn->tx_frame[1]) return;
     // Wait for feature exchanges before starting Central updates, channel-map changes, or other LL procedures.
     if (conn->c_features.request_pending || conn->c_features.ext_pending) return;
+    // The other device or an earlier request is still negotiating a change, so don’t send another change yet.
+    if (conn->procedure_state.procedure_flags ||
+        conn->procedure_state.params_state != GAP_CONN_PARAMS_NONE ||
+        conn->procedure_state.length ||
+        conn->procedure_state.phy_request ||
+        conn->c_rate.update_pending ||
+        conn->c_subrate.procedure_state != GAP_SUBRATE_IDLE
+#if GAP_PERIPHERAL_SUPPORT
+        || (!conn->is_central && (conn->peripheral.rate_req_pending ||
+                                  conn->peripheral.rate_ack_waiting))
+#endif // GAP_PERIPHERAL_SUPPORT
+    ) return;
 
 #if GAP_CENTRAL_SUPPORT
     if (conn->is_central) {

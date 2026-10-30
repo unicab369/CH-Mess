@@ -2376,7 +2376,7 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t supported = RADIO_PHY_MASK() & 7;
 
-    if (gap_conn_procedure_busy(conn) ||
+    if (gap_conn_timing_busy(conn) ||
         !(supported & 6) || !tx || !rx ||
         (tx & ~supported) || (rx & ~supported)
     ) return 0;
