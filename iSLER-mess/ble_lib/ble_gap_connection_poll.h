@@ -78,7 +78,7 @@ static void gap_conn_send_queued(void) {
     }
 #endif // GAP_CENTRAL_SUPPORT
 
-    if (conn->queue_state.length) {
+    if (conn->queued_action == GAP_QUEUED_LENGTH) {
         gap_send_data_length(conn, LL_LENGTH_REQ);
         return;
     }

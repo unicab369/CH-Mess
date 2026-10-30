@@ -277,12 +277,14 @@ enum {
     GAP_QUEUED_SUBRATE_REQUEST = 1u << 3,
     GAP_QUEUED_PARAMS_REQUEST = 1u << 4,
     GAP_QUEUED_PHY = 1u << 5,
+    GAP_QUEUED_LENGTH = 1u << 6,
     GAP_QUEUED_RATE_MASK = GAP_QUEUED_RATE_SET | GAP_QUEUED_RATE_REQUEST,
     GAP_QUEUED_SUBRATE_MASK = GAP_QUEUED_SUBRATE_UPDATE | GAP_QUEUED_SUBRATE_REQUEST,
     GAP_QUEUED_PARAMS_MASK = GAP_QUEUED_PARAMS_REQUEST,
     GAP_QUEUED_TIMING_MASK = GAP_QUEUED_RATE_MASK | GAP_QUEUED_SUBRATE_MASK |
                              GAP_QUEUED_PARAMS_MASK,
-    GAP_QUEUED_ACTION_MASK = GAP_QUEUED_TIMING_MASK | GAP_QUEUED_PHY
+    GAP_QUEUED_ACTION_MASK = GAP_QUEUED_TIMING_MASK | GAP_QUEUED_PHY |
+                             GAP_QUEUED_LENGTH
 };
 enum {
     GAP_PENDING_TIMING_UPDATE = 1u << 0,
@@ -698,7 +700,7 @@ typedef struct {
         uint8_t params_state;
         // PHY procedure response state associated with phy_state.
         uint8_t phy_request;
-        // Data-length exchange state associated with length_status and queue_state.length.
+        // Data-length exchange state associated with length_status.
         uint8_t length;
     } procedure_state;
 
@@ -708,8 +710,6 @@ typedef struct {
         volatile uint8_t tx_queued;
         // rx_packet contains a received packet waiting for connection processing.
         volatile uint8_t rx_ready;
-        // A data-length update is waiting; local limit is in local_tx_octets.
-        volatile uint8_t length;
     } queue_state;
 
     // Tracks radio receive/reply progress and disconnect handling between polls.

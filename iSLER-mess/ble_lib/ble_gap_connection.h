@@ -543,7 +543,8 @@ static void gap_send_data_length(gap_conn_context *conn, uint8_t opcode) {
     if (conn->tx_frame[1]) return;
 
     if (opcode == LL_LENGTH_REQ) {
-        conn->queue_state.length = 0;
+        if (conn->queued_action == GAP_QUEUED_LENGTH)
+            conn->queued_action = GAP_QUEUED_NONE;
         conn->procedure_state.length = 1;
         conn->length_started_ms = GET_MILLIS();
     }
@@ -1484,7 +1485,7 @@ static uint8_t gap_conn_control(
             conn->procedure_state.length ||
             (conn->queued_action & GAP_QUEUED_PARAMS_MASK) ||
             conn->queued_action == GAP_QUEUED_PHY ||
-            conn->queue_state.length
+            conn->queued_action == GAP_QUEUED_LENGTH
         ) {
             error = GAP_LL_ERR_COLLISION;
         }
@@ -1635,7 +1636,7 @@ static uint8_t gap_conn_control(
                 conn->queued_action != GAP_QUEUED_SUBRATE_UPDATE &&
                 conn->queued_action != GAP_QUEUED_PHY &&
                 !conn->procedure_state.phy_request &&
-                !conn->queue_state.length &&
+                conn->queued_action != GAP_QUEUED_LENGTH &&
                 !conn->procedure_state.length
             ) {
                 error = GAP_LL_ERR_UNSUPPORTED_PARAM;
@@ -1800,8 +1801,8 @@ static uint8_t gap_conn_control(
                 gap_send_data_length(conn, LL_LENGTH_RSP);
 
                 // A queued local change is advertised in this response.
-                if (conn->queue_state.length) {
-                    conn->queue_state.length = 0;
+                if (conn->queued_action == GAP_QUEUED_LENGTH) {
+                    conn->queued_action = GAP_QUEUED_NONE;
                     conn->length_status = 0;
                 }
             }
@@ -1968,7 +1969,6 @@ static uint8_t gap_conn_pending_procedure_busy(const gap_conn_context *conn) {
         conn->procedure_state.phy_request ||
         gap_conn_central_queued(conn) ||
         conn->queued_action != GAP_QUEUED_NONE ||
-        conn->queue_state.length ||
         conn->link_state.terminate_after_reply ||
         conn->link_state.terminate_queued ||
         conn->link_state.terminate_sent;
@@ -2373,7 +2373,7 @@ int gap_data_length_set(uint16_t octets) {
                                 MIN(octets, conn->remote_data_length.rx_octets));
 
     conn->length_status = GAP_CONNECTION_PENDING;
-    conn->queue_state.length = 1;
+    conn->queued_action = GAP_QUEUED_LENGTH;
     GAP_CRITICAL_EXIT(irq_state);
     return 1;
 }
