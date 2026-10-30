@@ -1758,7 +1758,10 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
                 if (gap_encrypt(conn->smp.key.secure_ltk, (const uint8_t[8]){0}, 0))
                     conn->smp.encryption_started = 1;
             }
-            else if (!conn->is_central && gap_key_request(NULL, NULL)) {
+            else if (!conn->is_central &&
+                (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
+                conn->security.phase == GAP_ENC_KEY_REQUEST
+            ) {
                 uint8_t identifiers = (uint8_t)conn->security.ediv |
                                     (uint8_t)(conn->security.ediv >> 8);
             // Inspect all Rand bytes so this check does not exit based on their contents.
@@ -1870,7 +1873,9 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
                 conn->smp.encryption_started = 1;
             }
         }
-        else if (gap_key_request(NULL, NULL)) {
+        else if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
+                 conn->security.phase == GAP_ENC_KEY_REQUEST
+        ) {
             uint8_t zero = conn->security.ediv != 0;
             // Check every byte so timing does not reveal where nonzero key data appears.
             for (unsigned i = 0; i < 8; i++)

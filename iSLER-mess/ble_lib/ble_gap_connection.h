@@ -2663,24 +2663,6 @@ int gap_key_reply(const uint8_t ltk[16]) {
     return 1;
 }
 
-// Application facing
-// Pending Peripheral key lookup for SMP or a bond store; the application must
-// reply with that peer's matching key, or NULL if none is available.
-int gap_key_request(uint8_t random[8], uint16_t *ediv) {
-    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        gap_conn_ctx[gap_conn_slot].security.phase != GAP_ENC_KEY_REQUEST
-    ) return 0;
-
-    if (random) memcpy(random, gap_conn_ctx[gap_conn_slot].security.random, 8);
-    if (ediv) *ediv = gap_conn_ctx[gap_conn_slot].security.ediv;
-    return 1;
-}
-
-// Application facing
-// Report achieved security only after encryption completes, never during pairing.
-uint8_t gap_security_status(void) {
-    return gap_conn_ctx[gap_conn_slot].security.status;
-}
 #endif // GAP_SECURITY_SUPPORT >= 1
 
 // Application facing

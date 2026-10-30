@@ -4248,7 +4248,7 @@ static void start_test_encrypted_central(void) {
     assert(memcmp(tx_buffer + 2, (uint8_t[]){0x9f, 0xcd, 0xa7, 0xf4, 0x48}, 5) == 0);
     assert(gap_security->tx_counter == 1);
     receive_secure_test_pdu(3, (uint8_t[]){0x06}, 1, 0, 0, 1, 0);
-    assert(gap_encrypted() && gap_security_status() == 0);
+    assert(gap_encrypted() && gap_conn_ctx[gap_conn_slot].security.status == 0);
     assert(gap_security->rx_counter == 1 && gap_security->tx_counter == 1);
     secure_random_force = 0;
 }
@@ -4257,7 +4257,7 @@ static void test_link_encryption(void) {
     gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     assert(!gap_encrypt(encryption_ltk, encryption_random, 0));
-    assert(!gap_key_request(NULL, NULL) && !gap_key_reply(encryption_ltk));
+    assert(!gap_key_reply(encryption_ltk));
     start_test_encrypted_central();
     const uint8_t central_data[27] = {
         0x17, 0x00, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c,
@@ -4292,7 +4292,7 @@ static void test_link_encryption(void) {
     assert(gap_security->tx_opcode == 0x13 && tx_buffer[1] == 5);
     // Authentication failure disconnects before a packet reaches the application.
     receive_secure_test_pdu(1, central_data, 27, 4, 0, 1, 1);
-    assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_security_status() == 0x3d);
+    assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_conn_ctx[gap_conn_slot].security.status == 0x3d);
     assert(memcmp(gap_security->session_key, (uint8_t[16]){0}, 16) == 0);
     assert(memcmp(conn->rx_packet.data, (uint8_t[GAP_CONN_DATA_MAX]){0}, GAP_CONN_DATA_MAX) ==
            0);
@@ -4326,7 +4326,10 @@ static void test_link_encryption(void) {
     receive_test_control(0x03, request, sizeof(request));
     assert(conn->tx_frame[2] == 0x04 && conn->tx_frame[1] == 13);
     uint8_t requested_random[8]; uint16_t ediv;
-    assert(gap_key_request(requested_random, &ediv));
+    assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
+           gap_security->phase == GAP_ENC_KEY_REQUEST);
+    memcpy(requested_random, gap_security->random, 8);
+    ediv = gap_security->ediv;
     assert(ediv == 0x2474 && memcmp(requested_random, encryption_random, 8) == 0);
     assert(gap_key_reply(encryption_ltk));
     receive_test_link_packet(1);
@@ -4346,7 +4349,7 @@ static void test_link_encryption(void) {
     receive_test_link_packet(1);
     assert(conn->tx_frame[2] == 0x02 && conn->tx_frame[3] == 0x06);
     receive_test_link_packet(1);
-    assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_security_status() == 0x06);
+    assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_conn_ctx[gap_conn_slot].security.status == 0x06);
     secure_random_force = 0;
 
     // Missing key during an initial start rejects without marking the link encrypted.
@@ -4355,14 +4358,14 @@ static void test_link_encryption(void) {
     assert(gap_key_reply(NULL));
     receive_test_link_packet(1);
     assert(conn->tx_frame[2] == 0x11 && conn->tx_frame[4] == 0x06);
-    assert(!gap_encrypted() && !gap_key_request(NULL, NULL));
+    assert(!gap_encrypted() && gap_security->phase != GAP_ENC_KEY_REQUEST);
     gap_conn_end();
     start_test_central_link();
     assert(gap_encrypt(encryption_ltk, encryption_random, 0));
     receive_test_link_packet(1);
     receive_test_control(0x04, peripheral_entropy, 12);
     receive_test_control(0x11, (uint8_t[]){0x03, 0x06}, 2);
-    assert(gap_security_status() == 0x06 && !gap_security->phase && (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)));
+    assert(gap_conn_ctx[gap_conn_slot].security.status == 0x06 && !gap_security->phase && (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)));
     gap_conn_end();
 
     // An unexpected data PDU during the handshake is never delivered.
@@ -4372,7 +4375,7 @@ static void test_link_encryption(void) {
     rx_frame[0] = 1 | (conn->link_layer.expected_rx_sn << 3) | ((conn->link_layer.tx_sn ^ 1) << 2);
     rx_frame[1] = 1; rx_frame[2] = 0x55; conn->link_state.rx_armed = 1;
     gap_hw_received();
-    assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_security_status() == 0x3d);
+    assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_conn_ctx[gap_conn_slot].security.status == 0x3d);
 
     // Negotiated larger payloads retain room for all four MIC bytes on the wire.
     start_test_encrypted_central();
@@ -4401,7 +4404,7 @@ static void test_link_encryption(void) {
     // Resource failure and timeout never fall back to predictable randomness.
     start_test_central_link(); secure_random_available = 0;
     assert(!gap_encrypt(encryption_ltk, encryption_random, 0));
-    assert(gap_security_status() == 0x1f && !gap_security->phase);
+    assert(gap_conn_ctx[gap_conn_slot].security.status == 0x1f && !gap_security->phase);
     conn->is_central = 0;
     receive_test_control(0x03, request, sizeof(request));
     assert(conn->tx_frame[2] == 0x11 && conn->tx_frame[4] == 0x1f);
@@ -4413,12 +4416,12 @@ static void test_link_encryption(void) {
     now_ms = gap_security->started_ms + 40000;
     conn->link_layer.last_rx_ms = now_ms;
     gap_conn_poll();
-    assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_security_status() == 0x22);
+    assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_conn_ctx[gap_conn_slot].security.status == 0x22);
     start_test_encrypted_central();
     gap_security->tx_counter = UINT64_C(1) << 39;
     assert(gap_send_data(1, central_data, 1));
     receive_test_link_packet(1);
-    assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_security_status() == 0x3d);
+    assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_conn_ctx[gap_conn_slot].security.status == 0x3d);
 }
 
 // Feed SMP through the shared RX slot, including fragmented L2CAP packets.
