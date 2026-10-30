@@ -1660,21 +1660,22 @@ static inline int ble_gap_gatt_poll(
         int encrypted = gap_encrypted();
         int authenticated = 0;
         uint8_t key_size = 0;
+
 #if GAP_SECURITY_SUPPORT >= 2
         authenticated = gap_authenticated();
         key_size = gap_key_size();
 #endif
 
-        transport->encrypted = encrypted != 0;
-        transport->authenticated = authenticated != 0;
-        transport->key_size = transport->encrypted ? key_size : 0;
+        transport->encrypted = encrypted;
+        transport->authenticated = authenticated;
+        transport->key_size = key_size;
 
         if (transport->server) {
             ble_gatt_server *server = transport->server;
-            server->encrypted = transport->encrypted || transport->authenticated;
-            server->authenticated = transport->authenticated;
-            server->encryption_key_size = transport->key_size >= 7 &&
-                transport->key_size <= 16 ? transport->key_size : 0;
+            server->encrypted = encrypted || authenticated;
+            server->authenticated = authenticated;
+            server->encryption_key_size = key_size >= 7 && key_size <= 16 ?
+                                            key_size : 0;
             if (!server->encrypted)
                 server->encryption_key_size = 0;
         }
