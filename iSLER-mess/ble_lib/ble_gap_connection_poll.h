@@ -374,6 +374,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     // Newly added
     if (gap_ext_scan.request_phase == GAP_EXT_REQ_SCAN_RX) {
         gap_ext_fields response;
+
         if (pdu_type == ADV_EXT_IND &&
             gap_ext_adv_decode(frame, (size_t)frame[1] + 2, &response) &&
             response.mode == 0 &&
@@ -382,7 +383,8 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
               memcmp(response.identity.peer.address, gap_scan.request + 8, 6) == 0)) &&
             (!response.has_target ||
              (((gap_scan.request[0] >> 6) & 1) == response.target.type &&
-              memcmp(response.target.address, gap_scan.request + 2, 6) == 0))) {
+              memcmp(response.target.address, gap_scan.request + 2, 6) == 0))
+        ) {
             memcpy(gap_ext_scan.frame, frame, (size_t)frame[1] + 2);
             gap_ext_scan.rssi = RADIO_RSSI();
             gap_ext_scan.ticks = received_ticks;
@@ -390,20 +392,23 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             gap_ext_scan.ready = 1;
             gap_ext_scan.request_phase = GAP_EXT_REQ_NONE;
         }
+
         gap_conn_slot = previous_slot;
         return;
     }
 #if GAP_CENTRAL_SUPPORT
     if (gap_ext_scan.request_phase == GAP_EXT_REQ_CONNECT_RX) {
         const uint8_t *request = adv_tx.connect_request;
+
         if (pdu_type == ADV_EXT_IND && frame[1] == 14 &&
-            (frame[0] & 0xcf) ==
-                (ADV_EXT_IND | ((request[0] & 0x80) >> 1) |
-                 ((request[0] & 0x40) << 1)) &&
+            (frame[0] & 0xcf) == (ADV_EXT_IND | ((request[0] & 0x80) >> 1) | ((request[0] & 0x40) << 1)) &&
             frame[2] == 13 && frame[3] == 0x03 &&
             memcmp(frame + 4, request + 8, 6) == 0 &&
             memcmp(frame + 10, request + 2, 6) == 0
-        ) gap_ext_scan.request_phase = GAP_EXT_REQ_CONNECT_DONE;
+        ) {
+            gap_ext_scan.request_phase = GAP_EXT_REQ_CONNECT_DONE;
+        }
+
         gap_conn_slot = previous_slot;
         return;
     }
