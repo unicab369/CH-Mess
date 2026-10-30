@@ -80,10 +80,11 @@ static void gap_conn_send_queued(void) {
 
     if (!conn->queued_action) return;
 
+    //! Length
     if (conn->queued_action == GAP_QUEUED_LENGTH) {
         gap_send_data_length(conn, LL_LENGTH_REQ);
     }
-    // Higher-priority queued procedures are handled above before sending PHY.
+    //! PHY
     else if (conn->queued_action == GAP_QUEUED_PHY) {
         // Encode local preferences once earlier TX has been acknowledged.
         conn->queued_action = GAP_QUEUED_NONE;
@@ -100,6 +101,7 @@ static void gap_conn_send_queued(void) {
     else if (!conn->c_features.known) {
         gap_send_feature_request(conn);
     }
+    //! params
     else if (conn->queued_action & GAP_QUEUED_PARAMS_MASK) {
         if (!(conn->c_features.peer_feature_0 & 0x02)) {
             conn->queued_action = GAP_QUEUED_NONE;
@@ -832,15 +834,18 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         !gap_ext_adv_connect.response_started && frame[1] == 34 &&
         ((frame[0] >> 7) & 1) == gap_ext_adv_connect.address_type &&
         memcmp(frame + 8, gap_ext_adv_connect.address, 6) == 0 &&
-        gap_conn_request_valid(frame) && gap_conn_free_slot() >= 0) {
+        gap_conn_request_valid(frame) && gap_conn_free_slot() >= 0
+    ) {
         uint8_t initiator_type = (frame[0] >> 6) & 1;
         int peer_slot = gap_identity_find(frame + 2, initiator_type);
+
         if (gap_peer_allowed(peer_slot, frame + 2, initiator_type) &&
 #if GAP_PRIVACY_SUPPORT
             (!gap_privacy.connection_filter || peer_slot >= 0) &&
 #endif
             (!gap_adv_filter.connection_accept ||
-             gap_accept_list_match(frame + 2, initiator_type, peer_slot))) {
+             gap_accept_list_match(frame + 2, initiator_type, peer_slot))
+        ) {
             memcpy(gap_ext_adv_connect.request, frame, 36);
             gap_ext_adv_connect.request_ticks = received_ticks;
             gap_ext_adv_frame[0] = ADV_EXT_IND |
@@ -852,6 +857,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             memcpy(gap_ext_adv_frame + 10, frame + 2, 6);
             RADIO_TX_CLEAR_DONE();
             gap_ext_adv_connect.response_started = 1;
+
             if (!RADIO_IFS_TX_TIMER_ARM(gap_ext_adv_frame, BLE_ADV_ACCESS_ADDRESS, 0, 0,
                                     gap_ext_adv_connect.phy, gap_ext_adv_connect.phy, 0x555555)
             ) {
@@ -862,6 +868,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         gap_conn_slot = previous_slot;
         return;
     }
+
     if (periodic_scan && pdu_type == CONNECT_IND && frame[1] == 34 &&
         !gap_ext_scan.ready &&
         gap_pawr_conn_req_start(gap_ext_scan.periodic_slot, frame, 36)) {
@@ -909,6 +916,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         gap_ext_adv_scan.response_ticks = RADIO_TICKS() + HW_TICKS_FROM_US(150);
         gap_ext_adv_scan.response_started = 1;
         gap_extended_adv_set *set = &gap_ext_adv[gap_ext_aux.set_id];
+
         if (!RADIO_IFS_TX_TIMER_ARM(gap_ext_adv_frame, BLE_ADV_ACCESS_ADDRESS, 0, 0,
                                     set->aux_phy, set->aux_phy, 0x555555)
         ) {
