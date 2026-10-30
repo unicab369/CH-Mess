@@ -12,6 +12,8 @@ static void gap_conn_send_queued(void) {
     gap_send_security(conn);
 #endif // GAP_SECURITY_SUPPORT >= 1
     if (gap_conn_security_busy(conn) || conn->tx_frame[1]) return;
+    // Wait for feature exchange before starting Central updates, channel-map changes, or other LL procedures.
+    if (conn->c_features.request_pending) return;
 
 #if GAP_CENTRAL_SUPPORT
     if (conn->is_central) {
@@ -36,9 +38,8 @@ static void gap_conn_send_queued(void) {
             return;
         }
 
-        if (!conn->c_features.request_pending &&
-            conn->central.channel_report_queued
-        ) {
+        // Confirm channel-reporting support before sending the queued indication.
+        if (conn->central.channel_report_queued) {
             if (!conn->c_features.known) {
                 gap_send_feature_request(conn);
                 return;
@@ -65,9 +66,7 @@ static void gap_conn_send_queued(void) {
     }
 #endif // GAP_CENTRAL_SUPPORT
 
-    if (conn->queue_state.local_params &&
-        !conn->c_features.request_pending
-    ) {
+    if (conn->queue_state.local_params) {
         // Exchange features before sending the application's timing range.
         if (!conn->c_features.known) {
             gap_send_feature_request(conn);
@@ -117,8 +116,6 @@ static void gap_conn_send_queued(void) {
         conn->tx_frame[4] = conn->phy_state.preferred.rx;
         return;
     }
-
-    if (conn->c_features.request_pending) return;
 
     //! subrate
     if (conn->c_subrate.queued_flags) {
