@@ -1454,7 +1454,7 @@ static int gap_pawr_conn_req_start(uint8_t slot, const uint8_t *request, size_t 
                         sync->params.crc_init);
     // The received AUX_CONNECT_REQ is the previous packet on air. Start the
     // response at T_IFS from the RX callback, while that deadline is usable.
-    if (!RADIO_IFS_TX_TIMER_ARM()) return 0;
+    if (!RADIO_IFS_TX_TIMER_ARM(gap_ext_adv_frame)) return 0;
     gap_ext_pawr.connect.reply_armed = 1;
     gap_ext_pawr.connect.reply_deadline_ms = GET_MILLIS() + 5;
     return 1;

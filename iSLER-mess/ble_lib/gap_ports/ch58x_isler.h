@@ -238,7 +238,14 @@ int RADIO_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel) {
 
 #endif
 
-int RADIO_IFS_TX_TIMER_ARM(void) {
+int RADIO_IFS_TX_TIMER_ARM(const uint8_t *frame) {
+    gap_link.tx_frame = frame;
+#ifdef CH571_CH573
+    DMA->TXBUF = (uint32_t)frame;
+#else
+    LL->TXBUF = (uint32_t)frame;
+#endif
+
     if (gs_iSLERLink.phy_mode != gap_phy_mode(gap_link.tx_phy)) {
         iSLERLinkConfig(gap_link.access_address, gap_link.channel,
                        gap_phy_mode(gap_link.tx_phy),
@@ -383,15 +390,6 @@ void RADIO_LINK_RX(void) { iSLERLinkRX(); }
 void RADIO_SCAN_RX(uint8_t channel) {
     gap_link.receive_after_tx = 0;
     iSLERRX(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M);
-}
-
-void RADIO_TX_BUFFER(const uint8_t *frame) {
-    gap_link.tx_frame = frame;
-#ifdef CH571_CH573
-    DMA->TXBUF = (uint32_t)frame;
-#else
-    LL->TXBUF = (uint32_t)frame;
-#endif
 }
 
 int RADIO_TX_DONE(void) { return (tx_done & LL_TX) != 0; }

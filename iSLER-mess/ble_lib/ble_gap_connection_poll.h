@@ -331,7 +331,7 @@ static int gap_ext_aux_request_start(const uint8_t *frame) {
     gap_ext_scan.request_phase = phase;
     gap_ext_scan.request_deadline_ms = GET_MILLIS() +
                                       (phase == GAP_EXT_REQ_SCAN_TX ? 30 : 8);
-    if (!RADIO_IFS_TX_TIMER_ARM()) {
+    if (!RADIO_IFS_TX_TIMER_ARM(request)) {
         gap_ext_scan.request_phase = GAP_EXT_REQ_NONE;
         return 0;
     }
@@ -791,8 +791,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         // reply TX must start T_IFS after its on-air end, including CRC.
         // Set the buffer before arming the timed TX start. If processing took
         // too long, skip this reply rather than transmitting late.
-        RADIO_TX_BUFFER(transmit);
-        if (RADIO_IFS_TX_TIMER_ARM())
+        if (RADIO_IFS_TX_TIMER_ARM(transmit))
             conn->link_state.event_replied = 1;
         gap_conn_slot = previous_slot;
         return;
@@ -839,7 +838,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
                                gap_ext_adv_connect.phy, gap_ext_adv_connect.phy,
                                0x555555);
             gap_ext_adv_connect.response_started = 1;
-            if (!RADIO_IFS_TX_TIMER_ARM()) {
+            if (!RADIO_IFS_TX_TIMER_ARM(gap_ext_adv_frame)) {
                 gap_ext_adv_connect.response_started = 0;
                 gap_ext_adv_connect.waiting = 0;
             } else gap_ext_aux.window_deadline = RADIO_TICKS() + HW_TICKS_FROM_US(1150);
@@ -891,10 +890,9 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         // The received scan request is the previous packet on air; AUX_SCAN_RSP
         // must start T_IFS after the request's on-air end.
         // Prepare the buffer and timing before marking the response and starting TX.
-        RADIO_TX_BUFFER(gap_ext_adv_frame);
         gap_ext_adv_scan.response_ticks = RADIO_TICKS() + HW_TICKS_FROM_US(150);
         gap_ext_adv_scan.response_started = 1;
-        if (!RADIO_IFS_TX_TIMER_ARM()) {
+        if (!RADIO_IFS_TX_TIMER_ARM(gap_ext_adv_frame)) {
             gap_ext_adv_scan.response_started = 0;
             gap_ext_adv_scan.waiting = 0;
         }
@@ -1090,7 +1088,8 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 
             RADIO_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, 37 + gap_scan.channel_index,
                                gap_scan.request, 1, GAP_PHY_1M, GAP_PHY_1M, 0x555555);
-            if (!RADIO_IFS_TX_TIMER_ARM()) gap_scan.active_pending = 0;
+            if (!RADIO_IFS_TX_TIMER_ARM(gap_scan.request))
+                gap_scan.active_pending = 0;
             gap_conn_slot = previous_slot;
             return;
         }
@@ -1135,9 +1134,9 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             if (gap_adv.scan_resp_len)
                 memcpy(adv_evt.scan_frame + 8, adv_tx.advertising.scan_response, gap_adv.scan_resp_len);
 
-            RADIO_TX_BUFFER(adv_evt.scan_frame);
             adv_evt.scan_resp_started = 1;
-            if (!RADIO_IFS_TX_TIMER_ARM()) adv_evt.scan_resp_started = 0;
+            if (!RADIO_IFS_TX_TIMER_ARM(adv_evt.scan_frame))
+                adv_evt.scan_resp_started = 0;
             gap_conn_slot = previous_slot;
             return;
         }

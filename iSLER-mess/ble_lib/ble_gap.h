@@ -226,10 +226,9 @@ void RADIO_LINK_CONFIG(
 uint8_t RADIO_PHY_MASK(void);
 void RADIO_LINK_TX(void);
 int RADIO_LINK_TX_AT(uint64_t start_ticks);
-int RADIO_IFS_TX_TIMER_ARM(void);
+int RADIO_IFS_TX_TIMER_ARM(const uint8_t *frame);
 void RADIO_LINK_RX(void);
 void RADIO_SCAN_RX(uint8_t channel);
-void RADIO_TX_BUFFER(const uint8_t *frame);
 int RADIO_TX_DONE(void);
 void RADIO_TX_CLEAR_DONE(void);
 uint64_t RADIO_TICKS(void);

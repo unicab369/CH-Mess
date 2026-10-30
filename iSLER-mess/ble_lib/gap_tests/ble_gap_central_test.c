@@ -233,9 +233,9 @@ void RADIO_SCAN_RX(uint8_t channel) {
     configured_radio_channel = channel;
     scan_rx_count++;
 }
-void RADIO_TX_BUFFER(const uint8_t *frame) { tx_buffer = frame; }
 void RADIO_TX_TIMER_BEGIN(void) {}
-int RADIO_IFS_TX_TIMER_ARM(void) {
+int RADIO_IFS_TX_TIMER_ARM(const uint8_t *frame) {
+    tx_buffer = frame;
     if (fake_radio_ticks_enabled && fake_radio_tick_autoincrement &&
         configured_access_address != BLE_ADV_ACCESS_ADDRESS)
         fake_radio_ticks += HW_TICKS_FROM_US(150);
