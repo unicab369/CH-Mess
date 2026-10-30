@@ -78,11 +78,11 @@ static void gap_conn_send_queued(void) {
     }
 #endif // GAP_CENTRAL_SUPPORT
 
+    if (!conn->queued_action) return;
+
     if (conn->queued_action == GAP_QUEUED_LENGTH) {
         gap_send_data_length(conn, LL_LENGTH_REQ);
-        return;
     }
-
     // Higher-priority queued procedures are handled above before sending PHY.
     else if (conn->queued_action == GAP_QUEUED_PHY) {
         // Encode local preferences once earlier TX has been acknowledged.
@@ -95,16 +95,12 @@ static void gap_conn_send_queued(void) {
         conn->tx_frame[2] = LL_PHY_REQ;
         conn->tx_frame[3] = conn->phy_state.preferred.tx;
         conn->tx_frame[4] = conn->phy_state.preferred.rx;
-        return;
     }
-
     // Queued timing actions need the peer's base feature set.
-    if (conn->queued_action && !conn->c_features.known) {
+    else if (!conn->c_features.known) {
         gap_send_feature_request(conn);
-        return;
     }
-
-    if (conn->queued_action & GAP_QUEUED_PARAMS_MASK) {
+    else if (conn->queued_action & GAP_QUEUED_PARAMS_MASK) {
         if (!(conn->c_features.peer_feature_0 & 0x02)) {
             conn->queued_action = GAP_QUEUED_NONE;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
