@@ -35,8 +35,10 @@ int RADIO_ADV_TX_PHY(uint8_t *frame, uint8_t len, uint8_t channel, uint8_t phy) 
     (void)frame; (void)len; (void)channel; (void)phy; return 1;
 }
 void RADIO_LINK_CONFIG(uint32_t aa, uint8_t channel, uint8_t *frame,
-                        uint8_t tx, uint8_t tx_phy, uint8_t rx_phy) {
+                        uint8_t tx, uint8_t tx_phy, uint8_t rx_phy,
+                        uint32_t crc_init) {
     (void)aa; (void)channel; (void)tx_phy; (void)rx_phy;
+    (void)crc_init;
     configured_frame = frame;
     configured_tx = tx;
 }
@@ -49,7 +51,6 @@ int RADIO_IFS_TX_TIMER_ARM(void) { RADIO_LINK_TX(); return 1; }
 void RADIO_LINK_RX(void) { rx_started++; }
 void RADIO_SCAN_RX(uint8_t channel) { (void)channel; }
 void RADIO_TX_BUFFER(const uint8_t *frame) { (void)frame; }
-void RADIO_CRC_INIT(uint32_t crc_init) { (void)crc_init; }
 int RADIO_TX_DONE(void) { return 1; }
 void RADIO_TX_CLEAR_DONE(void) {}
 uint64_t RADIO_TICKS(void) { return radio_ticks++; }

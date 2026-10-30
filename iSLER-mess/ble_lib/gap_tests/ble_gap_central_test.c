@@ -366,10 +366,10 @@ int RADIO_LINK_TX_AT(uint64_t start_ticks) {
 }
 int RADIO_TX_DONE(void) { return fake_tx_done; }
 void RADIO_TX_CLEAR_DONE(void) {}
-void RADIO_CRC_INIT(uint32_t crc_init) { configured_crc_init = crc_init; }
 void RADIO_LINK_CONFIG(
     uint32_t access_address, uint8_t channel,
-                            uint8_t *frame, uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy
+                            uint8_t *frame, uint8_t receive_after_tx,
+                            uint8_t tx_phy, uint8_t rx_phy, uint32_t crc_init
 ) {
     configured_access_address = access_address;
     configured_radio_channel = channel;
@@ -377,6 +377,7 @@ void RADIO_LINK_CONFIG(
     configured_receive_after_tx = receive_after_tx;
     configured_tx_phy = tx_phy;
     configured_rx_phy = rx_phy;
+    configured_crc_init = crc_init;
 }
 void RADIO_LINK_RX(void) {
     link_rx_count++;

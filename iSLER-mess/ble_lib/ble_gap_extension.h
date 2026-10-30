@@ -175,9 +175,8 @@ static void gap_ext_aux_primary_done(void) {
     if (gap_ext_aux.phase != GAP_EXT_AUX_PRIMARY) return;
     gap_extended_adv_set *set = &gap_ext_adv[gap_ext_aux.set_id];
     RADIO_TX_CLEAR_DONE();
-    RADIO_CRC_INIT(0x555555);
     RADIO_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, 0, gap_ext_aux_frame, 0,
-                       set->aux_phy, set->aux_phy);
+                       set->aux_phy, set->aux_phy, 0x555555);
     gap_ext_aux.phase = GAP_EXT_AUX_PENDING;
     if (!RADIO_LINK_TX_AT(gap_ext_aux.primary_start + HW_TICKS_FROM_US(480))) {
         gap_ext_aux.phase = GAP_EXT_AUX_FAILED;
@@ -1451,8 +1450,8 @@ static int gap_pawr_conn_req_start(uint8_t slot, const uint8_t *request, size_t 
                         (uint16_t)(sync->last_event_counter ^ sync->pawr.subevent));
     RADIO_TX_CLEAR_DONE();
     RADIO_LINK_CONFIG(sync->params.access_address, channel,
-                        gap_ext_adv_frame, 0, sync->phy, sync->phy);
-    RADIO_CRC_INIT(sync->params.crc_init);
+                        gap_ext_adv_frame, 0, sync->phy, sync->phy,
+                        sync->params.crc_init);
     // The received AUX_CONNECT_REQ is the previous packet on air. Start the
     // response at T_IFS from the RX callback, while that deadline is usable.
     if (!RADIO_IFS_TX_TIMER_ARM()) return 0;
@@ -1543,9 +1542,9 @@ static int gap_pawr_exchange(
     gap_ext_pawr.connect.waiting = 1;
     gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_TX_PENDING;
     RADIO_TX_CLEAR_DONE();
-    RADIO_CRC_INIT(set->periodic.params.crc_init);
     RADIO_LINK_CONFIG(set->periodic.params.access_address, channel,
-                        request, 1, set->aux_phy, set->aux_phy);
+                        request, 1, set->aux_phy, set->aux_phy,
+                        set->periodic.params.crc_init);
 
     if (!RADIO_LINK_TX_AT(request_start_ticks)) {
         gap_ext_pawr.connect.waiting = 0;
@@ -1629,9 +1628,9 @@ static int gap_pawr_advertiser_poll(void) {
             if (data_len) memcpy(frame + 6, set->periodic.data, data_len);
 
             RADIO_TX_CLEAR_DONE();
-            RADIO_CRC_INIT(set->periodic.params.crc_init);
             RADIO_LINK_CONFIG(set->periodic.params.access_address, channel,
-                               frame, 0, set->aux_phy, set->aux_phy);
+                               frame, 0, set->aux_phy, set->aux_phy,
+                               set->periodic.params.crc_init);
             if (!RADIO_LINK_TX_AT(tx_start_ticks)) {
                 gap_ext_pawr.advertiser.phase = GAP_PAWR_ADV_IDLE;
                 RADIO_STOP();
@@ -1665,9 +1664,8 @@ static int gap_pawr_advertiser_poll(void) {
 
                 gap_ext_pawr.response.ready = 0;
                 gap_ext_pawr.response.listening = 1;
-                RADIO_CRC_INIT(set->periodic.params.crc_init);
                 RADIO_LINK_CONFIG(set->periodic.response_access, channel, NULL, 0,
-                    set->aux_phy, set->aux_phy);
+                    set->aux_phy, set->aux_phy, set->periodic.params.crc_init);
                 RADIO_LINK_RX();
                 gap_rx_armed = 1;
                 return 1;
@@ -1735,9 +1733,8 @@ static int gap_ext_chain_arm(uint64_t start_ticks) {
     gap_ext_chain.remaining -= chunk;
 
     RADIO_TX_CLEAR_DONE();
-    RADIO_CRC_INIT(0x555555); // Advertising-channel CRCInit.
     RADIO_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, gap_ext_chain.channel,
-        gap_ext_adv_frame, 0, set->aux_phy, set->aux_phy);
+        gap_ext_adv_frame, 0, set->aux_phy, set->aux_phy, 0x555555);
     if (!RADIO_LINK_TX_AT(start_ticks)) {
         gap_ext_chain.phase = GAP_EXT_CHAIN_IDLE;
         return 0;
@@ -1775,9 +1772,9 @@ static int gap_periodic_tx_arm(uint64_t start_ticks, uint8_t first) {
         set->aux_phy, gap_periodic_train.channel, &has_chain);
 
     RADIO_TX_CLEAR_DONE();
-    RADIO_CRC_INIT(set->periodic.params.crc_init);
     RADIO_LINK_CONFIG(set->periodic.params.access_address,
-        gap_periodic_train.channel, frame, 0, set->aux_phy, set->aux_phy);
+        gap_periodic_train.channel, frame, 0, set->aux_phy, set->aux_phy,
+        set->periodic.params.crc_init);
     uint64_t now = RADIO_TICKS();
 
     if (first && start_ticks <= now + HW_TICKS_FROM_US(10)) {
@@ -2124,9 +2121,9 @@ static void gap_ext_scan_process(void) {
                     if (sync->pawr.response_data_len)
                         memcpy(response + 4, sync->pawr.response_data, sync->pawr.response_data_len);
                     RADIO_TX_CLEAR_DONE();
-                    RADIO_CRC_INIT(sync->params.crc_init);
                     RADIO_LINK_CONFIG(sync->pawr.timing.resp_access_addr, response_channel,
-                                        response, 0, sync->phy, sync->phy);
+                                        response, 0, sync->phy, sync->phy,
+                                        sync->params.crc_init);
 
                     if (RADIO_LINK_TX_AT(response_start)) {
                         gap_ext_scan.pawr_response_deadline = response_start + HW_TICKS_FROM_US(1000);
@@ -2534,7 +2531,7 @@ static void gap_ext_aux_rx_start(void) {
     }
 
     RADIO_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, 0, response, receive_after_tx,
-                       set->aux_phy, set->aux_phy);
+                       set->aux_phy, set->aux_phy, 0x555555);
     RADIO_LINK_RX();
 }
 
@@ -2550,9 +2547,8 @@ static void gap_ext_aux_primary_start(
     gap_ext_aux.phase = GAP_EXT_AUX_PRIMARY;
 
     RADIO_TX_CLEAR_DONE();
-    RADIO_CRC_INIT(0x555555);
     RADIO_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, 37, gap_ext_primary_frame, 0,
-                       GAP_PHY_1M, GAP_PHY_1M);
+                       GAP_PHY_1M, GAP_PHY_1M, 0x555555);
     RADIO_LINK_TX();
 }
 
