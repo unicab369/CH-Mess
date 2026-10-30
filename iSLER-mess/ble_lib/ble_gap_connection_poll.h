@@ -1671,6 +1671,9 @@ static inline void gap_conn_poll_all(void) {
     gap_conn_slot = selected_slot;
 }
 
+// =============================================================================
+// Hardware scan polling
+// =============================================================================
 void gap_hw_scan_poll(void) {
     uint32_t now = GET_MILLIS();
 
@@ -2064,7 +2067,9 @@ void gap_hw_scan_poll(void) {
     }
 }
 
-// Shared radio scheduling and scan report extraction.
+// =============================================================================
+// Advertising and shared radio scheduling
+// =============================================================================
 int gap_send_due(
     const uint8_t *fallback_ad, uint8_t fallback_len,
     uint32_t now, uint32_t *sent_at, uint8_t *jitter
@@ -2171,10 +2176,14 @@ int gap_send_due(
     }
 #endif
 
+// Keep this after GAP_LEGACY_ADV_SUPPORT: finish active legacy advertising
+// before privacy rotation or starting another procedure on the shared radio.
 #if GAP_PRIVACY_SUPPORT
     gap_privacy_poll(now);
 #endif // GAP_PRIVACY_SUPPORT
 
+// Keep extended advertising after GAP_PRIVACY_SUPPORT because address rotation
+// may stop or reconfigure the shared radio.
 #if GAP_EXT_ADV_SUPPORT
     int result = gap_ext_send_due(now);
     // Result: 0 = none due, 1 = handled, -1 = failure, 2 = retry.
@@ -2184,6 +2193,9 @@ int gap_send_due(
 
 #endif // GAP_EXT_ADV_SUPPORT
 
+// Keep legacy fallback after GAP_PRIVACY_SUPPORT and GAP_EXT_ADV_SUPPORT:
+// privacy rotation updates its address first, and extended advertising gets
+// priority for the shared radio.
 #if GAP_LEGACY_ADV_SUPPORT
     int send_gap = gap_adv.enabled != 0 &&
                     (int32_t)(now - gap_adv.next_event_ms) >= 0;
