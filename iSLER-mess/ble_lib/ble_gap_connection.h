@@ -516,29 +516,8 @@ static void gap_send_subrate_update(gap_conn_context *conn) {
     write_u16_le(conn->tx_frame + 11, conn->next_schedule.timeout_10ms);
 }
 
-static void gap_send_rate_ind(
-    gap_conn_context *conn, uint16_t reference_event, const uint16_t offsets[4]
-) {
+static void gap_send_rate_ind(gap_conn_context *conn) {
     if (conn->tx_frame[1]) return;
-
-    conn->next_schedule.instant = (uint16_t)(conn->link_layer.event_counter +
-                                6 * (uint32_t)conn->next_schedule.factor *
-                                (conn->next_schedule.latency + 1) + 1);
-    conn->next_schedule.win_offset = 0;
-
-    if (offsets && offsets[0] != 0xffff) {
-        // Core timing equation:
-        // Δt = (new_interval - ((Instant - reference_event) * old_interval)
-        //       % new_interval + Offset0) % new_interval.
-        int32_t old_phase = ((int16_t)(conn->next_schedule.instant - reference_event) *
-                        conn->schedule.interval_125us) % conn->next_schedule.interval_125us;
-        if (old_phase < 0)
-            old_phase += conn->next_schedule.interval_125us;
-
-        conn->next_schedule.win_offset = (uint16_t)(
-            (conn->next_schedule.interval_125us - old_phase + offsets[0]) %
-            conn->next_schedule.interval_125us);
-    }
 
     conn->c_rate.update_pending = 1;
     conn->timing_queued_action = GAP_TIMING_NONE;
@@ -1521,6 +1500,7 @@ static uint8_t gap_conn_control(
             }
 
             interval = MAX(interval, min_interval);
+
             if (interval <= maximum &&
                 gap_rate_parameters_valid(interval, factor_max, latency, continuation, timeout)
             ) {
@@ -1529,7 +1509,29 @@ static uint8_t gap_conn_control(
                 conn->next_schedule.latency = latency;
                 conn->next_schedule.continuation = continuation;
                 conn->next_schedule.timeout_10ms = timeout;
-                gap_send_rate_ind(conn, reference_event, offsets);
+
+                if (!conn->tx_frame[1]) {
+                    conn->next_schedule.instant = (uint16_t)(conn->link_layer.event_counter +
+                                                6 * (uint32_t)factor_max * (latency + 1) + 1);
+                    conn->next_schedule.win_offset = 0;
+
+                    // 0xffff means the request supplied no offset candidate.
+                    if (offsets[0] != 0xffff) {
+                        // Core timing equation:
+                        // Δt = (new_interval - ((Instant - reference_event) * old_interval)
+                        //       % new_interval + Offset0) % new_interval.
+                        int32_t old_phase = ((int16_t)(conn->next_schedule.instant - reference_event) *
+                                            conn->schedule.interval_125us) % conn->next_schedule.interval_125us;
+                        if (old_phase < 0)
+                            old_phase += conn->next_schedule.interval_125us;
+
+                        conn->next_schedule.win_offset = (uint16_t)(
+                            (conn->next_schedule.interval_125us - old_phase + offsets[0]) %
+                            conn->next_schedule.interval_125us);
+                    }
+
+                    gap_send_rate_ind(conn);
+                }
                 break;
             }
 

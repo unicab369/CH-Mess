@@ -188,7 +188,11 @@ static void gap_conn_send_queued(void) {
 #if GAP_CENTRAL_SUPPORT
         else if (conn->is_central) {
             if (conn->timing_queued_action == GAP_TIMING_RATE_SET) {
-                gap_send_rate_ind(conn, 0, NULL);
+                conn->next_schedule.instant = (uint16_t)(conn->link_layer.event_counter +
+                                            6 * (uint32_t)conn->next_schedule.factor *
+                                            (conn->next_schedule.latency + 1) + 1);
+                conn->next_schedule.win_offset = 0;
+                gap_send_rate_ind(conn);
                 if (conn->tx_frame[1]) return;
             }
         }
