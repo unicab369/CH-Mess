@@ -390,7 +390,11 @@ void RADIO_LINK_TX(const uint8_t *frame) {
     iSLERLinkTX();
 }
 
-void RADIO_LINK_RX(void) {
+void RADIO_LINK_RX(
+    uint32_t access_address, uint8_t channel,
+uint8_t phy, uint32_t crc_init
+) {
+    RADIO_LINK_CONFIG(access_address, channel, 0, phy, phy, crc_init);
     iSLERLinkRX();
 }
 

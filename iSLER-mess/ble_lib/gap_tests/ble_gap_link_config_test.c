@@ -49,7 +49,10 @@ int RADIO_LINK_TX_AT(const uint8_t *frame, uint64_t start_ticks) {
 int RADIO_IFS_TX_TIMER_ARM(const uint8_t *frame) {
     RADIO_LINK_TX(frame); return 1;
 }
-void RADIO_LINK_RX(void) { rx_started++; }
+void RADIO_LINK_RX(uint32_t aa, uint8_t channel, uint8_t phy, uint32_t crc_init) {
+    RADIO_LINK_CONFIG(aa, channel, 0, phy, phy, crc_init);
+    rx_started++;
+}
 void RADIO_SCAN_RX(uint8_t channel) { (void)channel; }
 int RADIO_TX_DONE(void) { return 1; }
 void RADIO_TX_CLEAR_DONE(void) {}

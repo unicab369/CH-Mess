@@ -1661,9 +1661,8 @@ static int gap_pawr_advertiser_poll(void) {
 
                 gap_ext_pawr.response.ready = 0;
                 gap_ext_pawr.response.listening = 1;
-                RADIO_LINK_CONFIG(set->periodic.response_access, channel, 0,
-                    set->aux_phy, set->aux_phy, set->periodic.params.crc_init);
-                RADIO_LINK_RX();
+                RADIO_LINK_RX(set->periodic.response_access, channel,
+                              set->aux_phy, set->periodic.params.crc_init);
                 gap_rx_armed = 1;
                 return 1;
             }
@@ -2516,20 +2515,13 @@ static void gap_ext_adv_event_reschedule(uint8_t set_id) {
 
 static void gap_ext_aux_rx_start(void) {
     gap_extended_adv_set *set = &gap_ext_adv[gap_ext_aux.set_id];
-    uint8_t *response = NULL;
-    uint8_t receive_after_tx = 0;
     gap_ext_aux.window_deadline = RADIO_TICKS() + HW_TICKS_FROM_US(1500);
     gap_ext_aux.phase = GAP_EXT_AUX_CONNECT_WINDOW;
 
-    if (set->scannable) {
-        response = gap_ext_adv_frame;
-        receive_after_tx = 1;
+    if (set->scannable)
         gap_ext_aux.phase = GAP_EXT_AUX_SCAN_WINDOW;
-    }
 
-    RADIO_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, 0, receive_after_tx,
-                       set->aux_phy, set->aux_phy, 0x555555);
-    RADIO_LINK_RX();
+    RADIO_LINK_RX(BLE_ADV_ACCESS_ADDRESS, 0, set->aux_phy, 0x555555);
 }
 
 static void gap_ext_aux_primary_start(

@@ -1544,8 +1544,8 @@ static void gap_conn_poll(void) {
         }
     }
 
-    uint8_t *transmit = NULL;
 #if GAP_CENTRAL_SUPPORT
+    uint8_t *transmit = NULL;
     if (conn->is_central) {
         if (!conn->central.central_anchor_set) {
             conn->link_layer.next_ticks = now;
@@ -1578,11 +1578,6 @@ static void gap_conn_poll(void) {
     }
 #endif // GAP_CENTRAL_SUPPORT
 
-    RADIO_LINK_CONFIG(conn->link_layer.access_address, selected_channel,
-                        transmit != NULL,
-                        conn->phy_state.current.tx, conn->phy_state.current.rx,
-                        conn->link_layer.crc_init);
-
     gap_poll.slot = gap_conn_slot;
     gap_poll.slot_valid = 1;
     conn->link_state.rx_armed = 1;
@@ -1590,11 +1585,15 @@ static void gap_conn_poll(void) {
     gap_rx_armed = 1;
 
 #if GAP_CENTRAL_SUPPORT
-    if (transmit)
+    if (transmit) {
+        RADIO_LINK_CONFIG(conn->link_layer.access_address, selected_channel, 1,
+                          conn->phy_state.current.tx, conn->phy_state.current.rx,
+                          conn->link_layer.crc_init);
         RADIO_LINK_TX(transmit);
-    else
+    } else
 #endif // GAP_CENTRAL_SUPPORT
-    RADIO_LINK_RX();
+        RADIO_LINK_RX(conn->link_layer.access_address, selected_channel,
+                      conn->phy_state.current.rx, conn->link_layer.crc_init);
 }
 
 // Run housekeeping for every live link and let the first due link claim the
@@ -1963,11 +1962,10 @@ void gap_hw_scan_poll(void) {
                     }
                     gap_ext_scan.periodic_rx_phy = phy;
 
-                    RADIO_LINK_CONFIG(sync->params.access_address, channel, 0,
-                                      phy, phy, sync->params.crc_init);
                     // Set listener state before RX can trigger its interrupt.
                     gap_ext_scan.listen_state = GAP_EXT_SCAN_PERIODIC;
-                    RADIO_LINK_RX();
+                    RADIO_LINK_RX(sync->params.access_address, channel,
+                                  phy, sync->params.crc_init);
                     gap_rx_armed = 1;
                     return;
                 }
@@ -1986,9 +1984,8 @@ void gap_hw_scan_poll(void) {
                 gap_ext_scan.aux_rx_phy = request->phy;
                 gap_ext_scan.listen_state = GAP_EXT_SCAN_AUX;
 
-                RADIO_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, request->channel, 0,
-                                gap_ext_scan.aux_rx_phy, gap_ext_scan.aux_rx_phy, 0x555555);
-                RADIO_LINK_RX();
+                RADIO_LINK_RX(BLE_ADV_ACCESS_ADDRESS, request->channel,
+                              gap_ext_scan.aux_rx_phy, 0x555555);
                 gap_rx_armed = 1;
                 return;
             }
@@ -2047,8 +2044,7 @@ void gap_hw_scan_poll(void) {
         uint8_t channel = 37 + gap_scan.channel_index;
 
         if (gap_scanner.active) {
-            RADIO_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel, 1, GAP_PHY_1M, GAP_PHY_1M, 0x555555);
-            RADIO_LINK_RX();
+            RADIO_LINK_RX(BLE_ADV_ACCESS_ADDRESS, channel, GAP_PHY_1M, 0x555555);
         }
         else {
             RADIO_SCAN_RX(channel);
