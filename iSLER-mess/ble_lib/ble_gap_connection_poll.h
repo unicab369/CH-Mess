@@ -84,7 +84,7 @@ static void gap_conn_send_queued(void) {
     }
 
     // Higher-priority queued procedures are handled above before sending PHY.
-    if (conn->queued_action == GAP_QUEUED_PHY) {
+    else if (conn->queued_action == GAP_QUEUED_PHY) {
         // Encode local preferences once earlier TX has been acknowledged.
         conn->queued_action = GAP_QUEUED_NONE;
         conn->procedure_state.phy_request = 1;
@@ -99,9 +99,7 @@ static void gap_conn_send_queued(void) {
     }
 
     // Queued timing actions need the peer's base feature set.
-    if ((conn->queued_action & GAP_QUEUED_ACTION_MASK) &&
-        !conn->c_features.known
-    ) {
+    if (conn->queued_action && !conn->c_features.known) {
         gap_send_feature_request(conn);
         return;
     }
@@ -128,12 +126,10 @@ static void gap_conn_send_queued(void) {
             conn->tx_frame[12] = 0;
             conn->tx_frame[13] = 0;
             memset(conn->tx_frame + 14, 0xff, 12); // No anchor offset preference.
-            return;
         }
     }
-
     //! subrate
-    if (conn->queued_action & GAP_QUEUED_SUBRATE_MASK) {
+    else if (conn->queued_action & GAP_QUEUED_SUBRATE_MASK) {
         if (GAP_LL_FEATURES_SUBRATING_MASK !=
             (conn->c_features.peer_feature_4 & GAP_LL_FEATURES_SUBRATING_MASK)
         ) {
@@ -166,7 +162,6 @@ static void gap_conn_send_queued(void) {
         }
 #endif // GAP_PERIPHERAL_SUPPORT
     }
-
     //! rate
     else if (conn->queued_action & GAP_QUEUED_RATE_MASK) {
         if (!(conn->c_features.peer_feature_7 & GAP_LL_FEATURES_EXTENDED)) {
