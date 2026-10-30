@@ -36,7 +36,11 @@ uint32_t GAP_CRITICAL_ENTER(void) {
     __disable_irq();
     return state;
 }
-void GAP_CRITICAL_EXIT(uint32_t state) { __set_MSTATUS(state); }
+
+void GAP_CRITICAL_EXIT(uint32_t state) {
+    __set_MSTATUS(state);
+}
+
 int GAP_CCM_ENCRYPT(
     const uint8_t key[16], const uint8_t nonce[13],
                     uint8_t aad, uint8_t *data, size_t len, uint8_t mic[4]
@@ -204,6 +208,7 @@ void RADIO_STOP(void) {
 // TODO: Replace this provisional 120 us target after measuring RX-end to
 // TX-start timing and the TMR0 rate on CH582 hardware.
 #define GAP_IFS_TX_TARGET_US 120
+
 void RADIO_TX_TIMER_BEGIN(void) {
     gap_link.tx_due_ticks = RADIO_TICKS() + HW_TICKS_FROM_US(GAP_IFS_TX_TARGET_US);
 }
@@ -252,8 +257,7 @@ int RADIO_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel) {
 int RADIO_IFS_TX_TIMER_ARM(const uint8_t *frame) {
     if (gs_iSLERLink.phy_mode != gap_phy_mode(gap_link.tx_phy)) {
         iSLERLinkConfig(gap_link.access_address, gap_link.channel,
-                       gap_phy_mode(gap_link.tx_phy),
-                       NULL,
+                       gap_phy_mode(gap_link.tx_phy), NULL,
                        gap_link.receive_after_tx && gap_link.tx_phy == gap_link.rx_phy);
     }
     gap_radio_tx_buffer(frame);

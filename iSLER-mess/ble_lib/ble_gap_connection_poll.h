@@ -849,8 +849,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             memcpy(gap_ext_adv_frame + 10, frame + 2, 6);
             RADIO_TX_CLEAR_DONE();
             RADIO_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, 0, 0,
-                               gap_ext_adv_connect.phy, gap_ext_adv_connect.phy,
-                               0x555555);
+                               gap_ext_adv_connect.phy, gap_ext_adv_connect.phy, 0x555555);
             gap_ext_adv_connect.response_started = 1;
             if (!RADIO_IFS_TX_TIMER_ARM(gap_ext_adv_frame)) {
                 gap_ext_adv_connect.response_started = 0;
@@ -1988,8 +1987,7 @@ void gap_hw_scan_poll(void) {
                 gap_ext_scan.listen_state = GAP_EXT_SCAN_AUX;
 
                 RADIO_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, request->channel, 0,
-                                gap_ext_scan.aux_rx_phy, gap_ext_scan.aux_rx_phy,
-                                0x555555);
+                                gap_ext_scan.aux_rx_phy, gap_ext_scan.aux_rx_phy, 0x555555);
                 RADIO_LINK_RX();
                 gap_rx_armed = 1;
                 return;
@@ -2049,8 +2047,7 @@ void gap_hw_scan_poll(void) {
         uint8_t channel = 37 + gap_scan.channel_index;
 
         if (gap_scanner.active) {
-            RADIO_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel, 1,
-                                GAP_PHY_1M, GAP_PHY_1M, 0x555555);
+            RADIO_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel, 1, GAP_PHY_1M, GAP_PHY_1M, 0x555555);
             RADIO_LINK_RX();
         }
         else {
@@ -2143,8 +2140,7 @@ int gap_send_due(
 
             uint8_t receive_after_tx = (adv_evt.adv_frame[0] & 0x0f) != ADV_NONCONN_IND;
             RADIO_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, adv_evt.channel,
-                               receive_after_tx, GAP_PHY_1M, GAP_PHY_1M,
-                               0x555555);
+                               receive_after_tx, GAP_PHY_1M, GAP_PHY_1M, 0x555555);
             RADIO_TX_CLEAR_DONE();
             RADIO_LINK_TX(adv_evt.adv_frame);
             adv_evt.rx_event = 1;
@@ -2237,8 +2233,7 @@ int gap_send_due(
     gap_rx.ready = adv_evt.scan_resp_started = adv_evt.conn_req_ready = 0;
 
     RADIO_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, adv_evt.channel,
-                       receive_after_tx,
-                       GAP_PHY_1M, GAP_PHY_1M, 0x555555);
+                       receive_after_tx, GAP_PHY_1M, GAP_PHY_1M, 0x555555);
     RADIO_TX_CLEAR_DONE();
     RADIO_LINK_TX(adv_evt.adv_frame);
     adv_evt.phase = GAP_LEGACY_ADV_TX;
