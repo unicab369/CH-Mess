@@ -249,41 +249,51 @@ static struct {
 static int gap_ext_aux_request_start(const uint8_t *frame) {
     if (gap_ext_scan.listen_state != GAP_EXT_SCAN_AUX ||
         !gap_aux_request[gap_ext_scan.aux_slot].active ||
-        gap_ext_scan.request_phase != GAP_EXT_REQ_NONE) return 0;
+        gap_ext_scan.request_phase != GAP_EXT_REQ_NONE
+    ) return 0;
 
     gap_ext_fields fields;
     if (!gap_ext_adv_decode(frame, (size_t)frame[1] + 2, &fields) ||
-        (fields.mode != 1 && fields.mode != 2)) return 0;
+        (fields.mode != 1 && fields.mode != 2)
+    ) return 0;
 
     gap_address peer;
-    if (fields.identity.has_address) peer = fields.identity.peer;
+    if (fields.identity.has_address)
+        peer = fields.identity.peer;
     else {
         int match = -1;
         for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
             gap_ext_scan_context *ctx = &gap_ext_ctx[i];
             if (!ctx->active || !ctx->identity.has_address ||
                 !ctx->identity.has_adi || !fields.identity.has_adi ||
-                ctx->identity.adi != fields.identity.adi) continue;
+                ctx->identity.adi != fields.identity.adi
+            ) continue;
+
             if (match >= 0) return 0; // Ambiguous advertiser.
             match = i;
         }
         if (match < 0) return 0;
         peer = gap_ext_ctx[match].identity.peer;
     }
+
     int peer_slot = gap_identity_find(peer.address, peer.type);
-    if (!gap_peer_allowed(peer_slot, peer.address, peer.type)) return 0;
+    if (!gap_peer_allowed(peer_slot, peer.address, peer.type))
+        return 0;
 
     uint8_t local_address[6], local_type;
     gap_local_addr_select(peer_slot, local_address, &local_type);
     if (fields.has_target &&
         (fields.target.type != local_type ||
-         memcmp(fields.target.address, local_address, 6) != 0)) return 0;
+         memcmp(fields.target.address, local_address, 6) != 0)
+    ) return 0;
 
     uint8_t *request;
     uint8_t phase;
+
     if (fields.mode == 2 && gap_scanner.active) {
 #if GAP_PRIVACY_SUPPORT
-        if (gap_privacy.scan_filter && peer_slot < 0) return 0;
+        if (gap_privacy.scan_filter && peer_slot < 0)
+            return 0;
 #endif
         if (gap_adv_filter.scan_accept &&
             !gap_accept_list_match(peer.address, peer.type, peer_slot)) return 0;
@@ -296,13 +306,13 @@ static int gap_ext_aux_request_start(const uint8_t *frame) {
     }
 #if GAP_CENTRAL_SUPPORT
     else if (fields.mode == 1 && gap_initiator.active &&
-             gap_conn_free_slot() >= 0) {
-        int matches;
+             gap_conn_free_slot() >= 0
+    ) {
+        int matches = 1;
+
         if (gap_initiator.mode == GAP_CONN_MODE_GENERAL) {
 #if GAP_PRIVACY_SUPPORT
             matches = !gap_privacy.scan_filter || peer_slot >= 0;
-#else
-            matches = 1;
 #endif
         }
         else if (gap_initiator.mode & (GAP_CONN_MODE_SELECTIVE | GAP_CONN_MODE_AUTO))
@@ -314,6 +324,7 @@ static int gap_ext_aux_request_start(const uint8_t *frame) {
                        memcmp(peer.address, gap_initiator.peer.address, 6) == 0) ||
                       (peer_slot >= 0 && peer_slot == target_slot);
         }
+
         if (!matches) return 0;
         request = adv_tx.connect_request;
         request[0] = CONNECT_IND | (local_type << 6) | (peer.type << 7);
@@ -323,18 +334,20 @@ static int gap_ext_aux_request_start(const uint8_t *frame) {
         phase = GAP_EXT_REQ_CONNECT_TX;
     }
 #endif // GAP_CENTRAL_SUPPORT
+
     else return 0;
 
     uint8_t channel = gap_aux_request[gap_ext_scan.aux_slot].channel;
     uint8_t phy = gap_ext_scan.aux_rx_phy;
     RADIO_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel, request, 1, phy, phy, 0x555555);
     gap_ext_scan.request_phase = phase;
-    gap_ext_scan.request_deadline_ms = GET_MILLIS() +
-                                      (phase == GAP_EXT_REQ_SCAN_TX ? 30 : 8);
+    gap_ext_scan.request_deadline_ms = GET_MILLIS() + (phase == GAP_EXT_REQ_SCAN_TX ? 30 : 8);
+
     if (!RADIO_IFS_TX_TIMER_ARM(request)) {
         gap_ext_scan.request_phase = GAP_EXT_REQ_NONE;
         return 0;
     }
+
     gap_rx_armed = 0;
     return 1;
 }
