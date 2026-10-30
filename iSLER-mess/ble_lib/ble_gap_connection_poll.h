@@ -118,7 +118,7 @@ static void gap_conn_send_queued(void) {
     }
 
     //! subrate
-    if (conn->c_subrate.queued_flags) {
+    if (conn->timing_queued_action & GAP_TIMING_SUBRATE_MASK) {
         // Wait for the peer Link Layer and Host to confirm subrating support.
         if (!conn->c_features.known) {
             gap_send_feature_request(conn);
@@ -128,13 +128,13 @@ static void gap_conn_send_queued(void) {
             if (GAP_LL_FEATURES_SUBRATING_MASK !=
                 (conn->c_features.peer_feature_4 & GAP_LL_FEATURES_SUBRATING_MASK)
             ) {
-                conn->c_subrate.queued_flags = 0;
+                conn->timing_queued_action = GAP_TIMING_NONE;
                 conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
             }
 
 #if GAP_CENTRAL_SUPPORT
             else if (conn->is_central) {
-                if (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE) {
+                if (conn->timing_queued_action == GAP_TIMING_SUBRATE_UPDATE) {
                     gap_send_subrate_update(conn);
                     if (conn->tx_frame[1]) return;
                 }
@@ -142,8 +142,8 @@ static void gap_conn_send_queued(void) {
 #endif // GAP_CENTRAL_SUPPORT
 
 #if GAP_PERIPHERAL_SUPPORT
-            else if (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_REQUEST) {
-                conn->c_subrate.queued_flags &= (uint8_t)~GAP_SUBRATE_QUEUED_REQUEST;
+            else if (conn->timing_queued_action == GAP_TIMING_SUBRATE_REQUEST) {
+                conn->timing_queued_action = GAP_TIMING_NONE;
                 conn->c_subrate.procedure_state = GAP_SUBRATE_REQUEST_PENDING;
                 conn->c_subrate.started_ms = GET_MILLIS();
 
@@ -162,13 +162,15 @@ static void gap_conn_send_queued(void) {
     }
 
     //! rate
-    if (conn->c_rate.queued_flags && !conn->c_features.ext_pending) {
+    if ((conn->timing_queued_action & GAP_TIMING_RATE_MASK) &&
+        !conn->c_features.ext_pending
+    ) {
         if (!conn->c_features.known) {
             gap_send_feature_request(conn);
             return;
         }
         else if (!(conn->c_features.peer_feature_7 & GAP_LL_FEATURES_EXTENDED)) {
-            conn->c_rate.queued_flags = 0;
+            conn->timing_queued_action = GAP_TIMING_NONE;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
         else if (!conn->c_features.page1_known) {
@@ -187,12 +189,12 @@ static void gap_conn_send_queued(void) {
             return;
         }
         else if (!(conn->c_features.peer_page1[1] & 0x02)) {
-            conn->c_rate.queued_flags = 0;
+            conn->timing_queued_action = GAP_TIMING_NONE;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
 #if GAP_CENTRAL_SUPPORT
         else if (conn->is_central) {
-            if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_SET) {
+            if (conn->timing_queued_action == GAP_TIMING_RATE_SET) {
                 gap_send_rate_ind(conn, 0, NULL);
                 if (conn->tx_frame[1]) return;
             }
@@ -200,7 +202,7 @@ static void gap_conn_send_queued(void) {
 #endif // GAP_CENTRAL_SUPPORT
 
 #if GAP_PERIPHERAL_SUPPORT
-        else if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_REQUEST) {
+        else if (conn->timing_queued_action == GAP_TIMING_RATE_REQUEST) {
             conn->tx_frame[0] = 0x03;
             conn->tx_frame[1] = 27;
             conn->tx_frame[2] = LL_CONNECTION_RATE_REQ;
@@ -219,7 +221,7 @@ static void gap_conn_send_queued(void) {
                 write_u16_le(conn->tx_frame + 21 + i * 2,
                                  conn->peripheral.rate_request.offsets[i]);
             }
-            conn->c_rate.queued_flags &= (uint8_t)~GAP_RATE_QUEUED_REQUEST;
+            conn->timing_queued_action = GAP_TIMING_NONE;
             conn->peripheral.rate_req_pending = 1;
             conn->params_started_ms = GET_MILLIS();
             return;
@@ -1408,8 +1410,9 @@ static void gap_conn_poll(void) {
         conn->connection_status = GAP_STATUS_LL_RESPONSE_TIMEOUT; // LL response timeout.
         uint8_t subrate_req = conn->c_subrate.procedure_state == GAP_SUBRATE_REQUEST_PENDING;
 
-        if (conn->c_subrate.queued_flags || subrate_req) {
-            conn->c_subrate.queued_flags = 0;
+        if ((conn->timing_queued_action & GAP_TIMING_SUBRATE_MASK) || subrate_req) {
+            if (conn->timing_queued_action & GAP_TIMING_SUBRATE_MASK)
+                conn->timing_queued_action = GAP_TIMING_NONE;
             if (subrate_req)
                 conn->c_subrate.procedure_state = GAP_SUBRATE_IDLE;
             conn->c_subrate.status = GAP_STATUS_LL_RESPONSE_TIMEOUT;

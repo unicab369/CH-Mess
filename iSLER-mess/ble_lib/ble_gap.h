@@ -270,8 +270,13 @@ typedef enum {
     GAP_CONN_MODE_AUTO = 0x04
 } gap_conn_mode;
 enum {
-    GAP_RATE_QUEUED_SET = 1u << 0,
-    GAP_RATE_QUEUED_REQUEST = 1u << 1
+    GAP_TIMING_NONE,
+    GAP_TIMING_RATE_SET = 1u << 0,
+    GAP_TIMING_RATE_REQUEST = 1u << 1,
+    GAP_TIMING_SUBRATE_UPDATE = 1u << 2,
+    GAP_TIMING_SUBRATE_REQUEST = 1u << 3,
+    GAP_TIMING_RATE_MASK = GAP_TIMING_RATE_SET | GAP_TIMING_RATE_REQUEST,
+    GAP_TIMING_SUBRATE_MASK = GAP_TIMING_SUBRATE_UPDATE | GAP_TIMING_SUBRATE_REQUEST
 };
 enum {
     GAP_PENDING_TIMING_UPDATE = 1u << 0,
@@ -282,10 +287,6 @@ enum {
     GAP_CONN_PARAMS_NONE,
     GAP_CONN_PARAMS_REMOTE,
     GAP_CONN_PARAMS_LOCAL
-};
-enum {
-    GAP_SUBRATE_QUEUED_UPDATE = 1u << 0,
-    GAP_SUBRATE_QUEUED_REQUEST = 1u << 1
 };
 enum {
     GAP_SUBRATE_IDLE,
@@ -787,10 +788,9 @@ typedef struct {
     } rx_packet;
 
     // Connection-rate and subrate procedure state.
+    // Only one rate or subrate action can be queued at a time.
+    uint8_t timing_queued_action;
     struct {
-        // Pending rate action: GAP_RATE_QUEUED_SET or
-        // GAP_RATE_QUEUED_REQUEST, depending on role and procedure.
-        uint8_t queued_flags;
         // Rate update signaled and waiting to take effect at its Instant.
         uint8_t update_pending;
     } c_rate;
@@ -807,8 +807,6 @@ typedef struct {
         uint8_t force_event;
         // Current procedure state: idle, update pending, or request pending.
         uint8_t procedure_state;
-        // Pending local update or Peripheral request, using GAP_SUBRATE_QUEUED_* bits.
-        uint8_t queued_flags;
         // Result of the latest subrate operation: pending, success, or error code.
         uint8_t status;
         // Number of continuation events still active after recent packet activity.

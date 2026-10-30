@@ -121,7 +121,8 @@ static struct {
 #endif
 
 static uint8_t gap_conn_rate_busy(const gap_conn_context *conn) {
-    uint8_t busy = conn->c_rate.queued_flags || conn->c_rate.update_pending;
+    uint8_t busy = (conn->timing_queued_action & GAP_TIMING_RATE_MASK) ||
+            conn->c_rate.update_pending;
 #if GAP_PERIPHERAL_SUPPORT
     busy |= !conn->is_central && (conn->peripheral.rate_req_pending ||
                                   conn->peripheral.rate_ack_waiting);
@@ -302,7 +303,8 @@ static void gap_conn_update_apply(
             conn->c_subrate.continuations = 0;
             if (conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING)
                 conn->c_subrate.procedure_state = GAP_SUBRATE_IDLE;
-            conn->c_subrate.queued_flags &= (uint8_t)~GAP_SUBRATE_QUEUED_UPDATE;
+            if (conn->timing_queued_action == GAP_TIMING_SUBRATE_UPDATE)
+                conn->timing_queued_action = GAP_TIMING_NONE;
         }
 
         conn->schedule.interval_125us = (uint16_t)(conn->new_params.interval * 10);
@@ -500,7 +502,7 @@ static void gap_send_subrate_update(gap_conn_context *conn) {
     if (conn->tx_frame[1]) return;
 
     conn->next_schedule.base_event = conn->link_layer.event_counter;
-    conn->c_subrate.queued_flags &= (uint8_t)~GAP_SUBRATE_QUEUED_UPDATE;
+    conn->timing_queued_action = GAP_TIMING_NONE;
     conn->c_subrate.procedure_state = GAP_SUBRATE_UPDATE_PENDING;
     conn->c_subrate.started_ms = GET_MILLIS();
 
@@ -539,7 +541,7 @@ static void gap_send_rate_ind(
     }
 
     conn->c_rate.update_pending = 1;
-    conn->c_rate.queued_flags &= (uint8_t)~GAP_RATE_QUEUED_SET;
+    conn->timing_queued_action = GAP_TIMING_NONE;
     conn->connection_status = GAP_CONNECTION_PENDING;
     conn->params_started_ms = GET_MILLIS();
 
@@ -861,7 +863,8 @@ static uint8_t gap_conn_control(
     case LL_CONNECTION_UPDATE_IND: {
         if (!conn->is_central && frame[1] == 12 &&
             !(conn->procedure_state.procedure_flags & GAP_PENDING_TIMING_UPDATE) &&
-            !gap_conn_rate_busy(conn) && !conn->c_subrate.queued_flags &&
+            !gap_conn_rate_busy(conn) &&
+            !(conn->timing_queued_action & GAP_TIMING_SUBRATE_MASK) &&
             conn->c_subrate.procedure_state == GAP_SUBRATE_IDLE
         ) {
             uint8_t win_size = frame[3];
@@ -1120,9 +1123,9 @@ static uint8_t gap_conn_control(
             conn->c_features.request_pending
         ) {
             if (conn->c_features.request_pending &&
-                conn->c_subrate.queued_flags
+                (conn->timing_queued_action & GAP_TIMING_SUBRATE_MASK)
             ) {
-                conn->c_subrate.queued_flags = 0;
+                conn->timing_queued_action = GAP_TIMING_NONE;
                 conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
             }
 
@@ -1154,7 +1157,7 @@ static uint8_t gap_conn_control(
         ) {
             conn->c_features.ext_pending = 0;
             conn->c_features.page1_known = 1;
-            conn->c_rate.queued_flags = 0;
+            conn->timing_queued_action = GAP_TIMING_NONE;
             conn->connection_status = frame[4];
             memset(conn->c_features.peer_page1, 0, sizeof(conn->c_features.peer_page1));
         }
@@ -1221,8 +1224,8 @@ static uint8_t gap_conn_control(
             conn->connection_status = frame[4];
         }
 
-        if (is_feature_req && conn->c_subrate.queued_flags ) {
-            conn->c_subrate.queued_flags = 0;
+        if (is_feature_req && (conn->timing_queued_action & GAP_TIMING_SUBRATE_MASK)) {
+            conn->timing_queued_action = GAP_TIMING_NONE;
             conn->c_subrate.status = frame[4];
         }
 
@@ -1317,14 +1320,14 @@ static uint8_t gap_conn_control(
             conn->c_features.peer_feature_1 = 0;
             conn->c_features.peer_feature_4 = 0;
             conn->c_features.peer_feature_7 = 0;
-            conn->c_rate.queued_flags = 0;
+            conn->timing_queued_action = GAP_TIMING_NONE;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
         else if (frame[3] == LL_FEATURE_EXT_REQ && conn->c_features.ext_pending) {
             conn->c_features.ext_pending = 0;
             conn->c_features.page1_known = 1;
             memset(conn->c_features.peer_page1, 0, sizeof(conn->c_features.peer_page1));
-            conn->c_rate.queued_flags = 0;
+            conn->timing_queued_action = GAP_TIMING_NONE;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
 
@@ -1366,9 +1369,9 @@ static uint8_t gap_conn_control(
              conn->c_features.request_pending)
         ) {
             if (conn->c_features.request_pending &&
-                conn->c_subrate.queued_flags
+                (conn->timing_queued_action & GAP_TIMING_SUBRATE_MASK)
             ) {
-                conn->c_subrate.queued_flags = 0;
+                conn->timing_queued_action = GAP_TIMING_NONE;
                 conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
             }
 
@@ -1486,7 +1489,7 @@ static uint8_t gap_conn_control(
             gap_conn_rate_busy(conn) ||
             gap_conn_central_queued(conn) ||
             conn->c_subrate.procedure_state != GAP_SUBRATE_IDLE ||
-            conn->c_subrate.queued_flags ||
+            (conn->timing_queued_action & GAP_TIMING_SUBRATE_MASK) ||
             conn->procedure_state.procedure_flags ||
             conn->procedure_state.params_state != GAP_CONN_PARAMS_NONE ||
             conn->procedure_state.phy_request ||
@@ -1559,7 +1562,7 @@ static uint8_t gap_conn_control(
             !(conn->c_features.peer_page1[1] & 0x01) ||
             conn->c_rate.update_pending ||
             conn->c_subrate.procedure_state != GAP_SUBRATE_IDLE ||
-            conn->c_subrate.queued_flags ||
+            (conn->timing_queued_action & GAP_TIMING_SUBRATE_MASK) ||
             conn->procedure_state.procedure_flags ||
             conn->procedure_state.params_state != GAP_CONN_PARAMS_NONE ||
             conn->queue_state.local_params
@@ -1618,7 +1621,7 @@ static uint8_t gap_conn_control(
                 !conn->queue_state.local_params &&
                 conn->procedure_state.params_state == GAP_CONN_PARAMS_NONE &&
                 conn->c_subrate.procedure_state != GAP_SUBRATE_UPDATE_PENDING &&
-                !(conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE) &&
+                conn->timing_queued_action != GAP_TIMING_SUBRATE_UPDATE &&
                 !conn->queue_state.phy_queued &&
                 !conn->procedure_state.phy_request &&
                 !conn->queue_state.length &&
@@ -1966,7 +1969,7 @@ static uint8_t gap_conn_procedure_busy(const gap_conn_context *conn) {
 static uint8_t gap_conn_timing_busy(const gap_conn_context *conn) {
     return gap_conn_procedure_busy(conn) ||
             gap_conn_rate_busy(conn) ||
-            conn->c_subrate.queued_flags ||
+            conn->timing_queued_action != GAP_TIMING_NONE ||
             conn->c_subrate.procedure_state != GAP_SUBRATE_IDLE;
 }
 
@@ -2058,7 +2061,7 @@ int gap_subrate_set(
     conn->next_schedule.continuation = continuation;
     conn->next_schedule.timeout_10ms = timeout;
     conn->c_subrate.status = GAP_CONNECTION_PENDING;
-    conn->c_subrate.queued_flags |= GAP_SUBRATE_QUEUED_UPDATE;
+    conn->timing_queued_action = GAP_TIMING_SUBRATE_UPDATE;
     return 1;
 }
 
@@ -2092,7 +2095,7 @@ int gap_subrate_request(
     conn->peripheral.subrate_request.continuation = continuation;
     conn->peripheral.subrate_request.timeout_10ms = timeout_10ms;
     conn->c_subrate.status = GAP_CONNECTION_PENDING;
-    conn->c_subrate.queued_flags |= GAP_SUBRATE_QUEUED_REQUEST;
+    conn->timing_queued_action = GAP_TIMING_SUBRATE_REQUEST;
     return 1;
 }
 
@@ -2145,7 +2148,7 @@ int gap_conn_rate_request(
 
     for (uint8_t i = 0; i < 4; i++)
         conn->peripheral.rate_request.offsets[i] = offsets ? offsets[i] : 0xffff;
-    conn->c_rate.queued_flags |= GAP_RATE_QUEUED_REQUEST;
+    conn->timing_queued_action = GAP_TIMING_RATE_REQUEST;
     conn->connection_status = GAP_CONNECTION_PENDING;
     return 1;
 }
@@ -2170,7 +2173,7 @@ int gap_conn_rate_set(
     conn->next_schedule.latency = latency;
     conn->next_schedule.continuation = continuation;
     conn->next_schedule.timeout_10ms = timeout;
-    conn->c_rate.queued_flags |= GAP_RATE_QUEUED_SET;
+    conn->timing_queued_action = GAP_TIMING_RATE_SET;
     conn->connection_status = GAP_CONNECTION_PENDING;
     return 1;
 }
