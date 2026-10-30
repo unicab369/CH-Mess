@@ -2089,30 +2089,36 @@ int gap_send_due(
 
 #if GAP_LEGACY_ADV_SUPPORT
     if (adv_evt.phase) {
+
+#if GAP_PERIPHERAL_SUPPORT
+        // A connection request was received; stop advertising and set up the connection.
         if (adv_evt.conn_req_ready) {
             if (adv_evt.phase == GAP_LEGACY_ADV_TX && RADIO_TX_DONE())
                 RADIO_TX_CLEAR_DONE();
             RADIO_STOP();
             adv_evt.rx_event = adv_evt.phase = 0;
+            adv_evt.conn_req_ready = 0;
 
             if (gap_conn_accept(adv_evt.conn_req_frame, adv_evt.conn_req_ticks,
-                                HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))
-            ) {
+                                HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))) {
 #if GAP_CENTRAL_SUPPORT
                 gap_initiator.active = 0;
                 gap_initiator.mode = GAP_CONN_MODE_DIRECT;
 #endif
-                adv_evt.conn_req_ready = 0;
-                gap_rx.ready = gap_adv_scan.ready = gap_scan.active_pending = 0;
-                gap_rx_armed = gap_scanner.scanning = gap_scanner.active = 0;
+                gap_rx.ready = 0;
+                gap_adv_scan.ready = 0;
+                gap_scan.active_pending = 0;
+                gap_rx_armed = 0;
+                gap_scanner.scanning = 0;
+                gap_scanner.active = 0;
                 gap_scanner.generation++;
                 gap_conn_poll();
                 return 2;
             }
-            adv_evt.conn_req_ready = 0;
             adv_evt.channel = 39;
             adv_evt.phase = 0;
         }
+#endif // GAP_PERIPHERAL_SUPPORT
 
         if (adv_evt.phase == GAP_LEGACY_ADV_TX) {
             if (!RADIO_TX_DONE()) {
@@ -2160,7 +2166,9 @@ int gap_send_due(
 
         if (adv_evt.channel < 39) {
             adv_evt.channel++;
-            gap_rx.ready = adv_evt.scan_resp_started = adv_evt.conn_req_ready = 0;
+            gap_rx.ready = 0;
+            adv_evt.scan_resp_started = 0;
+            adv_evt.conn_req_ready = 0;
 
             uint8_t receive_after_tx = (adv_evt.adv_frame[0] & 0x0f) != ADV_NONCONN_IND;
             RADIO_TX_CLEAR_DONE();
@@ -2260,7 +2268,9 @@ int gap_send_due(
     adv_evt.channel = 37;
     adv_evt.send_gap = send_gap;
     adv_evt.rx_event = receive_after_tx;
-    gap_rx.ready = adv_evt.scan_resp_started = adv_evt.conn_req_ready = 0;
+    gap_rx.ready = 0;
+    adv_evt.scan_resp_started = 0;
+    adv_evt.conn_req_ready = 0;
 
     RADIO_TX_CLEAR_DONE();
     RADIO_LINK_TX(adv_evt.adv_frame, BLE_ADV_ACCESS_ADDRESS, adv_evt.channel,
