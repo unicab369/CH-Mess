@@ -67,8 +67,8 @@
 #ifndef GAP_L2CAP_LL_MAX
 #define GAP_L2CAP_LL_MAX 251
 #endif
-#ifndef GAP_HW_DATA_MAX
-#define GAP_HW_DATA_MAX 251u
+#ifndef RADIO_DATA_MAX
+#define RADIO_DATA_MAX 251u
 #endif
 
 // Controls local private-address generation and rotation. This is independent
@@ -99,12 +99,12 @@
 
 
 // Default secondary advertising PHY support for each target family.
-#ifndef GAP_HW_ADV_PHY_MASK
+#ifndef RADIO_ADV_PHY_MASK
     #if defined(CH582_CH583) || defined(CH32V208)
-        #define GAP_HW_ADV_PHY_MASK \
+        #define RADIO_ADV_PHY_MASK \
             (GAP_PHY_1M | GAP_PHY_2M | GAP_PHY_CODED)
     #else
-        #define GAP_HW_ADV_PHY_MASK GAP_PHY_1M
+        #define RADIO_ADV_PHY_MASK GAP_PHY_1M
     #endif
 #endif
 
@@ -206,36 +206,36 @@ uint32_t GET_MILLIS(void);
 void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out);
 
 // Radio frames and addresses use Bluetooth on-air byte order.
-const uint8_t *GAP_HW_RX_FRAME(void);
-int8_t GAP_HW_RSSI(void);
-void GAP_HW_INIT(void);
-void GAP_HW_STOP(void);
-int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel);
-void GAP_HW_TX_TIMER_BEGIN(void);
+const uint8_t *RADIO_RX_FRAME(void);
+int8_t RADIO_RSSI(void);
+void RADIO_INIT(void);
+void RADIO_STOP(void);
+int RADIO_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel);
+void RADIO_TX_TIMER_BEGIN(void);
 #if GAP_CENTRAL_SUPPORT
-int GAP_HW_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel);
-void GAP_HW_CONNECT_TX_TIMER_CANCEL(void);
+int RADIO_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel);
+void RADIO_CONNECT_TX_TIMER_CANCEL(void);
 #endif
-int GAP_HW_ADV_TX_PHY(
+int RADIO_ADV_TX_PHY(
     uint8_t *frame, uint8_t len, uint8_t channel, uint8_t phy);
-void GAP_HW_LINK_CONFIG(
+void RADIO_LINK_CONFIG(
     uint32_t access_address, uint8_t channel,
     uint8_t *tx_frame, uint8_t receive_after_tx,
     uint8_t tx_phy, uint8_t rx_phy);
 // 1M PHY is mandatory; masks report supported PHYs.
-uint8_t GAP_HW_PHY_MASK(void);
-void GAP_HW_LINK_TX(void);
-int GAP_HW_LINK_TX_AT(uint64_t start_ticks);
-int GAP_HW_IFS_TX_TIMER_ARM(void);
-void GAP_HW_LINK_RX(void);
-void GAP_HW_SCAN_RX(uint8_t channel);
-void GAP_HW_TX_BUFFER(const uint8_t *frame);
-void GAP_HW_CRC_INIT(uint32_t crc_init);
-int GAP_HW_TX_DONE(void);
-void GAP_HW_TX_CLEAR_DONE(void);
-uint64_t GAP_HW_TICKS(void);
+uint8_t RADIO_PHY_MASK(void);
+void RADIO_LINK_TX(void);
+int RADIO_LINK_TX_AT(uint64_t start_ticks);
+int RADIO_IFS_TX_TIMER_ARM(void);
+void RADIO_LINK_RX(void);
+void RADIO_SCAN_RX(uint8_t channel);
+void RADIO_TX_BUFFER(const uint8_t *frame);
+void RADIO_CRC_INIT(uint32_t crc_init);
+int RADIO_TX_DONE(void);
+void RADIO_TX_CLEAR_DONE(void);
+uint64_t RADIO_TICKS(void);
 uint64_t HW_TICKS_FROM_US(uint32_t us);
-void GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]);
+void RADIO_PUBLIC_ADDRESS(uint8_t address[6]);
 // Provide cryptographically secure random bytes or fail without using a weak fallback.
 int GAP_RANDOM_BYTES(uint8_t *out, size_t len);
 // Protect foreground key updates from interrupt handlers.
@@ -1270,7 +1270,7 @@ static int gap_private_addr_generate(
                 if (address[i] != (i == 5 ? 0x3f : 0xff))
                     all_one = 0;
             }
-            GAP_HW_PUBLIC_ADDRESS(public_address);
+            RADIO_PUBLIC_ADDRESS(public_address);
 
             if (all_zero || all_one || memcmp(address, public_address, 6) == 0)
                 continue;
@@ -1659,7 +1659,7 @@ static void gap_local_addr_select(
             *type = gap_identity_address.type;
             if (*type)
                 memcpy(address, gap_identity_address.address, 6);
-            else GAP_HW_PUBLIC_ADDRESS(address);
+            else RADIO_PUBLIC_ADDRESS(address);
         }
         return;
     }
@@ -1670,7 +1670,7 @@ static void gap_local_addr_select(
     *type = gap_own_address.type;
     if (*type)
         memcpy(address, gap_own_address.address, 6);
-    else GAP_HW_PUBLIC_ADDRESS(address);
+    else RADIO_PUBLIC_ADDRESS(address);
 }
 
 // Application-facing
@@ -1730,7 +1730,7 @@ static int gap_conn_accept(
     uint64_t unit_ticks, uint64_t delay_ticks
 ) {
     if (!gap_conn_request_valid(frame) ||
-        MIN(GAP_HW_DATA_MAX, GAP_CONN_DATA_MAX) < 27
+        MIN(RADIO_DATA_MAX, GAP_CONN_DATA_MAX) < 27
     ) return 0;
 
     int free_slot = gap_conn_free_slot();
@@ -1805,7 +1805,7 @@ static int gap_conn_accept(
     conn->channel_report.max_delay_200ms = 5;
     conn->phy_state.current.tx = GAP_PHY_1M;
     conn->phy_state.current.rx = GAP_PHY_1M;
-    conn->phy_state.preferred.tx = GAP_HW_PHY_MASK() & 7;
+    conn->phy_state.preferred.tx = RADIO_PHY_MASK() & 7;
     conn->phy_state.preferred.rx = conn->phy_state.preferred.tx;
 
     if (++gap_conn_generations[gap_conn_slot] == 0)

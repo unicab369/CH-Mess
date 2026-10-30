@@ -4,9 +4,9 @@
 #include <string.h>
 
 static uint16_t radio_data_max;
-#define GAP_HW_DATA_MAX radio_data_max
+#define RADIO_DATA_MAX radio_data_max
 #define GAP_EXT_ADV_SUPPORT 1
-#define GAP_HW_ADV_PHY_MASK (GAP_PHY_1M | GAP_PHY_CODED)
+#define RADIO_ADV_PHY_MASK (GAP_PHY_1M | GAP_PHY_CODED)
 #include "../ble_crypto.h"
 #define iSLER_Rx_Received_Cb gap_hw_received_impl
 #include "../ble_gap.h"
@@ -17,7 +17,7 @@ int GET_RANDOM_BYTES(uint8_t *out, unsigned size);
 static void gap_hw_received(void) {
     gap_hw_received_impl();
     if (gap_connect_tx.phase == GAP_CONNECT_TX_ARMED) {
-        gap_connect_tx.end_ticks = GAP_HW_TICKS();
+        gap_connect_tx.end_ticks = RADIO_TICKS();
         gap_connect_tx.phase = GAP_CONNECT_TX_DONE;
         gap_hw_scan_poll();
     }
@@ -216,10 +216,10 @@ int GAP_CCM_DECRYPT(
 ) {
     return ccm_auth_decrypt(key, nonce, 13, &aad, 1, data, len, mic, 4, data) == CCM_OK;
 }
-const uint8_t *GAP_HW_RX_FRAME(void) { return rx_frame; }
-uint8_t GAP_HW_PHY_MASK(void) { return radio_phy_mask; }
-int8_t GAP_HW_RSSI(void) { return -40; }
-uint64_t GAP_HW_TICKS(void) {
+const uint8_t *RADIO_RX_FRAME(void) { return rx_frame; }
+uint8_t RADIO_PHY_MASK(void) { return radio_phy_mask; }
+int8_t RADIO_RSSI(void) { return -40; }
+uint64_t RADIO_TICKS(void) {
     if (!fake_radio_ticks_enabled)
         return (uint64_t)now_ms * 1000;
     if (fake_radio_tick_autoincrement)
@@ -227,32 +227,32 @@ uint64_t GAP_HW_TICKS(void) {
     return fake_radio_ticks;
 }
 uint64_t HW_TICKS_FROM_US(uint32_t us) { return us; }
-void GAP_HW_STOP(void) {}
-void GAP_HW_INIT(void) {}
-void GAP_HW_SCAN_RX(uint8_t channel) {
+void RADIO_STOP(void) {}
+void RADIO_INIT(void) {}
+void RADIO_SCAN_RX(uint8_t channel) {
     configured_radio_channel = channel;
     scan_rx_count++;
 }
-void GAP_HW_TX_BUFFER(const uint8_t *frame) { tx_buffer = frame; }
-void GAP_HW_TX_TIMER_BEGIN(void) {}
-int GAP_HW_IFS_TX_TIMER_ARM(void) {
+void RADIO_TX_BUFFER(const uint8_t *frame) { tx_buffer = frame; }
+void RADIO_TX_TIMER_BEGIN(void) {}
+int RADIO_IFS_TX_TIMER_ARM(void) {
     if (fake_radio_ticks_enabled && fake_radio_tick_autoincrement &&
         configured_access_address != BLE_ADV_ACCESS_ADDRESS)
         fake_radio_ticks += HW_TICKS_FROM_US(150);
     if (gap_ext_scan.request_phase == GAP_EXT_REQ_SCAN_TX)
         gap_ext_scan.request_phase = GAP_EXT_REQ_SCAN_RX;
     else if (gap_ext_scan.request_phase == GAP_EXT_REQ_CONNECT_TX) {
-        gap_ext_scan.request_end_ticks = GAP_HW_TICKS();
+        gap_ext_scan.request_end_ticks = RADIO_TICKS();
         gap_ext_scan.request_phase = GAP_EXT_REQ_CONNECT_RX;
     }
-    GAP_HW_LINK_TX();
+    RADIO_LINK_TX();
 #if GAP_PERIPHERAL_SUPPORT
     if (gap_ext_adv_connect.response_started)
         gap_ext_adv_connect.waiting = 0;
 #endif
     return 1;
 }
-void GAP_HW_LINK_TX(void) {
+void RADIO_LINK_TX(void) {
     if (gap_ext_aux.phase == GAP_EXT_AUX_PRIMARY &&
         tx_buffer == gap_ext_primary_frame) {
         if (captured_extended_count < 16) {
@@ -339,7 +339,7 @@ void GAP_HW_LINK_TX(void) {
 #endif
     }
 }
-int GAP_HW_LINK_TX_AT(uint64_t start_ticks) {
+int RADIO_LINK_TX_AT(uint64_t start_ticks) {
     if (fake_radio_ticks_enabled && fake_radio_ticks < start_ticks)
         fake_radio_ticks = start_ticks;
     if (configured_access_address == BLE_ADV_ACCESS_ADDRESS &&
@@ -356,7 +356,7 @@ int GAP_HW_LINK_TX_AT(uint64_t start_ticks) {
         captured_extended_channels[slot] = configured_radio_channel;
         captured_extended_ticks[slot] = start_ticks;
     }
-    GAP_HW_LINK_TX();
+    RADIO_LINK_TX();
     if (tx_buffer == gap_ext_aux_frame &&
         gap_ext_aux.phase == GAP_EXT_AUX_PENDING &&
         (gap_ext_adv[gap_ext_aux.set_id].scannable ||
@@ -364,10 +364,10 @@ int GAP_HW_LINK_TX_AT(uint64_t start_ticks) {
         gap_ext_aux_rx_start();
     return 1;
 }
-int GAP_HW_TX_DONE(void) { return fake_tx_done; }
-void GAP_HW_TX_CLEAR_DONE(void) {}
-void GAP_HW_CRC_INIT(uint32_t crc_init) { configured_crc_init = crc_init; }
-void GAP_HW_LINK_CONFIG(
+int RADIO_TX_DONE(void) { return fake_tx_done; }
+void RADIO_TX_CLEAR_DONE(void) {}
+void RADIO_CRC_INIT(uint32_t crc_init) { configured_crc_init = crc_init; }
+void RADIO_LINK_CONFIG(
     uint32_t access_address, uint8_t channel,
                             uint8_t *frame, uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy
 ) {
@@ -378,7 +378,7 @@ void GAP_HW_LINK_CONFIG(
     configured_tx_phy = tx_phy;
     configured_rx_phy = rx_phy;
 }
-void GAP_HW_LINK_RX(void) {
+void RADIO_LINK_RX(void) {
     link_rx_count++;
     if (inject_ext_connect_request && gap_ext_adv_connect.waiting) {
         static const uint8_t initiator[6] = {0x51, 0x52, 0x53, 0x54, 0x55, 0x56};
@@ -428,7 +428,7 @@ void GAP_HW_LINK_RX(void) {
         gap_hw_received();
     }
 }
-int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
+int RADIO_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
     (void)frame; (void)len;
     configured_radio_channel = channel;
     advertising_tx_count++;
@@ -445,20 +445,20 @@ int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
         fake_radio_ticks += ((uint32_t)len + 8u) * 8u;
     return 1;
 }
-int GAP_HW_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel) {
-    return GAP_HW_ADV_TX(frame, len, channel);
+int RADIO_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel) {
+    return RADIO_ADV_TX(frame, len, channel);
 }
-void GAP_HW_CONNECT_TX_TIMER_CANCEL(void) {}
-int GAP_HW_ADV_TX_PHY(
+void RADIO_CONNECT_TX_TIMER_CANCEL(void) {}
+int RADIO_ADV_TX_PHY(
     uint8_t *frame, uint8_t len, uint8_t channel,
                           uint8_t phy
 ) {
-    if (!(GAP_HW_ADV_PHY_MASK & phy))
+    if (!(RADIO_ADV_PHY_MASK & phy))
         return 0;
     configured_adv_phy = phy;
-    return GAP_HW_ADV_TX(frame, len, channel);
+    return RADIO_ADV_TX(frame, len, channel);
 }
-void GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]) {
+void RADIO_PUBLIC_ADDRESS(uint8_t address[6]) {
     const uint8_t value[6] = {1, 2, 3, 4, 5, 6};
     memcpy(address, value, sizeof(value));
 }
@@ -700,7 +700,7 @@ static int test_ext_scan_receive(uint8_t kind, const uint8_t *pdu,
     memcpy(gap_ext_scan.frame, pdu, pdu_len);
     gap_ext_scan.kind = kind;
     gap_ext_scan.rssi = rssi;
-    gap_ext_scan.ticks = GAP_HW_TICKS();
+    gap_ext_scan.ticks = RADIO_TICKS();
     gap_ext_scan.ready = 1;
     gap_rx_armed = 1;
     if (kind == GAP_EXT_ADV_AUXILIARY_PDU) {
@@ -2359,7 +2359,7 @@ static void test_radio_privacy_filter(void) {
     gap_scan.active_pending = 0;
     adv_evt.rx_event = 1;
     adv_evt.adv_frame[0] = 0; // Connectable advertisement with public address
-    GAP_HW_PUBLIC_ADDRESS(adv_evt.adv_frame + 2);
+    RADIO_PUBLIC_ADDRESS(adv_evt.adv_frame + 2);
     rx_frame[0] = 0x43; rx_frame[1] = 12; // SCAN_REQ from random address
     memcpy(rx_frame + 8, adv_evt.adv_frame + 2, 6);
     rx_frame[2] ^= 1;
@@ -2387,7 +2387,7 @@ static void test_radio_privacy_filter(void) {
     assert(gap_adv_filter_policy(1, 1));
     adv_evt.rx_event = 1;
     adv_evt.adv_frame[0] = 0; // Undirected connectable advertising.
-    GAP_HW_PUBLIC_ADDRESS(adv_evt.adv_frame + 2);
+    RADIO_PUBLIC_ADDRESS(adv_evt.adv_frame + 2);
     adv_evt.scan_resp_started = 0;
     rx_frame[0] = 0x43; rx_frame[1] = 12;
     const uint8_t unknown_peer[6] = {0x10, 0x20, 0x30, 0x40, 0x50, 0x60};
@@ -2546,7 +2546,7 @@ static void test_directed_connect_target(void) {
     assert(gap_privacy_configure(NULL, 0, 0));
     assert(gap_conn_start(test_address(test_identity, 0)));
     rx_frame[0] = 0x41; // Public TargetA, random AdvA
-    GAP_HW_PUBLIC_ADDRESS(rx_frame + 8);
+    RADIO_PUBLIC_ADDRESS(rx_frame + 8);
     gap_hw_received();
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !gap_initiator.active);
     gap_conn_end();
@@ -2611,7 +2611,7 @@ static void test_peer_privacy_modes(void) {
     // Incoming SCAN_REQ and CONNECT_IND obey the peer mode without filters.
     adv_evt.rx_event = 1;
     adv_evt.adv_frame[0] = 0;
-    GAP_HW_PUBLIC_ADDRESS(adv_evt.adv_frame + 2);
+    RADIO_PUBLIC_ADDRESS(adv_evt.adv_frame + 2);
     rx_frame[0] = 3; rx_frame[1] = 12;
     memcpy(rx_frame + 8, adv_evt.adv_frame + 2, 6);
     gap_hw_received();
@@ -2851,7 +2851,7 @@ static void test_nonresolvable_private_addresses(void) {
     assert(!gap_privacy_configure(NULL, 1, 1));
     memset(forced_random, 0xff, 6);
     assert(!gap_privacy_configure(NULL, 1, 1));
-    GAP_HW_PUBLIC_ADDRESS(forced_random);
+    RADIO_PUBLIC_ADDRESS(forced_random);
     assert(!gap_privacy_configure(NULL, 1, 1));
     memcpy(forced_random, first, 6);
     assert(!gap_privacy_configure(NULL, 1, 1));
@@ -2924,7 +2924,7 @@ static void test_connection_context_slots(void) {
     memset(request + 30, 0xff, 4);
     request[34] = 0x1f;
     request[35] = 5;
-    assert(gap_conn_accept(request, GAP_HW_TICKS(),
+    assert(gap_conn_accept(request, RADIO_TICKS(),
         HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250)));
     conn = &gap_conn_ctx[gap_conn_slot];
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
@@ -2972,7 +2972,7 @@ static void test_connection_context_slots(void) {
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
     smp = &conn->smp;
     assert((gap_conn_slot_mask != 0) && gap_conn_free_slot() < 0);
-    assert(!gap_conn_accept(request, GAP_HW_TICKS(),
+    assert(!gap_conn_accept(request, RADIO_TICKS(),
         HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250)));
     gap_security->tx_counter = 0xabcdef;
     smp->status = 0x52;
@@ -3082,7 +3082,7 @@ static void test_connection_context_slots(void) {
     gap_conn_end();
     assert((gap_conn_slot_mask != 0) && gap_conn_free_slot() == 1);
     assert(!gap_conn_select(second_handle));
-    assert(gap_conn_accept(request, GAP_HW_TICKS(),
+    assert(gap_conn_accept(request, RADIO_TICKS(),
         HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250)));
     assert(gap_conn_count() == 2);
     assert(!gap_conn_select(second_handle));
@@ -3122,7 +3122,7 @@ static void test_central_defers_after_md_zero(void) {
     gap_hw_received();
     assert(link_tx_count == sends_before && !gap_poll.slot_valid);
     assert(conn->link_layer.tx_pending && !conn->link_state.event_replied);
-    conn->link_layer.next_ticks = GAP_HW_TICKS();
+    conn->link_layer.next_ticks = RADIO_TICKS();
     gap_conn_poll();
     assert(link_tx_count == sends_before + 1);
     gap_conn_end();

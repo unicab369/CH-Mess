@@ -1,6 +1,6 @@
 # BLE radio blocking work
 
-The radio paths below contain busy waits or call `GAP_HW_ADV_TX()`.
+The radio paths below contain busy waits or call `RADIO_ADV_TX()`.
 The CH582 implementation waits for radio settling before starting TX, then
 returns the current TX-completion flag. Its callers must not treat that return
 value as proof that the packet finished transmitting. Priorities put the
@@ -12,16 +12,16 @@ value as proof that the packet finished transmitting. Priorities put the
 | 2 | [ble_gap_connection_poll.h:813](ble_gap_connection_poll.h#L813) | Central `CONNECT_IND` now uses the CH582 TMR0 start path. | The timer is started during RX processing; actual on-air IFS timing has not been measured. | Measure RX end to TX start on CH582 and verify the timer rate and setup margin. Keep connection initialization in the poll loop. |
 | 3 | [ble_gap_extension.h:2479](ble_gap_extension.h#L2479), [2483](ble_gap_extension.h#L2483), [2522](ble_gap_extension.h#L2522), [2529](ble_gap_extension.h#L2529), [2613](ble_gap_extension.h#L2613), [1524](ble_gap_extension.h#L1524) | Extended advertising waits for the primary-to-AUX offset, chained packet starts, scan requests, and response TX. | Blocks the caller across a scheduled advertising event. | Prepare the next packet before its deadline; schedule exact radio starts and use TX/RX completion events to advance the exchange. Do this after the legacy path is proven. |
 | 4 | [ble_gap_extension.h:1314](ble_gap_extension.h#L1314), [1391](ble_gap_extension.h#L1391), [1400](ble_gap_extension.h#L1400), [1584](ble_gap_extension.h#L1584), [1594](ble_gap_extension.h#L1594), [1966](ble_gap_extension.h#L1966) | PAwR advertiser subevents, response windows, and Central connection exchange now advance through polling. The observer's response TX still waits for completion in the RX callback. | Response TX can hold the RX callback for up to its completion deadline. | Move observer response TX completion handling to polling and validate all PAwR timing on CH582 hardware. |
-| 5 | [ble_gap_connection_poll.h:1745](ble_gap_connection_poll.h#L1745) | Legacy nonconnectable advertising sends on three channels through blocking `GAP_HW_ADV_TX()`. | Blocks the main loop for each packet. | Advance to the next channel from TX completion. Use this simpler path to prove the nonblocking TX primitive before changing priority 1. |
+| 5 | [ble_gap_connection_poll.h:1745](ble_gap_connection_poll.h#L1745) | Legacy nonconnectable advertising sends on three channels through blocking `RADIO_ADV_TX()`. | Blocks the main loop for each packet. | Advance to the next channel from TX completion. Use this simpler path to prove the nonblocking TX primitive before changing priority 1. |
 
 ## First implementation step
 
-Use `GAP_HW_LINK_CONFIG()` and `GAP_HW_LINK_TX()` in the CH582 radio port
+Use `RADIO_LINK_CONFIG()` and `RADIO_LINK_TX()` in the CH582 radio port
 to advance nonconnectable advertising on TX completion. Then apply the same
 event sequencing to the remaining advertising paths. Measure the existing
 timer-driven `CONNECT_IND` turnaround on the device.
 
-The `GAP_HW_TX_DONE()` check in `ble_gap_connection_poll.h:1191`
+The `RADIO_TX_DONE()` check in `ble_gap_connection_poll.h:1191`
 already returns when TX is pending; it is not a busy wait.
 
 Legacy `SCAN_REQ` and `SCAN_RSP`, extended `AUX_SCAN_RSP` and

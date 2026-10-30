@@ -82,7 +82,7 @@ Bits not listed above are reserved for specification development or future use.
 
 `✓` means the library advertises and implements the feature. `—` means it is
 not advertised as supported. `✓*` means PHY support depends on the hardware
-adapter's `GAP_HW_PHY_MASK()`. The Shorter Connection Intervals implementation
+adapter's `RADIO_PHY_MASK()`. The Shorter Connection Intervals implementation
 currently exchanges only 8 feature-page bytes; Core 6.2 defines 24-byte pages,
 so that feature exchange still needs completion for full Core 6.2 compliance.
 

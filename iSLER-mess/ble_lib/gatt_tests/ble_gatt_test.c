@@ -24,7 +24,7 @@ static int authorize_gatt_access(
 }
 
 uint32_t GET_MILLIS(void) { return fake_now_ms; }
-void GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]) { memset(address, 0, 6); }
+void RADIO_PUBLIC_ADDRESS(uint8_t address[6]) { memset(address, 0, 6); }
 
 static int capture_proxy_pdu(
     uint8_t type, const uint8_t *pdu, size_t len,

@@ -3,7 +3,7 @@
 #include <string.h>
 
 static uint16_t radio_data_max;
-#define GAP_HW_DATA_MAX radio_data_max
+#define RADIO_DATA_MAX radio_data_max
 #define GAP_CENTRAL_SUPPORT 1
 #define GAP_PERIPHERAL_SUPPORT 1
 #define GAP_SECURITY_SUPPORT 0
@@ -19,42 +19,42 @@ static uint8_t tx_started, rx_started;
 uint32_t GET_MILLIS(void) { return 1000; }
 uint32_t GAP_CRITICAL_ENTER(void) { return 0; }
 void GAP_CRITICAL_EXIT(uint32_t state) { (void)state; }
-const uint8_t *GAP_HW_RX_FRAME(void) { return NULL; }
-int8_t GAP_HW_RSSI(void) { return -40; }
-void GAP_HW_INIT(void) {}
-void GAP_HW_STOP(void) {}
-int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
+const uint8_t *RADIO_RX_FRAME(void) { return NULL; }
+int8_t RADIO_RSSI(void) { return -40; }
+void RADIO_INIT(void) {}
+void RADIO_STOP(void) {}
+int RADIO_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
     (void)frame; (void)len; (void)channel; return 1;
 }
-void GAP_HW_TX_TIMER_BEGIN(void) {}
-int GAP_HW_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel) {
+void RADIO_TX_TIMER_BEGIN(void) {}
+int RADIO_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel) {
     (void)frame; (void)len; (void)channel; return 1;
 }
-void GAP_HW_CONNECT_TX_TIMER_CANCEL(void) {}
-int GAP_HW_ADV_TX_PHY(uint8_t *frame, uint8_t len, uint8_t channel, uint8_t phy) {
+void RADIO_CONNECT_TX_TIMER_CANCEL(void) {}
+int RADIO_ADV_TX_PHY(uint8_t *frame, uint8_t len, uint8_t channel, uint8_t phy) {
     (void)frame; (void)len; (void)channel; (void)phy; return 1;
 }
-void GAP_HW_LINK_CONFIG(uint32_t aa, uint8_t channel, uint8_t *frame,
+void RADIO_LINK_CONFIG(uint32_t aa, uint8_t channel, uint8_t *frame,
                         uint8_t tx, uint8_t tx_phy, uint8_t rx_phy) {
     (void)aa; (void)channel; (void)tx_phy; (void)rx_phy;
     configured_frame = frame;
     configured_tx = tx;
 }
-uint8_t GAP_HW_PHY_MASK(void) { return GAP_PHY_1M; }
-void GAP_HW_LINK_TX(void) { tx_started++; }
-int GAP_HW_LINK_TX_AT(uint64_t start_ticks) {
-    (void)start_ticks; GAP_HW_LINK_TX(); return 1;
+uint8_t RADIO_PHY_MASK(void) { return GAP_PHY_1M; }
+void RADIO_LINK_TX(void) { tx_started++; }
+int RADIO_LINK_TX_AT(uint64_t start_ticks) {
+    (void)start_ticks; RADIO_LINK_TX(); return 1;
 }
-int GAP_HW_IFS_TX_TIMER_ARM(void) { GAP_HW_LINK_TX(); return 1; }
-void GAP_HW_LINK_RX(void) { rx_started++; }
-void GAP_HW_SCAN_RX(uint8_t channel) { (void)channel; }
-void GAP_HW_TX_BUFFER(const uint8_t *frame) { (void)frame; }
-void GAP_HW_CRC_INIT(uint32_t crc_init) { (void)crc_init; }
-int GAP_HW_TX_DONE(void) { return 1; }
-void GAP_HW_TX_CLEAR_DONE(void) {}
-uint64_t GAP_HW_TICKS(void) { return radio_ticks++; }
+int RADIO_IFS_TX_TIMER_ARM(void) { RADIO_LINK_TX(); return 1; }
+void RADIO_LINK_RX(void) { rx_started++; }
+void RADIO_SCAN_RX(uint8_t channel) { (void)channel; }
+void RADIO_TX_BUFFER(const uint8_t *frame) { (void)frame; }
+void RADIO_CRC_INIT(uint32_t crc_init) { (void)crc_init; }
+int RADIO_TX_DONE(void) { return 1; }
+void RADIO_TX_CLEAR_DONE(void) {}
+uint64_t RADIO_TICKS(void) { return radio_ticks++; }
 uint64_t HW_TICKS_FROM_US(uint32_t us) { return us; }
-void GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]) { memset(address, 0, 6); }
+void RADIO_PUBLIC_ADDRESS(uint8_t address[6]) { memset(address, 0, 6); }
 int GAP_RANDOM_BYTES(uint8_t *out, size_t len) {
     memset(out, 0, len); return 1;
 }

@@ -147,7 +147,7 @@ static void gap_conn_end(void) {
         return;
 
     if (gap_poll.slot_valid && gap_poll.slot == gap_conn_slot ) {
-        GAP_HW_STOP();
+        RADIO_STOP();
         gap_poll.slot_valid = 0;
         gap_rx_armed = 0;
     }
@@ -478,7 +478,7 @@ static uint8_t gap_phy_preferred(uint8_t mask) {
 static void gap_send_feature_request(gap_conn_context *conn) {
     if (conn->tx_frame[1]) return;
 
-    uint8_t supported_phys = GAP_HW_PHY_MASK();
+    uint8_t supported_phys = RADIO_PHY_MASK();
     conn->c_features.request_pending = 1;
     conn->params_started_ms = GET_MILLIS();
 
@@ -568,8 +568,8 @@ static void gap_send_data_length(gap_conn_context *conn, uint8_t opcode) {
     conn->tx_frame[0] = 3;
     conn->tx_frame[1] = 9;
     conn->tx_frame[2] = opcode;
-    write_u16_le(conn->tx_frame + 3, MIN(GAP_HW_DATA_MAX, GAP_CONN_DATA_MAX));
-    write_u16_le(conn->tx_frame + 5, (MIN(GAP_HW_DATA_MAX, GAP_CONN_DATA_MAX) + 14) * 8);
+    write_u16_le(conn->tx_frame + 3, MIN(RADIO_DATA_MAX, GAP_CONN_DATA_MAX));
+    write_u16_le(conn->tx_frame + 5, (MIN(RADIO_DATA_MAX, GAP_CONN_DATA_MAX) + 14) * 8);
     write_u16_le(conn->tx_frame + 7, conn->local_tx_octets);
     write_u16_le(conn->tx_frame + 9, (conn->local_tx_octets + 14) * 8);
 }
@@ -593,7 +593,7 @@ static void gap_privacy_poll(uint32_t now) {
     ) return;
 
     if (gap_rx_armed) {
-        GAP_HW_STOP();
+        RADIO_STOP();
         gap_rx_armed = 0;
     }
 
@@ -1235,7 +1235,7 @@ static uint8_t gap_conn_control(
             ((frame[2] == LL_FEATURE_REQ && !conn->is_central) ||
              (frame[2] == LL_PERIPHERAL_FEATURE_REQ && conn->is_central))
         ) {
-            uint8_t supported_phys = GAP_HW_PHY_MASK();
+            uint8_t supported_phys = RADIO_PHY_MASK();
             conn->c_features.known = 1;
             conn->c_features.peer_feature_0 = frame[3];
             conn->c_features.peer_feature_1 = frame[4];
@@ -1777,10 +1777,10 @@ static uint8_t gap_conn_control(
             conn->data_length.tx_octets = MIN(conn->local_tx_octets, remote.rx_octets);
             conn->data_length.tx_time = MIN((uint16_t)((conn->local_tx_octets + 14) * 8),
                                                         remote.rx_time);
-            conn->data_length.rx_octets = MIN(MIN(GAP_HW_DATA_MAX, GAP_CONN_DATA_MAX),
+            conn->data_length.rx_octets = MIN(MIN(RADIO_DATA_MAX, GAP_CONN_DATA_MAX),
                                                 remote.tx_octets);
             conn->data_length.rx_time = MIN((uint16_t)(
-                        (MIN(GAP_HW_DATA_MAX, GAP_CONN_DATA_MAX) + 14) * 8), remote.tx_time);
+                        (MIN(RADIO_DATA_MAX, GAP_CONN_DATA_MAX) + 14) * 8), remote.tx_time);
 
             if (frame[2] == LL_LENGTH_REQ) {
                 gap_send_data_length(conn, LL_LENGTH_RSP);
@@ -1800,7 +1800,7 @@ static uint8_t gap_conn_control(
 
     case LL_PHY_REQ:
     case LL_PHY_RSP:
-        if (!(GAP_HW_PHY_MASK() & 6))
+        if (!(RADIO_PHY_MASK() & 6))
             return gap_conn_unknown_resp(conn, frame[2]);
 
         if (frame[1] != 3 || !frame[3] || !frame[4] ||
@@ -1887,11 +1887,11 @@ static uint8_t gap_conn_control(
 
     case LL_PHY_UPDATE_IND: { // LL_PHY_UPDATE_IND (Central to Peripheral)
         if (conn->is_central || frame[1] != 5 ||
-            !(GAP_HW_PHY_MASK() & 6) ||
+            !(RADIO_PHY_MASK() & 6) ||
             (conn->procedure_state.procedure_flags & GAP_PENDING_PHY_UPDATE)
         ) return gap_conn_unknown_resp(conn, frame[2]);
 
-        uint8_t supported = GAP_HW_PHY_MASK() & 7;
+        uint8_t supported = RADIO_PHY_MASK() & 7;
         uint8_t tx = frame[4], rx = frame[3];
         // Invalid or unsupported selections leave that direction unchanged.
 
@@ -2293,7 +2293,7 @@ int gap_channel_class_set(
 // LE 1M, allowing four MIC bytes. Buffer capacity remains a compile-time choice.
 int gap_data_length_set(uint16_t octets) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (octets < 27 || octets > MIN(GAP_HW_DATA_MAX, GAP_CONN_DATA_MAX))
+    if (octets < 27 || octets > MIN(RADIO_DATA_MAX, GAP_CONN_DATA_MAX))
         return 0;
 
     uint32_t irq_state = GAP_CRITICAL_ENTER();
@@ -2328,7 +2328,7 @@ int gap_data_length_set(uint16_t octets) {
 // The Central chooses the final rates; the connection switches at a shared Instant.
 int gap_phy_set(uint8_t tx, uint8_t rx) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    uint8_t supported = GAP_HW_PHY_MASK() & 7;
+    uint8_t supported = RADIO_PHY_MASK() & 7;
 
     if (gap_conn_procedure_busy(conn) ||
         !(supported & 6) || !tx || !rx ||
