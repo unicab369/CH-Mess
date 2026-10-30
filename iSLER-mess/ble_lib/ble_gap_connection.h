@@ -1853,7 +1853,9 @@ static uint8_t gap_conn_control(
             break;
         }
 
-        if (conn->is_central && !conn->tx_frame[1]) {
+        if (conn->is_central) {
+            if (conn->tx_frame[1]) break;
+
             uint8_t peer_tx = frame[3], peer_rx = frame[4];
             // An empty intersection leaves that direction unchanged.
             uint8_t tx = gap_phy_preferred(conn->phy_state.preferred.tx & peer_rx);
@@ -1875,16 +1877,14 @@ static uint8_t gap_conn_control(
             if (tx == conn->phy_state.current.tx) tx = 0;
             if (rx == conn->phy_state.current.rx) rx = 0;
             uint8_t phy_update_flag = 0;
-
             // Allow six latency-adjusted event periods plus one extra event of lead.
             conn->phy_state.instant = 0;
+
             if (tx || rx) {
                 phy_update_flag = GAP_PENDING_PHY_UPDATE;
                 conn->phy_state.instant = (uint16_t)(conn->link_layer.event_counter +
                                             6 * (conn->schedule.latency + 1) + 1);
             }
-            if (conn->queued_action == GAP_QUEUED_PHY)
-                conn->queued_action = GAP_QUEUED_NONE;
             conn->procedure_state.phy_request = 0;
             conn->procedure_state.procedure_flags = (conn->procedure_state.procedure_flags &
                                             (uint8_t)~GAP_PENDING_PHY_UPDATE) | phy_update_flag;
@@ -1901,10 +1901,8 @@ static uint8_t gap_conn_control(
             conn->tx_frame[4] = rx;
             write_u16_le(conn->tx_frame + 5, conn->phy_state.instant);
         }
-        else if (!conn->is_central) {
+        else {
             // The Central's request wins simultaneous requests.
-            if (conn->queued_action == GAP_QUEUED_PHY)
-                conn->queued_action = GAP_QUEUED_NONE;
             conn->procedure_state.phy_request = 1;
             conn->phy_state.started_ms = GET_MILLIS();
             conn->tx_frame[1] = 3;
@@ -1912,6 +1910,8 @@ static uint8_t gap_conn_control(
             conn->tx_frame[3] = conn->phy_state.preferred.tx;
             conn->tx_frame[4] = conn->phy_state.preferred.rx;
         }
+        if (conn->queued_action == GAP_QUEUED_PHY)
+            conn->queued_action = GAP_QUEUED_NONE;
         break;
 
     case LL_PHY_UPDATE_IND: { // LL_PHY_UPDATE_IND (Central to Peripheral)
