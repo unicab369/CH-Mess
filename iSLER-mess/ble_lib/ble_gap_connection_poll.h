@@ -2122,7 +2122,8 @@ int gap_send_due(
 
         if (adv_evt.phase == GAP_LEGACY_ADV_TX) {
             if (!RADIO_TX_DONE()) {
-                if (RADIO_TICKS() < adv_evt.deadline) return 0;
+                if (RADIO_TICKS() < adv_evt.deadline)
+                    return 0;
                 RADIO_STOP();
                 adv_evt.rx_event = 0;
                 adv_evt.phase = 0;

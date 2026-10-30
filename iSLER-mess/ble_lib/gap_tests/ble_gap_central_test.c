@@ -271,7 +271,14 @@ static void mock_radio_link_tx(const uint8_t *frame) {
             captured_extended_channels[slot] = configured_radio_channel;
             captured_extended_ticks[slot] = fake_radio_ticks;
         }
-        gap_ext_aux_primary_done();
+        gap_extended_adv_set *set = &gap_ext_adv[gap_ext_aux.set_id];
+        RADIO_TX_CLEAR_DONE();
+        gap_ext_aux.phase = GAP_EXT_AUX_PENDING;
+        if (!RADIO_LINK_TX_AT(gap_ext_aux_frame,
+                              gap_ext_aux.primary_start + HW_TICKS_FROM_US(480),
+                              BLE_ADV_ACCESS_ADDRESS, 0, 0,
+                              set->aux_phy, set->aux_phy, 0x555555))
+            gap_ext_aux.phase = GAP_EXT_AUX_FAILED;
         return;
     }
     link_tx_count++;

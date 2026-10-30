@@ -171,18 +171,6 @@ static struct {
     uint64_t primary_start, window_deadline;
 } gap_ext_aux;
 
-static void gap_ext_aux_primary_done(void) {
-    if (gap_ext_aux.phase != GAP_EXT_AUX_PRIMARY) return;
-    gap_extended_adv_set *set = &gap_ext_adv[gap_ext_aux.set_id];
-    RADIO_TX_CLEAR_DONE();
-    gap_ext_aux.phase = GAP_EXT_AUX_PENDING;
-    if (!RADIO_LINK_TX_AT(gap_ext_aux_frame,
-                          gap_ext_aux.primary_start + HW_TICKS_FROM_US(480),
-                          BLE_ADV_ACCESS_ADDRESS, 0, 0, set->aux_phy, set->aux_phy, 0x555555)) {
-        gap_ext_aux.phase = GAP_EXT_AUX_FAILED;
-        return;
-    }
-}
 enum { GAP_EXT_CHAIN_IDLE, GAP_EXT_CHAIN_TX_PENDING };
 static struct {
     volatile uint8_t phase;
