@@ -1121,38 +1121,6 @@ static inline void gatt_transport_set_connected(
     }
 }
 
-// Application facing
-// Update security state supplied by the owning BLE layer.
-static inline void gatt_transport_set_security(
-    ble_gatt_transport *transport,
-    int encrypted, int authenticated, uint8_t key_size
-) {
-    if (!transport) return;
-
-#if BLE_GATT_ENABLE_EATT
-    uint8_t encryption_changed = transport->encrypted != (encrypted != 0);
-#endif
-    transport->encrypted = encrypted != 0;
-    transport->authenticated = authenticated != 0;
-    transport->key_size = transport->encrypted ? key_size : 0;
-
-    if (transport->server) {
-        ble_gatt_server *server = transport->server;
-        server->encrypted = transport->encrypted || transport->authenticated;
-        server->authenticated = transport->authenticated;
-        server->encryption_key_size = transport->key_size >= 7 &&
-            transport->key_size <= 16 ? transport->key_size : 0;
-        if (!server->encrypted)
-            server->encryption_key_size = 0;
-    }
-
-#if BLE_GATT_ENABLE_EATT
-
-    if (transport->eatt_enabled && encryption_changed)
-        gatt_eatt_set_encrypted(&transport->eatt, transport->encrypted);
-#endif
-}
-
 // =============================================================================
 // Fixed ATT bearer and client integration
 // =============================================================================
@@ -1688,8 +1656,35 @@ static inline int ble_gap_gatt_poll(
             gatt_transport_set_connected(transport, 1);
             peer->connected = 1;
         }
-        gatt_transport_set_security(transport, gap_encrypted(),
-                                    gap_authenticated(), gap_key_size());
+
+        int encrypted = gap_encrypted();
+        int authenticated = 0;
+        uint8_t key_size = 0;
+#if GAP_SECURITY_SUPPORT >= 2
+        authenticated = gap_authenticated();
+        key_size = gap_key_size();
+#endif
+
+        transport->encrypted = encrypted != 0;
+        transport->authenticated = authenticated != 0;
+        transport->key_size = transport->encrypted ? key_size : 0;
+
+        if (transport->server) {
+            ble_gatt_server *server = transport->server;
+            server->encrypted = transport->encrypted || transport->authenticated;
+            server->authenticated = transport->authenticated;
+            server->encryption_key_size = transport->key_size >= 7 &&
+                transport->key_size <= 16 ? transport->key_size : 0;
+            if (!server->encrypted)
+                server->encryption_key_size = 0;
+        }
+
+#if BLE_GATT_ENABLE_EATT
+        if (transport->eatt_enabled &&
+            transport->eatt.encrypted != transport->encrypted
+        )
+            gatt_eatt_set_encrypted(&transport->eatt, transport->encrypted);
+#endif
 
         size_t fragment_len = sizeof(fragment);
         uint8_t llid = 0;

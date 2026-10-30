@@ -2314,7 +2314,7 @@ int gap_channel_reporting_set(
 int gap_peer_class_get(
     uint8_t classification[GAP_CHANN_CLASS_BYTES]
 ) {
-    const gap_conn_context *conn = gap_conn_ctx_current();
+    const gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         !conn->is_central
     ) return 0;
@@ -2686,7 +2686,7 @@ uint8_t gap_security_status(void) {
 // Application facing
 int gap_encrypted(void) {
 #if GAP_SECURITY_SUPPORT >= 1
-    const gap_conn_context *conn = gap_conn_ctx_current();
+    const gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     return (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
             (conn->is_central || !conn->link_layer.first_event) &&
@@ -2700,12 +2700,12 @@ int gap_encrypted(void) {
 
 #if GAP_SECURITY_SUPPORT >= 2
 int gap_authenticated(void) {
-    return gap_encrypted() && gap_conn_ctx_current()->authenticated;
+    return gap_encrypted() && gap_conn_ctx[gap_conn_slot].authenticated;
 }
 
 // Application facing
 uint8_t gap_key_size(void) {
-    return gap_encrypted() ? gap_conn_ctx_current()->enc_key_size : 0;
+    return gap_encrypted() ? gap_conn_ctx[gap_conn_slot].enc_key_size : 0;
 }
 #endif // GAP_SECURITY_SUPPORT >= 2
 

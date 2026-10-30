@@ -21,6 +21,36 @@ static l2cap_connection gatt_transport_test_l2cap;
 static l2cap_tx_queue gatt_transport_test_tx_queue;
 static uint8_t gatt_transport_test_tx[4 + BLE_GATT_TRANSPORT_MTU_MAX];
 
+static inline void gatt_transport_test_set_security(
+    ble_gatt_transport *transport,
+    int encrypted, int authenticated, uint8_t key_size
+) {
+    if (!transport) return;
+
+#if BLE_GATT_ENABLE_EATT
+    uint8_t encryption_changed = transport->encrypted != (encrypted != 0);
+#endif
+    transport->encrypted = encrypted != 0;
+    transport->authenticated = authenticated != 0;
+    transport->key_size = transport->encrypted ? key_size : 0;
+
+    if (transport->server) {
+        transport->server->encrypted = transport->encrypted ||
+                                       transport->authenticated;
+        transport->server->authenticated = transport->authenticated;
+        transport->server->encryption_key_size =
+            transport->key_size >= 7 && transport->key_size <= 16 ?
+            transport->key_size : 0;
+        if (!transport->server->encrypted)
+            transport->server->encryption_key_size = 0;
+    }
+
+#if BLE_GATT_ENABLE_EATT
+    if (transport->eatt_enabled && encryption_changed)
+        gatt_eatt_set_encrypted(&transport->eatt, transport->encrypted);
+#endif
+}
+
 static inline int gatt_transport_test_init(
     ble_gatt_transport *transport, ble_gatt_server *server,
     const ble_gatt_transport_test_ops *ops
@@ -68,8 +98,8 @@ static inline int gatt_transport_test_poll(
         ops->security_state(ops->context, &encrypted, &authenticated);
     uint8_t key_size = gatt_transport_test_key_size ?
         gatt_transport_test_key_size(ops->context) : 0;
-    gatt_transport_set_security(transport, encrypted, authenticated,
-                                key_size);
+    gatt_transport_test_set_security(transport, encrypted, authenticated,
+                                     key_size);
 
     int status = gatt_transport_poll(transport, now_ms);
     if (status < 0) {

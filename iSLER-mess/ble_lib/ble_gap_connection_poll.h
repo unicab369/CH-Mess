@@ -1922,7 +1922,7 @@ void gap_hw_scan_poll(void) {
     // periodic sync in the radio gaps between those events.
     if (gap_poll.slot_valid) return;
 
-    const gap_conn_context *conn = gap_conn_ctx_current();
+    const gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
         (conn->link_state.rx_armed || conn->link_state.event_replied)
     ) return;
