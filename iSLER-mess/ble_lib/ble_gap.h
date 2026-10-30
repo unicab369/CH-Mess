@@ -216,10 +216,6 @@ void RADIO_TX_TIMER_BEGIN(void);
 int RADIO_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel);
 void RADIO_CONNECT_TX_TIMER_CANCEL(void);
 #endif
-void RADIO_LINK_CONFIG(
-    uint32_t access_address, uint8_t channel,
-    uint8_t receive_after_tx,
-    uint8_t tx_phy, uint8_t rx_phy, uint32_t crc_init);
 // 1M PHY is mandatory; masks report supported PHYs.
 uint8_t RADIO_PHY_MASK(void);
 void RADIO_LINK_TX(
@@ -231,7 +227,10 @@ int RADIO_LINK_TX_AT(
     uint32_t access_address, uint8_t channel,
     uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy,
     uint32_t crc_init);
-int RADIO_IFS_TX_TIMER_ARM(const uint8_t *frame);
+int RADIO_IFS_TX_TIMER_ARM(
+    const uint8_t *frame, uint32_t access_address, uint8_t channel,
+    uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy,
+    uint32_t crc_init);
 void RADIO_LINK_RX(uint32_t access_address, uint8_t channel,
                    uint8_t phy, uint32_t crc_init);
 void RADIO_SCAN_RX(uint8_t channel);
@@ -718,6 +717,7 @@ typedef struct {
         uint8_t event_replied;
         // This event's data channel was selected from link_layer.channel_map.
         uint8_t channel_selected;
+        uint8_t channel; // Data channel used by the current connection event.
         // Defer termination until the current reply is sent; then queue termination.
         uint8_t terminate_after_reply;
         // LL_VERSION_IND was sent; prevents sending it again during feature/version exchange.

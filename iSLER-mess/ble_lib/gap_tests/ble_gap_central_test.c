@@ -235,7 +235,14 @@ void RADIO_SCAN_RX(uint8_t channel) {
 }
 void RADIO_TX_TIMER_BEGIN(void) {}
 static void mock_radio_link_tx(const uint8_t *frame);
-int RADIO_IFS_TX_TIMER_ARM(const uint8_t *frame) {
+static void mock_radio_link_config(uint32_t access_address, uint8_t channel,
+                                   uint8_t receive_after_tx, uint8_t tx_phy,
+                                   uint8_t rx_phy, uint32_t crc_init);
+int RADIO_IFS_TX_TIMER_ARM(const uint8_t *frame, uint32_t access_address,
+                           uint8_t channel, uint8_t receive_after_tx,
+                           uint8_t tx_phy, uint8_t rx_phy, uint32_t crc_init) {
+    mock_radio_link_config(access_address, channel, receive_after_tx,
+                           tx_phy, rx_phy, crc_init);
     tx_buffer = frame;
     if (fake_radio_ticks_enabled && fake_radio_tick_autoincrement &&
         configured_access_address != BLE_ADV_ACCESS_ADDRESS)
@@ -344,16 +351,16 @@ static void mock_radio_link_tx(const uint8_t *frame) {
 void RADIO_LINK_TX(const uint8_t *frame, uint32_t access_address,
                    uint8_t channel, uint8_t receive_after_tx,
                    uint8_t tx_phy, uint8_t rx_phy, uint32_t crc_init) {
-    RADIO_LINK_CONFIG(access_address, channel, receive_after_tx,
-                      tx_phy, rx_phy, crc_init);
+    mock_radio_link_config(access_address, channel, receive_after_tx,
+                           tx_phy, rx_phy, crc_init);
     mock_radio_link_tx(frame);
 }
 int RADIO_LINK_TX_AT(const uint8_t *frame, uint64_t start_ticks,
                      uint32_t access_address, uint8_t channel,
                      uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy,
                      uint32_t crc_init) {
-    RADIO_LINK_CONFIG(access_address, channel, receive_after_tx,
-                      tx_phy, rx_phy, crc_init);
+    mock_radio_link_config(access_address, channel, receive_after_tx,
+                           tx_phy, rx_phy, crc_init);
     tx_buffer = frame;
     if (fake_radio_ticks_enabled && fake_radio_ticks < start_ticks)
         fake_radio_ticks = start_ticks;
@@ -380,7 +387,7 @@ int RADIO_LINK_TX_AT(const uint8_t *frame, uint64_t start_ticks,
 }
 int RADIO_TX_DONE(void) { return fake_tx_done; }
 void RADIO_TX_CLEAR_DONE(void) {}
-void RADIO_LINK_CONFIG(
+static void mock_radio_link_config(
     uint32_t access_address, uint8_t channel,
                             uint8_t receive_after_tx,
                             uint8_t tx_phy, uint8_t rx_phy, uint32_t crc_init
@@ -395,7 +402,7 @@ void RADIO_LINK_CONFIG(
 }
 void RADIO_LINK_RX(uint32_t access_address, uint8_t channel,
                    uint8_t phy, uint32_t crc_init) {
-    RADIO_LINK_CONFIG(access_address, channel, 0, phy, phy, crc_init);
+    mock_radio_link_config(access_address, channel, 0, phy, phy, crc_init);
     link_rx_count++;
     if (inject_ext_connect_request && gap_ext_adv_connect.waiting) {
         static const uint8_t initiator[6] = {0x51, 0x52, 0x53, 0x54, 0x55, 0x56};

@@ -1449,11 +1449,12 @@ static int gap_pawr_conn_req_start(uint8_t slot, const uint8_t *request, size_t 
     uint8_t channel = gap_sync_channel(&sync->params,
                         (uint16_t)(sync->last_event_counter ^ sync->pawr.subevent));
     RADIO_TX_CLEAR_DONE();
-    RADIO_LINK_CONFIG(sync->params.access_address, channel, 0, sync->phy, sync->phy,
-                        sync->params.crc_init);
     // The received AUX_CONNECT_REQ is the previous packet on air. Start the
     // response at T_IFS from the RX callback, while that deadline is usable.
-    if (!RADIO_IFS_TX_TIMER_ARM(gap_ext_adv_frame)) return 0;
+    if (!RADIO_IFS_TX_TIMER_ARM(gap_ext_adv_frame, sync->params.access_address, channel, 0,
+                                sync->phy, sync->phy, sync->params.crc_init)
+    ) return 0;
+
     gap_ext_pawr.connect.reply_armed = 1;
     gap_ext_pawr.connect.reply_deadline_ms = GET_MILLIS() + 5;
     return 1;

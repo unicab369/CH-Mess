@@ -16,8 +16,8 @@ value as proof that the packet finished transmitting. Priorities put the
 
 ## First implementation step
 
-Use `RADIO_LINK_CONFIG()` and `RADIO_LINK_TX()` in the CH582 radio port
-to advance nonconnectable advertising on TX completion. Then apply the same
+Use `RADIO_LINK_TX()` in the CH582 radio port to configure and start each
+nonconnectable advertising transmission. Then apply the same
 event sequencing to the remaining advertising paths. Measure the existing
 timer-driven `CONNECT_IND` turnaround on the device.
 
