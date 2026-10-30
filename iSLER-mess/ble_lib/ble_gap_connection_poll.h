@@ -4,15 +4,13 @@
 
 #include "ble_gap_extension.h"
 
-// Give security first use of TX, then start the next queued LL procedure.
+// Stage the next queued LL control PDU for transmission, giving security priority.
 static void gap_conn_send_queued(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
 #if GAP_SECURITY_SUPPORT >= 1
     gap_send_security(conn);
 #endif // GAP_SECURITY_SUPPORT >= 1
-    // Keep this after gap_send_security: a busy security phase may still need
-    // to queue its next packet before other procedures are blocked.
     if (gap_conn_security_busy(conn) || conn->tx_frame[1]) return;
 
 #if GAP_CENTRAL_SUPPORT
@@ -36,6 +34,33 @@ static void gap_conn_send_queued(void) {
             memcpy(conn->tx_frame + 3, conn->next_channel_map, 5);
             write_u16_le(conn->tx_frame + 8, conn->map_instant);
             return;
+        }
+
+        if (!conn->c_features.request_pending &&
+            conn->central.channel_report_queued
+        ) {
+            if (!conn->c_features.known) {
+                gap_send_feature_request(conn);
+                return;
+            }
+            else if (!(conn->c_features.peer_feature_4 & GAP_LL_FEATURES_CH_CLASS)) {
+                conn->central.channel_report_queued = 0;
+                conn->central.channel_report_pending = 0;
+                conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
+            }
+            else {
+                conn->central.channel_report_queued = 0;
+                conn->central.channel_report_pending = 1;
+                conn->connection_status = GAP_CONNECTION_PENDING;
+
+                conn->tx_frame[0] = 0x03;
+                conn->tx_frame[1] = 4;
+                conn->tx_frame[2] = LL_CHANNEL_REPORTING_IND;
+                conn->tx_frame[3] = conn->channel_report.enabled;
+                conn->tx_frame[4] = conn->channel_report.min_spacing_200ms;
+                conn->tx_frame[5] = conn->channel_report.max_delay_200ms;
+                return;
+            }
         }
     }
 #endif // GAP_CENTRAL_SUPPORT
@@ -94,33 +119,6 @@ static void gap_conn_send_queued(void) {
     }
 
     if (conn->c_features.request_pending) return;
-
-#if GAP_CENTRAL_SUPPORT
-    if (conn->is_central && conn->central.channel_report_queued) {
-        if (!conn->c_features.known) {
-            gap_send_feature_request(conn);
-            return;
-        }
-        else if (!(conn->c_features.peer_feature_4 & GAP_LL_FEATURES_CH_CLASS)) {
-            conn->central.channel_report_queued = 0;
-            conn->central.channel_report_pending = 0;
-            conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
-        }
-        else {
-            conn->central.channel_report_queued = 0;
-            conn->central.channel_report_pending = 1;
-            conn->connection_status = GAP_CONNECTION_PENDING;
-
-            conn->tx_frame[0] = 0x03;
-            conn->tx_frame[1] = 4;
-            conn->tx_frame[2] = LL_CHANNEL_REPORTING_IND;
-            conn->tx_frame[3] = conn->channel_report.enabled;
-            conn->tx_frame[4] = conn->channel_report.min_spacing_200ms;
-            conn->tx_frame[5] = conn->channel_report.max_delay_200ms;
-            return;
-        }
-    }
-#endif // GAP_CENTRAL_SUPPORT
 
     //! subrate
     if (conn->c_subrate.queued_flags) {
