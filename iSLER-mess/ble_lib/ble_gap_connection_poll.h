@@ -529,10 +529,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         conn->link_layer.first_event = 0;
         conn->link_state.channel_selected = 0;
         conn->procedure_state.update_window_active = 0;
-        // The Central may continue this event only when either side set MD.
-        // The Peripheral must reply to a received Central packet.
-        uint8_t reply_now = !conn->is_central ||
-                            ((frame[0] | conn->tx_frame[0]) & 0x10);
 
         // NESN is the peer's next expected TX sequence number; a changed NESN
         // acknowledges the packet currently pending for transmission.
@@ -575,17 +571,17 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             }
 #endif // GAP_CENTRAL_SUPPORT
 
-#if GAP_PERIPHERAL_SUPPORT
-            if (!conn->is_central && conn->peripheral.rate_ack_waiting) {
-                conn->peripheral.rate_ack_waiting = 0;
-            }
-#endif // GAP_PERIPHERAL_SUPPORT
-
 #if GAP_SECURITY_SUPPORT >= 1
             conn->security.tx_sealed = 0;
             conn->security.tx_plain_len = 0;
             conn->security.tx_opcode = 0;
 #endif // GAP_SECURITY_SUPPORT >= 1
+
+#if GAP_PERIPHERAL_SUPPORT
+            if (!conn->is_central && conn->peripheral.rate_ack_waiting) {
+                conn->peripheral.rate_ack_waiting = 0;
+            }
+#endif // GAP_PERIPHERAL_SUPPORT
 
             conn->link_layer.tx_sn ^= 1;
             conn->link_layer.tx_pending = 0;
@@ -787,7 +783,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
                             (conn->link_layer.tx_sn << 3);
 
 #if GAP_CENTRAL_SUPPORT
-        if (!reply_now) {
+        if (conn->is_central && !((frame[0] | conn->tx_frame[0]) & 0x10)) {
             // Both packets had MD=0, so the Peripheral's packet closed the
             // event. Send the queued frame at the next event anchor.
             // Keep even an empty PDU pending until the peer acknowledges its
