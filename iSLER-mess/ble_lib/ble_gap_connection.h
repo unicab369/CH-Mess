@@ -1501,8 +1501,7 @@ static uint8_t gap_conn_control(
                 uint8_t upper_valid = upper <= maximum;
 
                 if (lower_valid && upper_valid)
-                    interval = (uint16_t)(interval - lower <= upper - interval ?
-                                          lower : upper);
+                    interval = (uint16_t)(interval - lower <= upper - interval ? lower : upper);
                 else if (upper_valid)
                     interval = (uint16_t)upper;
                 else if (lower_valid)
@@ -1859,15 +1858,13 @@ static uint8_t gap_conn_control(
             // An empty intersection leaves that direction unchanged.
             uint8_t tx = gap_phy_preferred(conn->phy_state.preferred.tx & peer_rx);
             uint8_t rx = gap_phy_preferred(conn->phy_state.preferred.rx & peer_tx);
-            if (tx == conn->phy_state.current.tx) tx = 0;
-            if (rx == conn->phy_state.current.rx) rx = 0;
 
             // A single identical peer preference requests symmetry: choose it in
             // both directions or leave both unchanged, as required by PHY negotiation.
             if (peer_tx == peer_rx &&
                 (peer_tx == GAP_PHY_1M ||
-                peer_tx == GAP_PHY_2M ||
-                peer_tx == GAP_PHY_CODED) &&
+                 peer_tx == GAP_PHY_2M ||
+                 peer_tx == GAP_PHY_CODED) &&
                 ((tx ? tx : conn->phy_state.current.tx) != peer_tx ||
                  (rx ? rx : conn->phy_state.current.rx) != peer_rx)
             ) {
@@ -1875,15 +1872,22 @@ static uint8_t gap_conn_control(
                 rx = 0;
             }
 
+            if (tx == conn->phy_state.current.tx) tx = 0;
+            if (rx == conn->phy_state.current.rx) rx = 0;
+            uint8_t phy_update_flag = 0;
+
             // Allow six latency-adjusted event periods plus one extra event of lead.
-            conn->phy_state.instant = tx || rx ? (uint16_t)(conn->link_layer.event_counter +
-                                                6 * (conn->schedule.latency + 1) + 1) : 0;
+            conn->phy_state.instant = 0;
+            if (tx || rx) {
+                phy_update_flag = GAP_PENDING_PHY_UPDATE;
+                conn->phy_state.instant = (uint16_t)(conn->link_layer.event_counter +
+                                            6 * (conn->schedule.latency + 1) + 1);
+            }
             if (conn->queued_action == GAP_QUEUED_PHY)
                 conn->queued_action = GAP_QUEUED_NONE;
             conn->procedure_state.phy_request = 0;
             conn->procedure_state.procedure_flags = (conn->procedure_state.procedure_flags &
-                                                    (uint8_t)~GAP_PENDING_PHY_UPDATE) |
-                                                    ((tx || rx) ? GAP_PENDING_PHY_UPDATE : 0);
+                                            (uint8_t)~GAP_PENDING_PHY_UPDATE) | phy_update_flag;
 
             if (!(conn->procedure_state.procedure_flags & GAP_PENDING_PHY_UPDATE))
                 conn->phy_state.status = 0;
