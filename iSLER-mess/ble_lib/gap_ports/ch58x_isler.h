@@ -275,21 +275,23 @@ int RADIO_IFS_TX_TIMER_ARM(const uint8_t *frame) {
     return 1;
 }
 
-// Start the configured link TX at an absolute controller tick. This has a
+// Configure and start a link TX at an absolute controller tick. This has a
 // separate logical arm state from IFS replies, though both use hardware TMR0.
-// Link configuration must be complete first.
-int RADIO_LINK_TX_AT(const uint8_t *frame, uint64_t start_ticks) {
+// It does not replace an IFS reply already in flight.
+int RADIO_LINK_TX_AT(
+    const uint8_t *frame, uint64_t start_ticks,
+    uint32_t access_address, uint8_t channel,
+    uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy,
+    uint32_t crc_init
+) {
     // TMR0 is a shared hardware resource, but this absolute event has its own
     // logical arm state and must not replace an IFS reply already in flight.
     if (gap_link.reply_armed || gap_link.ifs_tx_active ||
         gap_link.scheduled_tx_armed
     ) return 0;
 
-    if (gs_iSLERLink.phy_mode != gap_phy_mode(gap_link.tx_phy)) {
-        iSLERLinkConfig(gap_link.access_address, gap_link.channel,
-                       gap_phy_mode(gap_link.tx_phy), NULL,
-                       gap_link.receive_after_tx && gap_link.tx_phy == gap_link.rx_phy);
-    }
+    gap_link_configure(access_address, channel, receive_after_tx,
+                       tx_phy, rx_phy, crc_init, 1);
     gap_radio_tx_buffer(frame);
     gap_link.tx_due_ticks = start_ticks;
     iSLERStop();
@@ -347,10 +349,11 @@ int RADIO_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
     return tx_done != 0;
 }
 
-void RADIO_LINK_CONFIG(
+static void gap_link_configure(
     uint32_t access_address, uint8_t channel,
     uint8_t receive_after_tx,
-    uint8_t tx_phy, uint8_t rx_phy, uint32_t crc_init
+    uint8_t tx_phy, uint8_t rx_phy, uint32_t crc_init,
+    uint8_t transmitting
 ) {
     gap_link.access_address = access_address;
     gap_link.channel = channel;
@@ -359,12 +362,21 @@ void RADIO_LINK_CONFIG(
     gap_link.receive_after_tx = receive_after_tx;
 
     iSLERLinkConfig(access_address, channel,
-                   gap_phy_mode(receive_after_tx ? tx_phy : rx_phy),
+                   gap_phy_mode(transmitting || receive_after_tx ? tx_phy : rx_phy),
                    NULL, receive_after_tx && tx_phy == rx_phy);
     BB->CRCINIT1 = crc_init;
 #ifdef CH570_CH572
     BB->CRCINIT2 = crc_init;
 #endif
+}
+
+void RADIO_LINK_CONFIG(
+    uint32_t access_address, uint8_t channel,
+    uint8_t receive_after_tx,
+    uint8_t tx_phy, uint8_t rx_phy, uint32_t crc_init
+) {
+    gap_link_configure(access_address, channel, receive_after_tx,
+                       tx_phy, rx_phy, crc_init, 0);
 }
 
 uint8_t RADIO_PHY_MASK(void) {
@@ -378,21 +390,20 @@ uint8_t RADIO_PHY_MASK(void) {
     return phy_mask;
 }
 
-void RADIO_LINK_TX(const uint8_t *frame) {
-    if (gs_iSLERLink.phy_mode != gap_phy_mode(gap_link.tx_phy)) {
-        iSLERLinkConfig(gap_link.access_address, gap_link.channel,
-                       gap_phy_mode(gap_link.tx_phy),
-                       NULL,
-                       gap_link.receive_after_tx && gap_link.tx_phy == gap_link.rx_phy);
-    }
-
+void RADIO_LINK_TX(
+    const uint8_t *frame, uint32_t access_address, uint8_t channel,
+    uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy,
+    uint32_t crc_init
+) {
+    gap_link_configure(access_address, channel, receive_after_tx,
+                       tx_phy, rx_phy, crc_init, 1);
     gap_radio_tx_buffer(frame);
     iSLERLinkTX();
 }
 
 void RADIO_LINK_RX(
     uint32_t access_address, uint8_t channel,
-uint8_t phy, uint32_t crc_init
+    uint8_t phy, uint32_t crc_init
 ) {
     RADIO_LINK_CONFIG(access_address, channel, 0, phy, phy, crc_init);
     iSLERLinkRX();
@@ -407,6 +418,7 @@ void RADIO_SCAN_RX(uint8_t channel) {
 int RADIO_TX_DONE(void) {
     return (tx_done & LL_TX) != 0;
 }
+
 void RADIO_TX_CLEAR_DONE(void) {
     tx_done = 0;
 }

@@ -222,8 +222,15 @@ void RADIO_LINK_CONFIG(
     uint8_t tx_phy, uint8_t rx_phy, uint32_t crc_init);
 // 1M PHY is mandatory; masks report supported PHYs.
 uint8_t RADIO_PHY_MASK(void);
-void RADIO_LINK_TX(const uint8_t *frame);
-int RADIO_LINK_TX_AT(const uint8_t *frame, uint64_t start_ticks);
+void RADIO_LINK_TX(
+    const uint8_t *frame, uint32_t access_address, uint8_t channel,
+    uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy,
+    uint32_t crc_init);
+int RADIO_LINK_TX_AT(
+    const uint8_t *frame, uint64_t start_ticks,
+    uint32_t access_address, uint8_t channel,
+    uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy,
+    uint32_t crc_init);
 int RADIO_IFS_TX_TIMER_ARM(const uint8_t *frame);
 void RADIO_LINK_RX(uint32_t access_address, uint8_t channel,
                    uint8_t phy, uint32_t crc_init);

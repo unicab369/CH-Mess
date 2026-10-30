@@ -39,15 +39,25 @@ void RADIO_LINK_CONFIG(uint32_t aa, uint8_t channel,
     configured_tx = tx;
 }
 uint8_t RADIO_PHY_MASK(void) { return GAP_PHY_1M; }
-void RADIO_LINK_TX(const uint8_t *frame) {
+static void mock_radio_link_tx(const uint8_t *frame) {
     transmitted_frame = frame;
     tx_started++;
 }
-int RADIO_LINK_TX_AT(const uint8_t *frame, uint64_t start_ticks) {
-    (void)start_ticks; RADIO_LINK_TX(frame); return 1;
+void RADIO_LINK_TX(const uint8_t *frame, uint32_t aa, uint8_t channel,
+                   uint8_t tx, uint8_t tx_phy, uint8_t rx_phy,
+                   uint32_t crc_init) {
+    RADIO_LINK_CONFIG(aa, channel, tx, tx_phy, rx_phy, crc_init);
+    mock_radio_link_tx(frame);
+}
+int RADIO_LINK_TX_AT(const uint8_t *frame, uint64_t start_ticks,
+                     uint32_t aa, uint8_t channel, uint8_t tx,
+                     uint8_t tx_phy, uint8_t rx_phy, uint32_t crc_init) {
+    (void)start_ticks;
+    RADIO_LINK_TX(frame, aa, channel, tx, tx_phy, rx_phy, crc_init);
+    return 1;
 }
 int RADIO_IFS_TX_TIMER_ARM(const uint8_t *frame) {
-    RADIO_LINK_TX(frame); return 1;
+    mock_radio_link_tx(frame); return 1;
 }
 void RADIO_LINK_RX(uint32_t aa, uint8_t channel, uint8_t phy, uint32_t crc_init) {
     RADIO_LINK_CONFIG(aa, channel, 0, phy, phy, crc_init);

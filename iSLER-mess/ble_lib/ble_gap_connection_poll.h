@@ -1586,10 +1586,9 @@ static void gap_conn_poll(void) {
 
 #if GAP_CENTRAL_SUPPORT
     if (transmit) {
-        RADIO_LINK_CONFIG(conn->link_layer.access_address, selected_channel, 1,
-                          conn->phy_state.current.tx, conn->phy_state.current.rx,
-                          conn->link_layer.crc_init);
-        RADIO_LINK_TX(transmit);
+        RADIO_LINK_TX(transmit, conn->link_layer.access_address, selected_channel, 1,
+                      conn->phy_state.current.tx, conn->phy_state.current.rx,
+                      conn->link_layer.crc_init);
     } else
 #endif // GAP_CENTRAL_SUPPORT
         RADIO_LINK_RX(conn->link_layer.access_address, selected_channel,
@@ -2135,10 +2134,10 @@ int gap_send_due(
             gap_rx.ready = adv_evt.scan_resp_started = adv_evt.conn_req_ready = 0;
 
             uint8_t receive_after_tx = (adv_evt.adv_frame[0] & 0x0f) != ADV_NONCONN_IND;
-            RADIO_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, adv_evt.channel,
-                               receive_after_tx, GAP_PHY_1M, GAP_PHY_1M, 0x555555);
             RADIO_TX_CLEAR_DONE();
-            RADIO_LINK_TX(adv_evt.adv_frame);
+            RADIO_LINK_TX(adv_evt.adv_frame, BLE_ADV_ACCESS_ADDRESS,
+                          adv_evt.channel, receive_after_tx,
+                          GAP_PHY_1M, GAP_PHY_1M, 0x555555);
             adv_evt.rx_event = 1;
             adv_evt.phase = GAP_LEGACY_ADV_TX;
             adv_evt.deadline = RADIO_TICKS() + HW_TICKS_FROM_US(1000);
@@ -2228,10 +2227,9 @@ int gap_send_due(
     adv_evt.rx_event = receive_after_tx;
     gap_rx.ready = adv_evt.scan_resp_started = adv_evt.conn_req_ready = 0;
 
-    RADIO_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, adv_evt.channel,
-                       receive_after_tx, GAP_PHY_1M, GAP_PHY_1M, 0x555555);
     RADIO_TX_CLEAR_DONE();
-    RADIO_LINK_TX(adv_evt.adv_frame);
+    RADIO_LINK_TX(adv_evt.adv_frame, BLE_ADV_ACCESS_ADDRESS, adv_evt.channel,
+                  receive_after_tx, GAP_PHY_1M, GAP_PHY_1M, 0x555555);
     adv_evt.phase = GAP_LEGACY_ADV_TX;
     adv_evt.deadline = RADIO_TICKS() + HW_TICKS_FROM_US(1000);
     return 0;

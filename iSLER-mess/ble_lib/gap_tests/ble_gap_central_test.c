@@ -234,6 +234,7 @@ void RADIO_SCAN_RX(uint8_t channel) {
     scan_rx_count++;
 }
 void RADIO_TX_TIMER_BEGIN(void) {}
+static void mock_radio_link_tx(const uint8_t *frame);
 int RADIO_IFS_TX_TIMER_ARM(const uint8_t *frame) {
     tx_buffer = frame;
     if (fake_radio_ticks_enabled && fake_radio_tick_autoincrement &&
@@ -245,14 +246,14 @@ int RADIO_IFS_TX_TIMER_ARM(const uint8_t *frame) {
         gap_ext_scan.request_end_ticks = RADIO_TICKS();
         gap_ext_scan.request_phase = GAP_EXT_REQ_CONNECT_RX;
     }
-    RADIO_LINK_TX(frame);
+    mock_radio_link_tx(frame);
 #if GAP_PERIPHERAL_SUPPORT
     if (gap_ext_adv_connect.response_started)
         gap_ext_adv_connect.waiting = 0;
 #endif
     return 1;
 }
-void RADIO_LINK_TX(const uint8_t *frame) {
+static void mock_radio_link_tx(const uint8_t *frame) {
     tx_buffer = frame;
     if (gap_ext_aux.phase == GAP_EXT_AUX_PRIMARY &&
         tx_buffer == gap_ext_primary_frame) {
@@ -340,7 +341,19 @@ void RADIO_LINK_TX(const uint8_t *frame) {
 #endif
     }
 }
-int RADIO_LINK_TX_AT(const uint8_t *frame, uint64_t start_ticks) {
+void RADIO_LINK_TX(const uint8_t *frame, uint32_t access_address,
+                   uint8_t channel, uint8_t receive_after_tx,
+                   uint8_t tx_phy, uint8_t rx_phy, uint32_t crc_init) {
+    RADIO_LINK_CONFIG(access_address, channel, receive_after_tx,
+                      tx_phy, rx_phy, crc_init);
+    mock_radio_link_tx(frame);
+}
+int RADIO_LINK_TX_AT(const uint8_t *frame, uint64_t start_ticks,
+                     uint32_t access_address, uint8_t channel,
+                     uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy,
+                     uint32_t crc_init) {
+    RADIO_LINK_CONFIG(access_address, channel, receive_after_tx,
+                      tx_phy, rx_phy, crc_init);
     tx_buffer = frame;
     if (fake_radio_ticks_enabled && fake_radio_ticks < start_ticks)
         fake_radio_ticks = start_ticks;
@@ -357,7 +370,7 @@ int RADIO_LINK_TX_AT(const uint8_t *frame, uint64_t start_ticks) {
         captured_extended_channels[slot] = configured_radio_channel;
         captured_extended_ticks[slot] = start_ticks;
     }
-    RADIO_LINK_TX(frame);
+    mock_radio_link_tx(frame);
     if (tx_buffer == gap_ext_aux_frame &&
         gap_ext_aux.phase == GAP_EXT_AUX_PENDING &&
         (gap_ext_adv[gap_ext_aux.set_id].scannable ||
