@@ -1982,6 +1982,7 @@ static uint8_t gap_conn_timing_busy(const gap_conn_context *conn) {
 int gap_conn_update(
     gap_conn_context *conn, uint16_t interval, uint16_t latency, uint16_t timeout
 ) {
+    uint32_t irq_state = GAP_CRITICAL_ENTER();
     uint32_t interval_125us = (uint32_t)interval * 10;
     uint16_t factor = 1;
 
@@ -1991,7 +1992,10 @@ int gap_conn_update(
     if (gap_conn_timing_busy(conn) || !conn->is_central ||
         !ble_timing_valid(interval, interval, latency, timeout) ||
         (uint64_t)timeout * 80 <= 2ull * (latency + 1) * interval_125us * factor
-    ) return 0;
+    ) {
+        GAP_CRITICAL_EXIT(irq_state);
+        return 0;
+    }
 
     conn->new_params.interval = interval;
     conn->new_params.latency = latency;
@@ -2000,6 +2004,7 @@ int gap_conn_update(
 #if GAP_CENTRAL_SUPPORT
     conn->central.local_update = 1;
 #endif
+    GAP_CRITICAL_EXIT(irq_state);
     return 1;
 }
 
@@ -2012,6 +2017,7 @@ int gap_conn_request(
     uint16_t latency, uint16_t timeout
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    uint32_t irq_state = GAP_CRITICAL_ENTER();
     uint16_t factor = 1;
 
     if (IN_RANGE_INCLUSIVE(conn->schedule.interval_125us, minimum * 10, maximum * 10))
@@ -2020,10 +2026,14 @@ int gap_conn_request(
     if (gap_conn_timing_busy(conn) ||
         !ble_timing_valid( minimum, maximum, latency, timeout) ||
         (uint64_t)timeout * 80 <= 2ull * (latency + 1) * maximum * 10 * factor
-    ) return 0;
+    ) {
+        GAP_CRITICAL_EXIT(irq_state);
+        return 0;
+    }
 
     if (conn->c_features.known && !(conn->c_features.peer_feature_0 & 0x02)) {
         conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
+        GAP_CRITICAL_EXIT(irq_state);
         return 0;
     }
 
@@ -2033,6 +2043,7 @@ int gap_conn_request(
     conn->params_request.timeout_10ms = timeout;
     conn->connection_status = GAP_CONNECTION_PENDING;
     conn->queue_state.local_params = 1;
+    GAP_CRITICAL_EXIT(irq_state);
     return 1;
 }
 
@@ -2044,17 +2055,22 @@ int gap_subrate_set(
     uint16_t continuation, uint16_t timeout
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    uint32_t irq_state = GAP_CRITICAL_ENTER();
 
     if (gap_conn_timing_busy(conn) ||
         !conn->is_central ||
         !gap_rate_parameters_valid(conn->schedule.interval_125us,
                             factor, peripheral_latency, continuation, timeout)
-    ) return 0;
+    ) {
+        GAP_CRITICAL_EXIT(irq_state);
+        return 0;
+    }
 
     if (conn->c_features.known && GAP_LL_FEATURES_SUBRATING_MASK !=
         (conn->c_features.peer_feature_4 & GAP_LL_FEATURES_SUBRATING_MASK)
     ) {
         conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
+        GAP_CRITICAL_EXIT(irq_state);
         return 0;
     }
 
@@ -2064,6 +2080,7 @@ int gap_subrate_set(
     conn->next_schedule.timeout_10ms = timeout;
     conn->c_subrate.status = GAP_CONNECTION_PENDING;
     conn->timing_queued_action = GAP_TIMING_SUBRATE_UPDATE;
+    GAP_CRITICAL_EXIT(irq_state);
     return 1;
 }
 
@@ -2076,18 +2093,23 @@ int gap_subrate_request(
     uint16_t timeout_10ms
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    uint32_t irq_state = GAP_CRITICAL_ENTER();
 
     if (gap_conn_timing_busy(conn) || conn->is_central ||
         !gap_schedule_parameters_valid(factor_min, factor_max, max_latency,
                                         continuation, timeout_10ms) ||
         (uint64_t)timeout_10ms * 80 <= 2ull * conn->schedule.interval_125us * factor_min *
                                 (max_latency + 1)
-    ) return 0;
+    ) {
+        GAP_CRITICAL_EXIT(irq_state);
+        return 0;
+    }
 
     if (conn->c_features.known && GAP_LL_FEATURES_SUBRATING_MASK !=
         (conn->c_features.peer_feature_4 & GAP_LL_FEATURES_SUBRATING_MASK)
     ) {
         conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
+        GAP_CRITICAL_EXIT(irq_state);
         return 0;
     }
 
@@ -2098,6 +2120,7 @@ int gap_subrate_request(
     conn->peripheral.subrate_request.timeout_10ms = timeout_10ms;
     conn->c_subrate.status = GAP_CONNECTION_PENDING;
     conn->timing_queued_action = GAP_TIMING_SUBRATE_REQUEST;
+    GAP_CRITICAL_EXIT(irq_state);
     return 1;
 }
 
@@ -2113,6 +2136,7 @@ int gap_conn_rate_request(
     uint16_t preferred_periodicity_125us, const uint16_t offsets[4]
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    uint32_t irq_state = GAP_CRITICAL_ENTER();
     if (gap_conn_timing_busy(conn) ||
         conn->is_central ||
         intv_min_125us < 3 ||
@@ -2121,7 +2145,10 @@ int gap_conn_rate_request(
         !gap_schedule_parameters_valid(factor_min, factor_max, max_latency,
                                       continuation, timeout_10ms) ||
         (uint64_t)timeout_10ms * 80 <= 2ull * intv_max_125us * factor_max * (max_latency + 1)
-    ) return 0;
+    ) {
+        GAP_CRITICAL_EXIT(irq_state);
+        return 0;
+    }
 
     uint8_t unused_offset = 0;
     for (uint8_t i = 0; offsets && i < 4; i++) {
@@ -2130,12 +2157,16 @@ int gap_conn_rate_request(
             continue;
         }
 
-        if (unused_offset || offsets[i] >= intv_max_125us)
+        if (unused_offset || offsets[i] >= intv_max_125us) {
+            GAP_CRITICAL_EXIT(irq_state);
             return 0;
+        }
 
         for (uint8_t j = 0; j < i; j++) {
-            if (offsets[i] == offsets[j])
+            if (offsets[i] == offsets[j]) {
+                GAP_CRITICAL_EXIT(irq_state);
                 return 0;
+            }
         }
     }
 
@@ -2152,6 +2183,7 @@ int gap_conn_rate_request(
         conn->peripheral.rate_request.offsets[i] = offsets ? offsets[i] : 0xffff;
     conn->timing_queued_action = GAP_TIMING_RATE_REQUEST;
     conn->connection_status = GAP_CONNECTION_PENDING;
+    GAP_CRITICAL_EXIT(irq_state);
     return 1;
 }
 #endif // GAP_PERIPHERAL_SUPPORT
@@ -2164,11 +2196,15 @@ int gap_conn_rate_set(
     uint16_t latency, uint16_t continuation, uint16_t timeout
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    uint32_t irq_state = GAP_CRITICAL_ENTER();
     if (gap_conn_timing_busy(conn) ||
         !conn->is_central ||
         interval < gap_conn_min_interval(conn) ||
         !gap_rate_parameters_valid(interval, factor, latency, continuation, timeout)
-    ) return 0;
+    ) {
+        GAP_CRITICAL_EXIT(irq_state);
+        return 0;
+    }
 
     conn->next_schedule.interval_125us = interval;
     conn->next_schedule.factor = factor;
@@ -2177,6 +2213,7 @@ int gap_conn_rate_set(
     conn->next_schedule.timeout_10ms = timeout;
     conn->timing_queued_action = GAP_TIMING_RATE_SET;
     conn->connection_status = GAP_CONNECTION_PENDING;
+    GAP_CRITICAL_EXIT(irq_state);
     return 1;
 }
 

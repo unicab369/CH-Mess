@@ -789,7 +789,8 @@ typedef struct {
 
     // Connection-rate and subrate procedure state.
     // Only one rate or subrate action can be queued at a time.
-    uint8_t timing_queued_action;
+    // RX interrupt clears this action; foreground API updates it under a critical section.
+    volatile uint8_t timing_queued_action;
     struct {
         // Rate update signaled and waiting to take effect at its Instant.
         uint8_t update_pending;
