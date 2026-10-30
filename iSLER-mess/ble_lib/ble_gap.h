@@ -520,8 +520,7 @@ typedef struct {
     volatile uint16_t phase; // Current SMP/encryption state-machine phase, shared with radio callbacks.
     uint8_t tx_enabled;      // Link Layer encryption is enabled for outgoing packets.
     uint8_t rx_enabled;      // Link Layer encryption is enabled for incoming packets.
-    uint8_t tx_sealed;       // Outgoing packet has been encrypted and is ready for transmission.
-    uint8_t tx_plain_len;    // Payload length before MIC insertion; used by ACK/state handling.
+    uint8_t tx_plain_len;    // Nonzero while sealed TX awaits ACK; retains its original payload length.
     uint8_t tx_opcode;       // Plaintext control opcode needed while the packet awaits acknowledgment.
     uint8_t status;          // Result of the current security procedure.
     uint8_t refreshing;      // Session keys are being refreshed during an encrypted connection.

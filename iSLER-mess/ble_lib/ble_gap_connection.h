@@ -216,7 +216,7 @@ static void gap_conn_update_apply(
     uint8_t tx_payload_len = conn->tx_frame[1];
     uint8_t tx_control_opcode = conn->tx_frame[2];
 #if GAP_SECURITY_SUPPORT >= 1
-    if (conn->security.tx_sealed) {
+    if (conn->security.tx_plain_len) {
         tx_payload_len = conn->security.tx_plain_len;
         tx_control_opcode = conn->security.tx_opcode;
     }
@@ -2524,7 +2524,7 @@ static void gap_security_nonce(
 // Encrypt each new nonempty PDU in place. Retries reuse ciphertext, MIC and
 // counter; only SN/NESN/MD may change, and those bits are excluded from CCM AAD.
 static uint8_t *gap_security_tx_frame(gap_conn_context *conn) {
-    if (conn->security.tx_sealed) {
+    if (conn->security.tx_plain_len) {
         return conn->tx_frame;
     }
 
@@ -2539,7 +2539,6 @@ static uint8_t *gap_security_tx_frame(gap_conn_context *conn) {
 
     uint8_t nonce[13];
     uint8_t payload_len = conn->tx_frame[1];
-    conn->security.tx_plain_len = payload_len;
     conn->security.tx_opcode = (conn->tx_frame[0] & 3) == 3 ? conn->tx_frame[2] : 0;
     gap_security_nonce(&conn->security, nonce, conn->security.tx_counter, conn->is_central);
 
@@ -2554,7 +2553,7 @@ static uint8_t *gap_security_tx_frame(gap_conn_context *conn) {
 
     conn->tx_frame[1] = (uint8_t)(payload_len + 4);
     conn->security.tx_counter++;
-    conn->security.tx_sealed = 1;
+    conn->security.tx_plain_len = payload_len;
     return conn->tx_frame;
 }
 

@@ -542,7 +542,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
                 uint8_t tx_opcode = conn->tx_frame[2];
 
 #if GAP_SECURITY_SUPPORT >= 1
-                if (conn->security.tx_sealed) {
+                if (conn->security.tx_plain_len) {
                     tx_len = conn->security.tx_plain_len;
                     tx_opcode = conn->security.tx_opcode;
                 }
@@ -572,7 +572,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 #endif // GAP_CENTRAL_SUPPORT
 
 #if GAP_SECURITY_SUPPORT >= 1
-            conn->security.tx_sealed = 0;
             conn->security.tx_plain_len = 0;
             conn->security.tx_opcode = 0;
 #endif // GAP_SECURITY_SUPPORT >= 1
@@ -1311,7 +1310,7 @@ static inline uint8_t gap_conn_can_skip_event(
         uint8_t tx_opcode = conn->tx_frame[2];
 
 #if GAP_SECURITY_SUPPORT >= 1
-        if (conn->security.tx_sealed) {
+        if (conn->security.tx_plain_len) {
             tx_len = conn->security.tx_plain_len;
             tx_opcode = conn->security.tx_opcode;
         }
