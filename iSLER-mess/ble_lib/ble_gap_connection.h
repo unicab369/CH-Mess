@@ -2495,7 +2495,8 @@ int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
         gap_smp_poll_context(conn);
 #endif
 
-    if (*len < conn->rx_packet.len) return -1;
+    if (*len < conn->rx_packet.len)
+        return -1;
     if (llid) *llid = conn->rx_packet.llid;
 
     *len = conn->rx_packet.len;
@@ -2524,12 +2525,10 @@ static void gap_security_nonce(
 // Encrypt each new nonempty PDU in place. Retries reuse ciphertext, MIC and
 // counter; only SN/NESN/MD may change, and those bits are excluded from CCM AAD.
 static uint8_t *gap_security_tx_frame(gap_conn_context *conn) {
-    if (conn->security.tx_plain_len) {
-        return conn->tx_frame;
-    }
-
-    if (!conn->security.tx_enabled || !conn->tx_frame[1])
-        return conn->tx_frame;
+    if (conn->security.tx_plain_len ||
+        !conn->security.tx_enabled ||
+        !conn->tx_frame[1]
+    ) return conn->tx_frame;
 
     if (conn->security.tx_counter >= (UINT64_C(1) << 39)) {
         conn->security.status = 0x3d;
@@ -2651,14 +2650,9 @@ int gap_key_reply(const uint8_t ltk[16]) {
 }
 
 // Application facing
-// Report achieved security only after encryption completes, never during pairing.
-#endif // GAP_SECURITY_SUPPORT >= 1
-
-// Application facing
 // Pending Peripheral key lookup for SMP or a bond store; the application must
 // reply with that peer's matching key, or NULL if none is available.
 int gap_key_request(uint8_t random[8], uint16_t *ediv) {
-#if GAP_SECURITY_SUPPORT >= 1
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         gap_conn_ctx[gap_conn_slot].security.phase != GAP_ENC_KEY_REQUEST
     ) return 0;
@@ -2666,15 +2660,10 @@ int gap_key_request(uint8_t random[8], uint16_t *ediv) {
     if (random) memcpy(random, gap_conn_ctx[gap_conn_slot].security.random, 8);
     if (ediv) *ediv = gap_conn_ctx[gap_conn_slot].security.ediv;
     return 1;
-#else
-    (void)random;
-    (void)ediv;
-    return 0;
-#endif
 }
 
 // Application facing
-#if GAP_SECURITY_SUPPORT >= 1
+// Report achieved security only after encryption completes, never during pairing.
 uint8_t gap_security_status(void) {
     return gap_conn_ctx[gap_conn_slot].security.status;
 }
