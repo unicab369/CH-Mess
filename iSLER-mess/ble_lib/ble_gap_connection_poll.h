@@ -353,10 +353,7 @@ static int gap_ext_aux_request_start(const uint8_t *frame) {
 }
 #endif // GAP_EXT_ADV_SUPPORT
 
-// Handle the radio callback under its connection context, then restore the
-// application's previously selected handle.
-// Keep the receive handler out of the RAM-resident radio ISR. With LTO and
-// encryption disabled, inlining this handler can pull several KB into highcode.
+// Handle the radio callback under its connection context
 void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     const uint8_t *frame = RADIO_RX_FRAME();
     uint64_t received_ticks = RADIO_TICKS();
@@ -1214,6 +1211,7 @@ void gap_hw_init(void) {
 #if GAP_CENTRAL_SUPPORT
     RADIO_CONNECT_TX_TIMER_CANCEL();
 #endif
+
 #if GAP_EXT_ADV_SUPPORT
     gap_ext_adv_scan.waiting = 0;
     gap_ext_adv_scan.response_started = 0;
@@ -2165,9 +2163,8 @@ int gap_send_due(
 
             uint8_t receive_after_tx = (adv_evt.adv_frame[0] & 0x0f) != ADV_NONCONN_IND;
             RADIO_TX_CLEAR_DONE();
-            RADIO_LINK_TX(adv_evt.adv_frame, BLE_ADV_ACCESS_ADDRESS,
-                          adv_evt.channel, receive_after_tx,
-                          GAP_PHY_1M, GAP_PHY_1M, 0x555555);
+            RADIO_LINK_TX(adv_evt.adv_frame, BLE_ADV_ACCESS_ADDRESS, adv_evt.channel,
+                        receive_after_tx, GAP_PHY_1M, GAP_PHY_1M, 0x555555);
             adv_evt.rx_event = 1;
             adv_evt.phase = GAP_LEGACY_ADV_TX;
             adv_evt.deadline = RADIO_TICKS() + HW_TICKS_FROM_US(1000);
@@ -2187,7 +2184,7 @@ int gap_send_due(
             return 1;
         }
     }
-#endif
+#endif // GAP_LEGACY_ADV_SUPPORT
 
 // Keep this after GAP_LEGACY_ADV_SUPPORT: finish active legacy advertising
 // before privacy rotation or starting another procedure on the shared radio.
@@ -2210,8 +2207,7 @@ int gap_send_due(
 // privacy rotation updates its address first, and extended advertising gets
 // priority for the shared radio.
 #if GAP_LEGACY_ADV_SUPPORT
-    int send_gap = gap_adv.enabled != 0 &&
-                    (int32_t)(now - gap_adv.next_event_ms) >= 0;
+    int send_gap = gap_adv.enabled != 0 && (int32_t)(now - gap_adv.next_event_ms) >= 0;
     if (!send_gap && !fallback_ad)
         return 0;
 
