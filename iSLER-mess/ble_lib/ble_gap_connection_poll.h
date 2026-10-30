@@ -371,20 +371,26 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
 #if GAP_EXT_ADV_SUPPORT
-    // Newly added
     if (gap_ext_scan.request_phase == GAP_EXT_REQ_SCAN_RX) {
         gap_ext_fields response;
-
-        if (pdu_type == ADV_EXT_IND &&
-            gap_ext_adv_decode(frame, (size_t)frame[1] + 2, &response) &&
-            response.mode == 0 &&
-            (!response.identity.has_address ||
-             (response.identity.peer.type == ((gap_scan.request[0] >> 7) & 1) &&
-              memcmp(response.identity.peer.address, gap_scan.request + 8, 6) == 0)) &&
-            (!response.has_target ||
-             (((gap_scan.request[0] >> 6) & 1) == response.target.type &&
-              memcmp(response.target.address, gap_scan.request + 2, 6) == 0))
+        // Accept only a decodable, non-connectable AUX scan response.
+        if (pdu_type != ADV_EXT_IND ||
+            !gap_ext_adv_decode(frame, (size_t)frame[1] + 2, &response) ||
+            response.mode != 0
         ) {
+            gap_conn_slot = previous_slot;
+            return;
+        }
+
+        const uint8_t *request = gap_scan.request;
+        uint8_t peer_matches = !response.identity.has_address ||
+            (response.identity.peer.type == ((request[0] >> 7) & 1) &&
+             memcmp(response.identity.peer.address, request + 8, 6) == 0);
+        uint8_t target_matches = !response.has_target ||
+            (response.target.type == ((request[0] >> 6) & 1) &&
+             memcmp(response.target.address, request + 2, 6) == 0);
+
+        if (peer_matches && target_matches) {
             memcpy(gap_ext_scan.frame, frame, (size_t)frame[1] + 2);
             gap_ext_scan.rssi = RADIO_RSSI();
             gap_ext_scan.ticks = received_ticks;
