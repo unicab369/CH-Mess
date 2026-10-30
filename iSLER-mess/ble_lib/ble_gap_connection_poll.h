@@ -93,146 +93,145 @@ static void gap_conn_send_queued(void) {
         return;
     }
 
-    if (!conn->c_features.request_pending) {
-        //! subrate
-        if (conn->c_subrate.queued_flags) {
-            // Wait for the peer Link Layer and Host to confirm subrating support.
-            if (!conn->c_features.known) {
-                gap_send_feature_request(conn);
-                return;
-            }
-            else {
-                if (GAP_LL_FEATURES_SUBRATING_MASK !=
-                    (conn->c_features.peer_feature_4 & GAP_LL_FEATURES_SUBRATING_MASK)
-                ) {
-                    conn->c_subrate.queued_flags = 0;
-                    conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
-                }
+    if (conn->c_features.request_pending) return;
 
 #if GAP_CENTRAL_SUPPORT
-                else if (conn->is_central) {
-                    if (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE) {
-                        gap_send_subrate_update(conn);
-                        if (conn->tx_frame[1]) return;
-                    }
-                }
+    if (conn->is_central && conn->central.channel_report_queued) {
+        if (!conn->c_features.known) {
+            gap_send_feature_request(conn);
+            return;
+        }
+        else if (!(conn->c_features.peer_feature_4 & GAP_LL_FEATURES_CH_CLASS)) {
+            conn->central.channel_report_queued = 0;
+            conn->central.channel_report_pending = 0;
+            conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
+        }
+        else {
+            conn->central.channel_report_queued = 0;
+            conn->central.channel_report_pending = 1;
+            conn->connection_status = GAP_CONNECTION_PENDING;
+
+            conn->tx_frame[0] = 0x03;
+            conn->tx_frame[1] = 4;
+            conn->tx_frame[2] = LL_CHANNEL_REPORTING_IND;
+            conn->tx_frame[3] = conn->channel_report.enabled;
+            conn->tx_frame[4] = conn->channel_report.min_spacing_200ms;
+            conn->tx_frame[5] = conn->channel_report.max_delay_200ms;
+            return;
+        }
+    }
 #endif // GAP_CENTRAL_SUPPORT
 
-#if GAP_PERIPHERAL_SUPPORT
-                else if (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_REQUEST) {
-                    conn->c_subrate.queued_flags &= (uint8_t)~GAP_SUBRATE_QUEUED_REQUEST;
-                    conn->c_subrate.procedure_state = GAP_SUBRATE_REQUEST_PENDING;
-                    conn->c_subrate.started_ms = GET_MILLIS();
-
-                    conn->tx_frame[0] = 0x03;
-                    conn->tx_frame[1] = 11;
-                    conn->tx_frame[2] = LL_SUBRATE_REQ;
-                    write_u16_le(conn->tx_frame + 3, conn->peripheral.subrate_request.factor_min);
-                    write_u16_le(conn->tx_frame + 5, conn->peripheral.subrate_request.factor_max);
-                    write_u16_le(conn->tx_frame + 7, conn->peripheral.subrate_request.latency);
-                    write_u16_le(conn->tx_frame + 9, conn->peripheral.subrate_request.continuation);
-                    write_u16_le(conn->tx_frame + 11, conn->peripheral.subrate_request.timeout_10ms);
-                    return;
-                }
-#endif // GAP_PERIPHERAL_SUPPORT
-            }
+    //! subrate
+    if (conn->c_subrate.queued_flags) {
+        // Wait for the peer Link Layer and Host to confirm subrating support.
+        if (!conn->c_features.known) {
+            gap_send_feature_request(conn);
+            return;
         }
+        else {
+            if (GAP_LL_FEATURES_SUBRATING_MASK !=
+                (conn->c_features.peer_feature_4 & GAP_LL_FEATURES_SUBRATING_MASK)
+            ) {
+                conn->c_subrate.queued_flags = 0;
+                conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
+            }
 
-        //! rate
-        if (conn->c_rate.queued_flags && !conn->c_features.ext_pending) {
-            if (!conn->c_features.known) {
-                gap_send_feature_request(conn);
-                return;
-            }
-            else if (!(conn->c_features.peer_feature_7 & GAP_LL_FEATURES_EXTENDED)) {
-                conn->c_rate.queued_flags = 0;
-                conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
-            }
-            else if (!conn->c_features.page1_known) {
-                // Exchange page 1 after the legacy page advertised extended features.
-                conn->c_features.ext_pending = 1;
-                conn->params_started_ms = GET_MILLIS();
-
-                conn->tx_frame[0] = 0x03;
-                conn->tx_frame[1] = 11;
-                conn->tx_frame[2] = LL_FEATURE_EXT_REQ;
-                conn->tx_frame[3] = 1;    // MaxPage.
-                conn->tx_frame[4] = 1;    // PageNumber.
-                conn->tx_frame[5] = 0;
-                conn->tx_frame[6] = GAP_LL_FEATURE_PAGE1_SHORTER_INTERVALS;
-                memset(conn->tx_frame + 7, 0, 6);
-                return;
-            }
-            else if (!(conn->c_features.peer_page1[1] & 0x02)) {
-                conn->c_rate.queued_flags = 0;
-                conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
-            }
 #if GAP_CENTRAL_SUPPORT
             else if (conn->is_central) {
-                if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_SET) {
-                    gap_send_rate_ind(conn, 0, NULL);
+                if (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE) {
+                    gap_send_subrate_update(conn);
                     if (conn->tx_frame[1]) return;
                 }
             }
 #endif // GAP_CENTRAL_SUPPORT
 
 #if GAP_PERIPHERAL_SUPPORT
-            else if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_REQUEST) {
+            else if (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_REQUEST) {
+                conn->c_subrate.queued_flags &= (uint8_t)~GAP_SUBRATE_QUEUED_REQUEST;
+                conn->c_subrate.procedure_state = GAP_SUBRATE_REQUEST_PENDING;
+                conn->c_subrate.started_ms = GET_MILLIS();
+
                 conn->tx_frame[0] = 0x03;
-                conn->tx_frame[1] = 27;
-                conn->tx_frame[2] = LL_CONNECTION_RATE_REQ;
-
-                write_u16_le(conn->tx_frame + 3, conn->peripheral.rate_request.intv_min_125us);
-                write_u16_le(conn->tx_frame + 5, conn->peripheral.rate_request.intv_max_125us);
-                write_u16_le(conn->tx_frame + 7, conn->peripheral.rate_request.factor_min);
-                write_u16_le(conn->tx_frame + 9, conn->peripheral.rate_request.factor_max);
-                write_u16_le(conn->tx_frame + 11, conn->peripheral.rate_request.latency);
-                write_u16_le(conn->tx_frame + 13, conn->peripheral.rate_request.continuation);
-                write_u16_le(conn->tx_frame + 15, conn->peripheral.rate_request.timeout_10ms);
-                write_u16_le(conn->tx_frame + 17, conn->peripheral.rate_request.periodicity_125us);
-                write_u16_le(conn->tx_frame + 19, conn->link_layer.event_counter);
-
-                for (uint8_t i = 0; i < 4; i++) {
-                    write_u16_le(conn->tx_frame + 21 + i * 2,
-                                     conn->peripheral.rate_request.offsets[i]);
-                }
-                conn->c_rate.queued_flags &= (uint8_t)~GAP_RATE_QUEUED_REQUEST;
-                conn->peripheral.rate_req_pending = 1;
-                conn->params_started_ms = GET_MILLIS();
+                conn->tx_frame[1] = 11;
+                conn->tx_frame[2] = LL_SUBRATE_REQ;
+                write_u16_le(conn->tx_frame + 3, conn->peripheral.subrate_request.factor_min);
+                write_u16_le(conn->tx_frame + 5, conn->peripheral.subrate_request.factor_max);
+                write_u16_le(conn->tx_frame + 7, conn->peripheral.subrate_request.latency);
+                write_u16_le(conn->tx_frame + 9, conn->peripheral.subrate_request.continuation);
+                write_u16_le(conn->tx_frame + 11, conn->peripheral.subrate_request.timeout_10ms);
                 return;
             }
 #endif // GAP_PERIPHERAL_SUPPORT
         }
     }
 
+    //! rate
+    if (conn->c_rate.queued_flags && !conn->c_features.ext_pending) {
+        if (!conn->c_features.known) {
+            gap_send_feature_request(conn);
+            return;
+        }
+        else if (!(conn->c_features.peer_feature_7 & GAP_LL_FEATURES_EXTENDED)) {
+            conn->c_rate.queued_flags = 0;
+            conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
+        }
+        else if (!conn->c_features.page1_known) {
+            // Exchange page 1 after the legacy page advertised extended features.
+            conn->c_features.ext_pending = 1;
+            conn->params_started_ms = GET_MILLIS();
+
+            conn->tx_frame[0] = 0x03;
+            conn->tx_frame[1] = 11;
+            conn->tx_frame[2] = LL_FEATURE_EXT_REQ;
+            conn->tx_frame[3] = 1;    // MaxPage.
+            conn->tx_frame[4] = 1;    // PageNumber.
+            conn->tx_frame[5] = 0;
+            conn->tx_frame[6] = GAP_LL_FEATURE_PAGE1_SHORTER_INTERVALS;
+            memset(conn->tx_frame + 7, 0, 6);
+            return;
+        }
+        else if (!(conn->c_features.peer_page1[1] & 0x02)) {
+            conn->c_rate.queued_flags = 0;
+            conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
+        }
 #if GAP_CENTRAL_SUPPORT
-    if (!conn->is_central || !conn->central.channel_report_queued ||
-        conn->c_features.request_pending
-    ) return;
-
-    if (!conn->c_features.known) {
-        gap_send_feature_request(conn);
-        return;
-    }
-    else if (!(conn->c_features.peer_feature_4 & GAP_LL_FEATURES_CH_CLASS)) {
-        conn->central.channel_report_queued = 0;
-        conn->central.channel_report_pending = 0;
-        conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
-    }
-    else {
-        conn->central.channel_report_queued = 0;
-        conn->central.channel_report_pending = 1;
-        conn->connection_status = GAP_CONNECTION_PENDING;
-
-        conn->tx_frame[0] = 0x03;
-        conn->tx_frame[1] = 4;
-        conn->tx_frame[2] = LL_CHANNEL_REPORTING_IND;
-        conn->tx_frame[3] = conn->channel_report.enabled;
-        conn->tx_frame[4] = conn->channel_report.min_spacing_200ms;
-        conn->tx_frame[5] = conn->channel_report.max_delay_200ms;
-        return;
-    }
+        else if (conn->is_central) {
+            if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_SET) {
+                gap_send_rate_ind(conn, 0, NULL);
+                if (conn->tx_frame[1]) return;
+            }
+        }
 #endif // GAP_CENTRAL_SUPPORT
+
+#if GAP_PERIPHERAL_SUPPORT
+        else if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_REQUEST) {
+            conn->tx_frame[0] = 0x03;
+            conn->tx_frame[1] = 27;
+            conn->tx_frame[2] = LL_CONNECTION_RATE_REQ;
+
+            write_u16_le(conn->tx_frame + 3, conn->peripheral.rate_request.intv_min_125us);
+            write_u16_le(conn->tx_frame + 5, conn->peripheral.rate_request.intv_max_125us);
+            write_u16_le(conn->tx_frame + 7, conn->peripheral.rate_request.factor_min);
+            write_u16_le(conn->tx_frame + 9, conn->peripheral.rate_request.factor_max);
+            write_u16_le(conn->tx_frame + 11, conn->peripheral.rate_request.latency);
+            write_u16_le(conn->tx_frame + 13, conn->peripheral.rate_request.continuation);
+            write_u16_le(conn->tx_frame + 15, conn->peripheral.rate_request.timeout_10ms);
+            write_u16_le(conn->tx_frame + 17, conn->peripheral.rate_request.periodicity_125us);
+            write_u16_le(conn->tx_frame + 19, conn->link_layer.event_counter);
+
+            for (uint8_t i = 0; i < 4; i++) {
+                write_u16_le(conn->tx_frame + 21 + i * 2,
+                                 conn->peripheral.rate_request.offsets[i]);
+            }
+            conn->c_rate.queued_flags &= (uint8_t)~GAP_RATE_QUEUED_REQUEST;
+            conn->peripheral.rate_req_pending = 1;
+            conn->params_started_ms = GET_MILLIS();
+            return;
+        }
+#endif // GAP_PERIPHERAL_SUPPORT
+    }
+
 }
 
 #if GAP_CENTRAL_SUPPORT
