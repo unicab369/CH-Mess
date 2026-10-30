@@ -66,6 +66,26 @@ static void gap_conn_send_queued(void) {
     }
 #endif // GAP_CENTRAL_SUPPORT
 
+    if (conn->queue_state.length) {
+        gap_send_data_length(conn, LL_LENGTH_REQ);
+        return;
+    }
+
+    // Higher-priority queued procedures are handled above before sending PHY.
+    if (conn->queue_state.phy_queued) {
+        // Encode local preferences once earlier TX has been acknowledged.
+        conn->queue_state.phy_queued = 0;
+        conn->procedure_state.phy_request = 1;
+        conn->phy_state.started_ms = GET_MILLIS();
+
+        conn->tx_frame[0] = 3;
+        conn->tx_frame[1] = 3;
+        conn->tx_frame[2] = LL_PHY_REQ;
+        conn->tx_frame[3] = conn->phy_state.preferred.tx;
+        conn->tx_frame[4] = conn->phy_state.preferred.rx;
+        return;
+    }
+
     if (conn->queue_state.local_params) {
         // Exchange features before sending the application's timing range.
         if (!conn->c_features.known) {
@@ -97,26 +117,6 @@ static void gap_conn_send_queued(void) {
         }
     }
 
-    if (conn->queue_state.length) {
-        gap_send_data_length(conn, LL_LENGTH_REQ);
-        return;
-    }
-
-    // Higher-priority queued procedures are handled above before sending PHY.
-    if (conn->queue_state.phy_queued) {
-        // Encode local preferences once earlier TX has been acknowledged.
-        conn->queue_state.phy_queued = 0;
-        conn->procedure_state.phy_request = 1;
-        conn->phy_state.started_ms = GET_MILLIS();
-
-        conn->tx_frame[0] = 3;
-        conn->tx_frame[1] = 3;
-        conn->tx_frame[2] = LL_PHY_REQ;
-        conn->tx_frame[3] = conn->phy_state.preferred.tx;
-        conn->tx_frame[4] = conn->phy_state.preferred.rx;
-        return;
-    }
-
     // Rate and subrate actions need the peer's base feature set.
     if (conn->timing_queued_action && !conn->c_features.known) {
         gap_send_feature_request(conn);
@@ -136,7 +136,6 @@ static void gap_conn_send_queued(void) {
         else if (conn->is_central) {
             if (conn->timing_queued_action == GAP_TIMING_SUBRATE_UPDATE) {
                 gap_send_subrate_update(conn);
-                if (conn->tx_frame[1]) return;
             }
         }
 #endif // GAP_CENTRAL_SUPPORT
@@ -155,13 +154,12 @@ static void gap_conn_send_queued(void) {
             write_u16_le(conn->tx_frame + 7, conn->peripheral.subrate_request.latency);
             write_u16_le(conn->tx_frame + 9, conn->peripheral.subrate_request.continuation);
             write_u16_le(conn->tx_frame + 11, conn->peripheral.subrate_request.timeout_10ms);
-            return;
         }
 #endif // GAP_PERIPHERAL_SUPPORT
     }
 
     //! rate
-    if (conn->timing_queued_action & GAP_TIMING_RATE_MASK) {
+    else if (conn->timing_queued_action & GAP_TIMING_RATE_MASK) {
         if (!(conn->c_features.peer_feature_7 & GAP_LL_FEATURES_EXTENDED)) {
             conn->timing_queued_action = GAP_TIMING_NONE;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
@@ -179,7 +177,6 @@ static void gap_conn_send_queued(void) {
             conn->tx_frame[5] = 0;
             conn->tx_frame[6] = GAP_LL_FEATURE_PAGE1_SHORTER_INTERVALS;
             memset(conn->tx_frame + 7, 0, 6);
-            return;
         }
         else if (!(conn->c_features.peer_page1[1] & 0x02)) {
             conn->timing_queued_action = GAP_TIMING_NONE;
@@ -193,7 +190,6 @@ static void gap_conn_send_queued(void) {
                                             (conn->next_schedule.latency + 1) + 1);
                 conn->next_schedule.win_offset = 0;
                 gap_send_rate_ind(conn);
-                if (conn->tx_frame[1]) return;
             }
         }
 #endif // GAP_CENTRAL_SUPPORT
@@ -221,7 +217,6 @@ static void gap_conn_send_queued(void) {
             conn->timing_queued_action = GAP_TIMING_NONE;
             conn->peripheral.rate_req_pending = 1;
             conn->params_started_ms = GET_MILLIS();
-            return;
         }
 #endif // GAP_PERIPHERAL_SUPPORT
     }
