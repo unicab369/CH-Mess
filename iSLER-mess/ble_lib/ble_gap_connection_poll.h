@@ -12,8 +12,8 @@ static void gap_conn_send_queued(void) {
     gap_send_security(conn);
 #endif // GAP_SECURITY_SUPPORT >= 1
     if (gap_conn_security_busy(conn) || conn->tx_frame[1]) return;
-    // Wait for feature exchange before starting Central updates, channel-map changes, or other LL procedures.
-    if (conn->c_features.request_pending) return;
+    // Wait for feature exchanges before starting Central updates, channel-map changes, or other LL procedures.
+    if (conn->c_features.request_pending || conn->c_features.ext_pending) return;
 
 #if GAP_CENTRAL_SUPPORT
     if (conn->is_central) {
@@ -117,59 +117,52 @@ static void gap_conn_send_queued(void) {
         return;
     }
 
+    // Rate and subrate actions need the peer's base feature set.
+    if (conn->timing_queued_action && !conn->c_features.known) {
+        gap_send_feature_request(conn);
+        return;
+    }
+
     //! subrate
     if (conn->timing_queued_action & GAP_TIMING_SUBRATE_MASK) {
-        // Wait for the peer Link Layer and Host to confirm subrating support.
-        if (!conn->c_features.known) {
-            gap_send_feature_request(conn);
-            return;
+        if (GAP_LL_FEATURES_SUBRATING_MASK !=
+            (conn->c_features.peer_feature_4 & GAP_LL_FEATURES_SUBRATING_MASK)
+        ) {
+            conn->timing_queued_action = GAP_TIMING_NONE;
+            conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
         }
-        else {
-            if (GAP_LL_FEATURES_SUBRATING_MASK !=
-                (conn->c_features.peer_feature_4 & GAP_LL_FEATURES_SUBRATING_MASK)
-            ) {
-                conn->timing_queued_action = GAP_TIMING_NONE;
-                conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
-            }
 
 #if GAP_CENTRAL_SUPPORT
-            else if (conn->is_central) {
-                if (conn->timing_queued_action == GAP_TIMING_SUBRATE_UPDATE) {
-                    gap_send_subrate_update(conn);
-                    if (conn->tx_frame[1]) return;
-                }
+        else if (conn->is_central) {
+            if (conn->timing_queued_action == GAP_TIMING_SUBRATE_UPDATE) {
+                gap_send_subrate_update(conn);
+                if (conn->tx_frame[1]) return;
             }
+        }
 #endif // GAP_CENTRAL_SUPPORT
 
 #if GAP_PERIPHERAL_SUPPORT
-            else if (conn->timing_queued_action == GAP_TIMING_SUBRATE_REQUEST) {
-                conn->timing_queued_action = GAP_TIMING_NONE;
-                conn->c_subrate.procedure_state = GAP_SUBRATE_REQUEST_PENDING;
-                conn->c_subrate.started_ms = GET_MILLIS();
+        else if (conn->timing_queued_action == GAP_TIMING_SUBRATE_REQUEST) {
+            conn->timing_queued_action = GAP_TIMING_NONE;
+            conn->c_subrate.procedure_state = GAP_SUBRATE_REQUEST_PENDING;
+            conn->c_subrate.started_ms = GET_MILLIS();
 
-                conn->tx_frame[0] = 0x03;
-                conn->tx_frame[1] = 11;
-                conn->tx_frame[2] = LL_SUBRATE_REQ;
-                write_u16_le(conn->tx_frame + 3, conn->peripheral.subrate_request.factor_min);
-                write_u16_le(conn->tx_frame + 5, conn->peripheral.subrate_request.factor_max);
-                write_u16_le(conn->tx_frame + 7, conn->peripheral.subrate_request.latency);
-                write_u16_le(conn->tx_frame + 9, conn->peripheral.subrate_request.continuation);
-                write_u16_le(conn->tx_frame + 11, conn->peripheral.subrate_request.timeout_10ms);
-                return;
-            }
-#endif // GAP_PERIPHERAL_SUPPORT
+            conn->tx_frame[0] = 0x03;
+            conn->tx_frame[1] = 11;
+            conn->tx_frame[2] = LL_SUBRATE_REQ;
+            write_u16_le(conn->tx_frame + 3, conn->peripheral.subrate_request.factor_min);
+            write_u16_le(conn->tx_frame + 5, conn->peripheral.subrate_request.factor_max);
+            write_u16_le(conn->tx_frame + 7, conn->peripheral.subrate_request.latency);
+            write_u16_le(conn->tx_frame + 9, conn->peripheral.subrate_request.continuation);
+            write_u16_le(conn->tx_frame + 11, conn->peripheral.subrate_request.timeout_10ms);
+            return;
         }
+#endif // GAP_PERIPHERAL_SUPPORT
     }
 
     //! rate
-    if ((conn->timing_queued_action & GAP_TIMING_RATE_MASK) &&
-        !conn->c_features.ext_pending
-    ) {
-        if (!conn->c_features.known) {
-            gap_send_feature_request(conn);
-            return;
-        }
-        else if (!(conn->c_features.peer_feature_7 & GAP_LL_FEATURES_EXTENDED)) {
+    if (conn->timing_queued_action & GAP_TIMING_RATE_MASK) {
+        if (!(conn->c_features.peer_feature_7 & GAP_LL_FEATURES_EXTENDED)) {
             conn->timing_queued_action = GAP_TIMING_NONE;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
