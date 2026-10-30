@@ -9,11 +9,61 @@ static void gap_conn_send_queued(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
 #if GAP_SECURITY_SUPPORT >= 1
-    gap_send_security(conn);
+    if (!conn->tx_frame[1]) {
+        uint16_t phase = conn->security.phase;
+
+        if (phase == GAP_ENC_QUEUED || phase == GAP_ENC_RESTART_QUEUED) {
+            memcpy(conn->security.skd, conn->security.next_skd, 8);
+            memcpy(conn->security.iv, conn->security.next_iv, 4);
+            conn->tx_frame[0] = 3;
+            conn->tx_frame[1] = 23;
+            conn->tx_frame[2] = LL_ENC_REQ;
+
+            memcpy(conn->tx_frame + 3, conn->security.random, 8);
+            write_u16_le(conn->tx_frame + 11, conn->security.ediv);
+            memcpy(conn->tx_frame + 13, conn->security.skd, 8);
+            memcpy(conn->tx_frame + 21, conn->security.iv, 4);
+            conn->security.phase = GAP_ENC_WAIT_RSP;
+            conn->security.started_ms = GET_MILLIS();
+        }
+        else if (phase == GAP_ENC_START_QUEUED) {
+            conn->tx_frame[0] = 3;
+
+            if (conn->security.status == 0x06) {
+                if (conn->security.refreshing) {
+                    conn->tx_frame[1] = 2;
+                    conn->tx_frame[2] = LL_TERMINATE_IND;
+                    conn->tx_frame[3] = 0x06;
+                    conn->link_state.terminate_sent = 1;
+                }
+                else {
+                    conn->tx_frame[1] = 3;
+                    conn->tx_frame[2] = LL_REJECT_EXT_IND;
+                    conn->tx_frame[3] = LL_ENC_REQ;
+                    conn->tx_frame[4] = 0x06;
+                }
+                conn->security.phase = GAP_ENC_IDLE;
+            }
+            else {
+                conn->tx_frame[1] = 1;
+                conn->tx_frame[2] = LL_START_ENC_REQ;
+                conn->security.rx_enabled = 1;
+                conn->security.phase = GAP_ENC_PERIPHERAL_START;
+            }
+        }
+        else if (phase == GAP_ENC_PAUSE_QUEUED) {
+            conn->tx_frame[0] = 3;
+            conn->tx_frame[1] = 1;
+            conn->tx_frame[2] = LL_PAUSE_ENC_REQ;
+            conn->security.phase = GAP_ENC_WAIT_PAUSE;
+            conn->security.started_ms = GET_MILLIS();
+        }
+    }
 #endif // GAP_SECURITY_SUPPORT >= 1
     if (gap_conn_security_busy(conn) || conn->tx_frame[1]) return;
     // Wait for feature exchanges before starting Central updates, channel-map changes, or other LL procedures.
     if (conn->c_features.request_pending || conn->c_features.ext_pending) return;
+
     // The other device or an earlier request is still negotiating a change, so don’t send another change yet.
     if (conn->procedure_state.procedure_flags ||
         conn->procedure_state.params_state != GAP_CONN_PARAMS_NONE ||
