@@ -2219,6 +2219,7 @@ int gap_conn_rate_set(
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint32_t irq_state = GAP_CRITICAL_ENTER();
+
     if (gap_conn_timing_busy(conn) ||
         !conn->is_central ||
         interval < gap_conn_min_interval(conn) ||
@@ -2243,9 +2244,8 @@ int gap_conn_rate_set(
 // Queue a Central data-channel map: bits 0..36 select channels, at least two
 // must be enabled, and bits 37..39 must be zero. Advertising channels are separate.
 // The live map changes only at the shared Instant; status uses connection_status.
-// channels must point to five readable bytes.
+// channels must be non-NULL and point to five readable bytes.
 int gap_channel_map_set(const uint8_t channels[5]) {
-    if (!channels) return 0;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     if (gap_conn_procedure_busy(conn) ||
@@ -2283,8 +2283,7 @@ int gap_channel_reporting_set(
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
 #if GAP_SECURITY_SUPPORT >= 1
-    if (conn->security.phase)
-        return 0;
+    if (conn->security.phase) return 0;
 #endif
 
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
@@ -2378,13 +2377,13 @@ int gap_data_length_set(uint16_t octets) {
     }
 
     conn->local_tx_octets = octets;
+    uint16_t tx_octets = MIN(octets, conn->remote_data_length.rx_octets);
+    uint16_t tx_time = MIN((uint16_t)((octets + 14u) * 8u), conn->remote_data_length.rx_time);
 
     // Apply reductions now. Keep increases pending until the peer receives
     // the new limit and the length exchange updates the effective limits.
-    conn->data_length.tx_time = MIN(conn->data_length.tx_time,
-            MIN((uint16_t)((octets + 14u) * 8u), conn->remote_data_length.rx_time));
-    conn->data_length.tx_octets = MIN(conn->data_length.tx_octets,
-                                MIN(octets, conn->remote_data_length.rx_octets));
+    conn->data_length.tx_time = MIN(conn->data_length.tx_time, tx_time);
+    conn->data_length.tx_octets = MIN(conn->data_length.tx_octets, tx_octets);
 
     conn->length_status = GAP_CONNECTION_PENDING;
     conn->queued_action = GAP_QUEUED_LENGTH;
@@ -2437,6 +2436,7 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
 // Queue one LL data fragment. LLID 2 begins an L2CAP PDU; LLID 1 continues it.
 int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+
     if (!len ||
         (llid != 1 && llid != 2) ||
         !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
@@ -2516,7 +2516,9 @@ int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     *len = conn->rx_packet.len;
     memcpy(data, conn->rx_packet.data, conn->rx_packet.len);
     conn->queue_state.rx_ready = 0;
+
 #if GAP_SECURITY_SUPPORT >= 2
+    // The RX slot was consumed; let SMP poll the next fragment.
     conn->smp.l2cap_rx_pending = 0;
 #endif
     return 1;
@@ -2583,6 +2585,7 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     ) return 0;
 
 #if GAP_SECURITY_SUPPORT >= 2
+    // Reject disallowed SMP phases before feature checks or entropy generation.
     uint8_t smp_phase = conn->smp.pairing.phase;
     if (smp_phase && smp_phase != SMP_PHASE_ENCRYPT &&
         smp_phase != SMP_PHASE_SC_ENCRYPT
@@ -2615,6 +2618,7 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     }
 
 #if GAP_SECURITY_SUPPORT >= 2
+    // A new encryption procedure invalidates the previous SMP authentication result.
     conn->authenticated = 0;
     conn->enc_key_size = 0;
 #endif
@@ -2639,7 +2643,8 @@ int gap_key_reply(const uint8_t ltk[16]) {
     uint32_t irq_state = GAP_CRITICAL_ENTER();
 
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        conn->security.phase != GAP_ENC_KEY_REQUEST) {
+        conn->security.phase != GAP_ENC_KEY_REQUEST
+    ) {
         GAP_CRITICAL_EXIT(irq_state);
         return 0;
     }
