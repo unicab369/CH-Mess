@@ -76,7 +76,7 @@ target hardware verification.
 | Extended scannable advertising and scan response | [x] (optional) | `gap_ext_adv_scan_start_phy()` sends `ADV_EXT_IND`/`AUX_ADV_IND`, accepts a matching `AUX_SCAN_REQ` subject to peer and accept-list policy, and returns up to `GAP_EXT_ADV_DATA_MAX` bytes in `AUX_SCAN_RSP` plus `AUX_CHAIN_IND` packets. Hardware TODO: verify T_IFS response timing and peer interoperability. |
 | Advertising accept-list policy for scan and connection requests | [x] | `gap_adv_filter_policy()` independently filters scan and connection requests against the Filter Accept List, including resolved RPAs. |
 | Advertising privacy address selection and rotation | [x] | Hardware TODO: Verify public, static, NRPA, and RPA behavior with peers. |
-| LE Coded PHY advertising | [x] (optional, adapter-dependent) | `gap_ext_adv_start_phy()` and `gap_ext_adv_scan_start_phy()` select the secondary PHY. `RADIO_ADV_PHY_MASK` and `RADIO_ADV_TX_PHY()` expose adapter capability and transmission; AuxPtr and chain timing encode/use the selected PHY. Host tests cover coded nonscannable and scannable advertising. Hardware TODO: verify with a coded-capable adapter and peer. |
+| LE Coded PHY advertising | [x] (optional, adapter-dependent) | `gap_ext_adv_start_phy()` and `gap_ext_adv_scan_start_phy()` select the secondary PHY. `RADIO_ADV_PHY_MASK` reports adapter capability; `RADIO_LINK_CONFIG()` configures the selected PHY for transmission and reception. AuxPtr and chain timing encode/use the selected PHY. Host tests cover coded nonscannable and scannable advertising. Hardware TODO: verify with a coded-capable adapter and peer. |
 
 ## Scanning and discovery procedures
 

@@ -216,8 +216,6 @@ void RADIO_TX_TIMER_BEGIN(void);
 int RADIO_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel);
 void RADIO_CONNECT_TX_TIMER_CANCEL(void);
 #endif
-int RADIO_ADV_TX_PHY(
-    uint8_t *frame, uint8_t len, uint8_t channel, uint8_t phy);
 void RADIO_LINK_CONFIG(
     uint32_t access_address, uint8_t channel,
     uint8_t *tx_frame, uint8_t receive_after_tx,

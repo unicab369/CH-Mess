@@ -80,7 +80,7 @@ static uint8_t fake_radio_ticks_enabled;
 static uint8_t fake_radio_tick_autoincrement;
 static uint8_t fake_tx_done = 1;
 static uint8_t radio_phy_mask = GAP_PHY_1M | GAP_PHY_2M;
-static uint8_t configured_tx_phy, configured_rx_phy, configured_adv_phy;
+static uint8_t configured_tx_phy, configured_rx_phy;
 static uint8_t configured_receive_after_tx;
 static uint32_t configured_access_address;
 static uint32_t configured_crc_init;
@@ -450,15 +450,6 @@ int RADIO_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel) {
     return RADIO_ADV_TX(frame, len, channel);
 }
 void RADIO_CONNECT_TX_TIMER_CANCEL(void) {}
-int RADIO_ADV_TX_PHY(
-    uint8_t *frame, uint8_t len, uint8_t channel,
-                          uint8_t phy
-) {
-    if (!(RADIO_ADV_PHY_MASK & phy))
-        return 0;
-    configured_adv_phy = phy;
-    return RADIO_ADV_TX(frame, len, channel);
-}
 void RADIO_PUBLIC_ADDRESS(uint8_t address[6]) {
     const uint8_t value[6] = {1, 2, 3, 4, 5, 6};
     memcpy(address, value, sizeof(value));

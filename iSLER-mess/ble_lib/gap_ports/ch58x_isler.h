@@ -88,7 +88,6 @@ void iSLER_Radio_Transmitted_Cb(void) {
     if (gap_connect_tx.phase == GAP_CONNECT_TX_SENDING) {
         gap_connect_tx.end_ticks = RADIO_TICKS();
         gap_connect_tx.phase = GAP_CONNECT_TX_DONE;
-        gs_iSLERLink.is_open = 0;
         return;
     }
 #endif
@@ -186,7 +185,6 @@ void RADIO_STOP(void) {
     gap_link.scheduled_tx_armed = 0;
     gap_link.receive_after_tx = 0;
     iSLERStop();
-    gs_iSLERLink.is_open = 0;
 }
 
 // Both connection initiation and connection replies use this deadline.
@@ -200,6 +198,7 @@ void RADIO_TX_TIMER_BEGIN(void) {
 
 static int gap_tx_timer_arm(void) {
     uint64_t now = RADIO_TICKS();
+
     if (now >= gap_link.tx_due_ticks ||
         gap_link.tx_due_ticks - now < HW_TICKS_FROM_US(10)
     ) return 0;
@@ -329,19 +328,6 @@ int RADIO_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
     BB->CTRL_TX &= ~((1 << 0) | (1 << 1));
     LL->LL0 = LL_TX;
 
-    gs_iSLERLink.is_open = 0;
-    return tx_done != 0;
-}
-
-int RADIO_ADV_TX_PHY(
-    uint8_t *frame, uint8_t len, uint8_t channel,
-                      uint8_t phy
-) {
-    uint8_t mode = gap_phy_mode(phy);
-    if (!(RADIO_ADV_PHY_MASK & phy)) return 0;
-
-    gap_link.receive_after_tx = 0;
-    iSLERTX(BLE_ADV_ACCESS_ADDRESS, frame, len, channel, mode);
     return tx_done != 0;
 }
 
@@ -356,6 +342,7 @@ void RADIO_LINK_CONFIG(
     gap_link.tx_phy = tx_phy;
     gap_link.rx_phy = rx_phy;
     gap_link.receive_after_tx = receive_after_tx;
+
     iSLERLinkConfig(access_address, channel,
                    gap_phy_mode(receive_after_tx ? tx_phy : rx_phy),
                    tx_frame, receive_after_tx && tx_phy == rx_phy);
@@ -378,7 +365,8 @@ uint8_t RADIO_PHY_MASK(void) {
 void RADIO_LINK_TX(void) {
     if (gs_iSLERLink.phy_mode != gap_phy_mode(gap_link.tx_phy)) {
         iSLERLinkConfig(gap_link.access_address, gap_link.channel,
-                       gap_phy_mode(gap_link.tx_phy), (uint8_t *)gap_link.tx_frame,
+                       gap_phy_mode(gap_link.tx_phy),
+                       (uint8_t *)gap_link.tx_frame,
                        gap_link.receive_after_tx && gap_link.tx_phy == gap_link.rx_phy);
     }
 
@@ -389,7 +377,8 @@ void RADIO_LINK_RX(void) { iSLERLinkRX(); }
 
 void RADIO_SCAN_RX(uint8_t channel) {
     gap_link.receive_after_tx = 0;
-    iSLERRX(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M);
+    iSLERLinkConfig(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M, NULL, 0);
+    iSLERLinkRX();
 }
 
 int RADIO_TX_DONE(void) { return (tx_done & LL_TX) != 0; }

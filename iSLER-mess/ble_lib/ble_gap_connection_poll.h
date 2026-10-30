@@ -308,24 +308,25 @@ static int gap_ext_aux_request_start(const uint8_t *frame) {
     else if (fields.mode == 1 && gap_initiator.active &&
              gap_conn_free_slot() >= 0
     ) {
-        int matches = 1;
-
         if (gap_initiator.mode == GAP_CONN_MODE_GENERAL) {
 #if GAP_PRIVACY_SUPPORT
-            matches = !gap_privacy.scan_filter || peer_slot >= 0;
+            if (gap_privacy.scan_filter && peer_slot < 0)
+                return 0;
 #endif
         }
-        else if (gap_initiator.mode & (GAP_CONN_MODE_SELECTIVE | GAP_CONN_MODE_AUTO))
-            matches = gap_accept_list_match(peer.address, peer.type, peer_slot);
+        else if (gap_initiator.mode & (GAP_CONN_MODE_SELECTIVE | GAP_CONN_MODE_AUTO)) {
+            if (!gap_accept_list_match(peer.address, peer.type, peer_slot))
+                return 0;
+        }
         else {
             int target_slot = gap_identity_find(gap_initiator.peer.address,
                                                  gap_initiator.peer.type);
-            matches = (peer.type == gap_initiator.peer.type &&
-                       memcmp(peer.address, gap_initiator.peer.address, 6) == 0) ||
-                      (peer_slot >= 0 && peer_slot == target_slot);
+            if (!((peer.type == gap_initiator.peer.type &&
+                   memcmp(peer.address, gap_initiator.peer.address, 6) == 0) ||
+                  (peer_slot >= 0 && peer_slot == target_slot))
+            ) return 0;
         }
 
-        if (!matches) return 0;
         request = adv_tx.connect_request;
         request[0] = CONNECT_IND | (local_type << 6) | (peer.type << 7);
         request[1] = 34;

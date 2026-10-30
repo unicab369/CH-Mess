@@ -31,9 +31,6 @@ int RADIO_CONNECT_TX_TIMER_ARM(uint8_t *frame, uint8_t len, uint8_t channel) {
     (void)frame; (void)len; (void)channel; return 1;
 }
 void RADIO_CONNECT_TX_TIMER_CANCEL(void) {}
-int RADIO_ADV_TX_PHY(uint8_t *frame, uint8_t len, uint8_t channel, uint8_t phy) {
-    (void)frame; (void)len; (void)channel; (void)phy; return 1;
-}
 void RADIO_LINK_CONFIG(uint32_t aa, uint8_t channel, uint8_t *frame,
                         uint8_t tx, uint8_t tx_phy, uint8_t rx_phy,
                         uint32_t crc_init) {
