@@ -79,6 +79,13 @@ static struct {
     uint8_t seen_count, seen_next;
     uint8_t response_accepted;
     gap_address response_peer;
+
+    // Advertisement held until its active-scan SCAN_REQ exchange is handled.
+    struct {
+        uint8_t frame[2 + 37];
+        volatile uint8_t ready;
+        volatile int8_t rssi;
+    } pending_adv;
 } gap_scan;
 
 // Encrypted Advertising Data key state.
@@ -87,13 +94,6 @@ static struct {
     uint8_t iv[GAP_EAD_IV_LEN];
     uint8_t set;
 } gap_ead_key;
-
-// Advertisement and scan report state.
-static struct {
-    uint8_t frame[2 + 37];
-    volatile uint8_t ready;
-    volatile int8_t rssi;
-} gap_adv_scan;
 
 #if GAP_EXT_ADV_SUPPORT
 typedef struct {
@@ -892,9 +892,11 @@ int gap_scan_take_ad(
     const uint8_t *types, size_t type_count,
     uint8_t *ad, size_t *len, int8_t *rssi
 ) {
-    if (gap_adv_scan.ready) {
-        gap_receive_report(gap_adv_scan.frame, gap_adv_scan.frame[1], gap_adv_scan.rssi);
-        gap_adv_scan.ready = 0;
+    if (gap_scan.pending_adv.ready) {
+        gap_receive_report(gap_scan.pending_adv.frame,
+                            gap_scan.pending_adv.frame[1],
+                            gap_scan.pending_adv.rssi);
+        gap_scan.pending_adv.ready = 0;
     }
 
     if (!gap_rx.ready) return 0;

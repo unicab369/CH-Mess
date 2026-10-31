@@ -1049,13 +1049,13 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             // This received advertisement is the previous packet on air.
             // SCAN_REQ must start T_IFS after its on-air end, including CRC.
             // Preserve the advertisement while sending SCAN_REQ promptly.
-            memcpy(gap_adv_scan.frame, frame, (size_t)frame[1] + 2);
+            memcpy(gap_scan.pending_adv.frame, frame, (size_t)frame[1] + 2);
             memcpy(gap_scan.active_address, frame + 2, 6);
             gap_scan.active_address_type = advertiser_type;
             gap_scan.active_deadline_ms = GET_MILLIS() + 10;
             gap_scan.active_pending = 1;
-            gap_adv_scan.rssi = RADIO_RSSI();
-            gap_adv_scan.ready = 1;
+            gap_scan.pending_adv.rssi = RADIO_RSSI();
+            gap_scan.pending_adv.ready = 1;
 
             uint8_t local_type;
             gap_local_addr_select(peer_slot, gap_scan.request + 2, &local_type);
@@ -1190,7 +1190,7 @@ void gap_hw_init(void) {
     gap_scan.active_pending = 0;
     gap_rx.ready = 0;
     gap_rx.rssi = 127;
-    gap_adv_scan.ready = 0;
+    gap_scan.pending_adv.ready = 0;
 }
 
 // Calculate the receive-window deadline used to arbitrate the shared radio.
@@ -2053,7 +2053,7 @@ int gap_send_due(
                 gap_initiator.mode = GAP_CONN_MODE_DIRECT;
 #endif
                 gap_rx.ready = 0;
-                gap_adv_scan.ready = 0;
+                gap_scan.pending_adv.ready = 0;
                 gap_scan.active_pending = 0;
                 gap_rx_armed = 0;
                 gap_scanner.scanning = 0;
