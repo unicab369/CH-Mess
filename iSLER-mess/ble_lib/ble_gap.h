@@ -972,7 +972,7 @@ typedef struct {
 // 2. l2cap_ecfc_pump() frames one piece into l2cap_tx; l2cap_tx_queue.offset
 //    tracks fragments that do not fit in one Link Layer packet.
 // 3. ble_gap_l2cap_poll() passes each fragment to gap_send_data(), which
-//    stages it in tx_packet. Direct gap_send_data() calls start here.
+//    stages it in tx_packet.
 // 4. The connection poller copies tx_packet into tx for the next radio packet.
 // 5. If encryption is enabled, gap_security_tx_frame() seals it in tx_frame and
 //    retains that ciphertext and MIC for retransmission.
@@ -1081,6 +1081,7 @@ const gap_conn_context *gap_conn_ctx_current(void) {
 }
 
 typedef struct {
+    gap_conn_context *conn;
     l2cap_connection *link;
     l2cap_tx_queue *tx_queue;
     uint16_t tx_octets;
@@ -1099,6 +1100,7 @@ static inline int gap_conn_l2cap_current(gap_conn_l2cap_access *access) {
     if (!conn->is_central && conn->link_layer.first_event)
         return 0;
 
+    access->conn = conn;
     access->link = &conn->l2cap;
     access->tx_queue = &conn->l2cap_tx_queue;
     access->tx_octets = conn->data_length.tx_octets;
@@ -1918,9 +1920,8 @@ static inline int ble_gap_l2cap_init(const l2cap_ops *upper) {
 }
 
 // Application-facing
-// Poll each live connection; GAP supplies its LL data directly.
+// Poll each live connection using its context without changing the selected slot.
 static inline int ble_gap_l2cap_poll(void) {
-    uint8_t previous_slot = gap_conn_slot;
     uint8_t seen[GAP_CONNECTION_COUNT] = {0};
     int work = 0;
     gap_conn_handle handle;
@@ -1948,9 +1949,7 @@ static inline int ble_gap_l2cap_poll(void) {
             peer->initialized = 1;
         }
 
-        uint8_t connected = gap_conn_select(handle) &&
-            (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
-            (conn->is_central || !conn->link_layer.first_event);
+        uint8_t connected = conn->is_central || !conn->link_layer.first_event;
 
         if (connected != peer->connected) {
             if (!connected) l2cap_conn_reset(peer->connection, 0);
@@ -1971,16 +1970,14 @@ static inline int ble_gap_l2cap_poll(void) {
         if (peer->tx_queue->length) {
             uint16_t max_len = conn->data_length.tx_octets;
 
-            if (!max_len || max_len > GAP_L2CAP_LL_MAX) {
-                gap_conn_slot = previous_slot;
+            if (!max_len || max_len > GAP_L2CAP_LL_MAX)
                 return -1;
-            }
 
             uint16_t remaining = peer->tx_queue->length - peer->tx_queue->offset;
             uint16_t chunk = MIN(remaining, max_len);
             uint8_t llid = peer->tx_queue->offset ? 1 : 2;
 
-            if (gap_send_data(llid, peer->tx_queue->data + peer->tx_queue->offset, chunk)) {
+            if (gap_send_data(conn, llid, peer->tx_queue->data + peer->tx_queue->offset, chunk)) {
                 peer->tx_queue->offset = (uint16_t)(peer->tx_queue->offset + chunk);
 
                 if (peer->tx_queue->offset == peer->tx_queue->length) {
@@ -1996,7 +1993,7 @@ static inline int ble_gap_l2cap_poll(void) {
         else {
             uint8_t llid, fragment[GAP_L2CAP_LL_MAX];
             size_t len = sizeof(fragment);
-            int received = gap_receive_data(&llid, fragment, &len);
+            int received = gap_receive_data(conn, &llid, fragment, &len);
 
             if (received > 0) {
                 if (!len) {
@@ -2061,10 +2058,8 @@ static inline int ble_gap_l2cap_poll(void) {
         if (!peer->update_applied)
             l2cap_conn_tick(peer->connection, GET_MILLIS());
 
-        if (result < 0) {
-            gap_conn_slot = previous_slot;
+        if (result < 0)
             return result;
-        }
 
         work += result;
     }
@@ -2078,7 +2073,6 @@ static inline int ble_gap_l2cap_poll(void) {
         memset(peer, 0, sizeof(*peer));
     }
 
-    gap_conn_slot = previous_slot;
     return work;
 }
 
@@ -2092,11 +2086,12 @@ static inline l2cap_connection *ble_gap_l2cap_for(
     if (handle.slot >= GAP_CONNECTION_COUNT)
         return NULL;
 
-    uint8_t previous_slot = gap_conn_slot;
-    int valid = gap_conn_select(handle);
-    l2cap_connection *connection = valid ? &gap_conn_ctx[handle.slot].l2cap : NULL;
-    gap_conn_slot = previous_slot;
-    return connection;
+    if (!handle.generation ||
+        !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(handle.slot)) ||
+        gap_conn_generations[handle.slot] != handle.generation
+    ) return NULL;
+
+    return &gap_conn_ctx[handle.slot].l2cap;
 }
 
 #endif // GAP_H

@@ -2446,7 +2446,7 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
 // remains valid if a PHY update returns to 1M without re-fragmentation.
 // data must point to len readable bytes; len must be nonzero.
 // Queue one LL data fragment. LLID 2 begins an L2CAP PDU; LLID 1 continues it.
-static int gap_send_data_for(
+static int gap_send_data(
     gap_conn_context *conn, uint8_t llid, const uint8_t *data, size_t len
 ) {
     if (!len ||
@@ -2509,7 +2509,7 @@ int gap_disconnect(uint8_t reason) {
 
 // Copy one received LL data fragment; leave it queued if the output is too small.
 // Application facing. llid is optional; data and len must be valid pointers.
-static int gap_receive_data_for(
+static int gap_receive_data(
     gap_conn_context *conn, uint8_t *llid, uint8_t *data, size_t *len
 ) {
     if (!conn->queue_state.rx_ready)

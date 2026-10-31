@@ -1659,8 +1659,7 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
             !conn->link_layer.tx_pending &&
             !conn->queue_state.tx_queued &&
             !conn->tx_l2cap_remaining &&
-            gap_send_data_for(conn, 2, conn->smp.tx_queue->data,
-                              conn->smp.tx_queue->length)
+            gap_send_data(conn, 2, conn->smp.tx_queue->data, conn->smp.tx_queue->length)
         ) {
             conn->smp.tx_queue->length = 0;
             conn->smp.bond_tx_waiting = 1;
@@ -1680,9 +1679,8 @@ static void gap_smp_poll_context(gap_conn_context *conn) {
         max_len = MIN(max_len, time_len);
         max_len = MIN(max_len, conn->smp.tx_queue->length - conn->smp.tx_queue->offset);
 
-        if (!max_len || !gap_send_data_for(conn,
-                conn->smp.tx_queue->offset ? 1 : 2,
-                conn->smp.tx_queue->data + conn->smp.tx_queue->offset, max_len)
+        if (!max_len || !gap_send_data(conn, conn->smp.tx_queue->offset ? 1 : 2,
+                        conn->smp.tx_queue->data + conn->smp.tx_queue->offset, max_len)
         ) return;
 
         conn->smp.tx_queue->offset += (uint8_t)max_len;

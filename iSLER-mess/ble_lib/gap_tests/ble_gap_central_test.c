@@ -2958,6 +2958,11 @@ static void test_connection_context_slots(void) {
     assert(gap_conn_current(&second_handle));
     assert(second_handle.slot != first_handle.slot);
     assert(gap_conn_count() == 2);
+    assert(ble_gap_l2cap_init(NULL));
+    assert(gap_conn_select(first_handle));
+    assert(ble_gap_l2cap_poll() >= 0);
+    assert(gap_conn_slot == first_handle.slot);
+    assert(gap_conn_select(second_handle));
     // A shared-radio RX callback must update the link that armed the radio,
     // even when application code most recently selected the other handle.
     gap_test_select_slot(first_handle.slot);
@@ -3510,7 +3515,7 @@ static void test_data_length(void) {
     assert(state.tx_octets == 27 && state.rx_octets == 27 && state.tx_time == 328);
     assert(!gap_data_length_set(26));
     assert(!gap_data_length_set(capacity + 1));
-    assert(!gap_send_data(1, data, 28));
+    assert(!gap_send_data(conn, 1, data, 28));
     assert(gap_data_length_set(capacity));
     assert(!gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
@@ -3529,7 +3534,7 @@ static void test_data_length(void) {
     assert(conn->length_status == 0);
     state = conn->data_length;
     assert(state.tx_octets == capacity && state.rx_octets == capacity);
-    assert(gap_send_data(1, data, capacity));
+    assert(gap_send_data(conn, 1, data, capacity));
     // A shrink leaves the already queued fragment intact.
     limits[0] = 27; limits[1] = 0;
     limits[2] = 0x48; limits[3] = 0x01;
@@ -3539,7 +3544,7 @@ static void test_data_length(void) {
     receive_test_link_packet(1);
     assert(conn->tx_frame[1] == capacity);
     receive_test_link_packet(1);
-    assert(!gap_send_data(1, data, 28));
+    assert(!gap_send_data(conn, 1, data, 28));
     // Receive a full negotiated fragment, including >27-byte configured builds.
     memset(rx_frame, 0, sizeof(rx_frame));
     rx_frame[0] = 1 | (conn->link_layer.expected_rx_sn << 3) | ((conn->link_layer.tx_sn ^ 1) << 2);
@@ -3549,17 +3554,17 @@ static void test_data_length(void) {
     gap_hw_received();
     uint8_t llid;
     size_t received_len = sizeof(data);
-    assert(gap_receive_data(&llid, data, &received_len) == 1);
+    assert(gap_receive_data(conn, &llid, data, &received_len) == 1);
     assert(received_len == capacity && llid == 1);
     // Time limits constrain data even when the peer allows more octets.
     limits[0] = 251;
     receive_test_control(0x14, limits, 8);
     assert(conn->data_length.tx_time == 328);
     if (capacity > 31) {
-        assert(gap_send_data(1, data, 31));
+        assert(gap_send_data(conn, 1, data, 31));
         receive_test_link_packet(1);
         receive_test_link_packet(1);
-        assert(!gap_send_data(1, data, 32));
+        assert(!gap_send_data(conn, 1, data, 32));
     }
     // An unsolicited response must not change the negotiated parameters.
     limits[4] = 27;
@@ -4269,7 +4274,7 @@ static void test_link_encryption(void) {
         0x06, 0x04, 0x05, 0x59, 0x6b, 0xd6, 0x56, 0x4f, 0x79, 0x6b, 0x5b, 0x9c,
         0xe6, 0xff, 0x32, 0xf7, 0x5a, 0x6d, 0x33
     };
-    assert(gap_send_data(2, central_data, sizeof(central_data)));
+    assert(gap_send_data(conn, 2, central_data, sizeof(central_data)));
     receive_test_link_packet(1);
     assert(tx_buffer[1] == 31 && memcmp(tx_buffer + 2, encrypted_data, 31) == 0);
     assert(gap_security->tx_counter == 2);
@@ -4284,7 +4289,7 @@ static void test_link_encryption(void) {
     receive_secure_test_pdu(1, central_data, 27, 2, 0, 1, 0);
     assert(gap_security->rx_counter == 2);
     uint8_t output[27], llid; size_t len = sizeof(output);
-    assert(gap_receive_data(&llid, output, &len) == 1 && llid == 2 && len == 27);
+    assert(gap_receive_data(conn, &llid, output, &len) == 1 && llid == 2 && len == 27);
     assert(memcmp(output, central_data, 27) == 0);
     receive_secure_test_pdu(1, central_data, 27, 2, 0, 1, 0);
     assert(gap_security->rx_counter == 3 && conn->queue_state.rx_ready);
@@ -4301,7 +4306,7 @@ static void test_link_encryption(void) {
     start_test_encrypted_central();
     uint8_t old_iv[8]; memcpy(old_iv, gap_security->iv, 8);
     assert(gap_encrypt(encryption_ltk, encryption_random, 0x1234));
-    assert(!gap_send_data(1, central_data, 1));
+    assert(!gap_send_data(conn, 1, central_data, 1));
     assert(memcmp(gap_security->iv, old_iv, 8) == 0);
     receive_test_link_packet(1);
     assert(gap_security->tx_opcode == 0x0a && tx_buffer[1] == 5);
@@ -4385,12 +4390,12 @@ static void test_link_encryption(void) {
     receive_secure_test_pdu(3, (uint8_t[]){0x15, 251, 0, 0x48, 0x08, 251, 0, 0x48, 0x08},
                             9, 1, 0, 1, 0);
     uint8_t large[GAP_CONN_DATA_MAX]; memset(large, 0xab, sizeof(large));
-    assert(gap_send_data(1, large, sizeof(large)));
+    assert(gap_send_data(conn, 1, large, sizeof(large)));
     receive_test_link_packet(1);
     assert(tx_buffer[1] == GAP_CONN_DATA_MAX + 4);
     receive_secure_test_pdu(1, large, sizeof(large), 2, 0, 1, 0);
     size_t large_len = sizeof(large);
-    assert(gap_receive_data(NULL, large, &large_len) == 1 && large_len == sizeof(large));
+    assert(gap_receive_data(conn, NULL, large, &large_len) == 1 && large_len == sizeof(large));
     gap_conn_end();
 
     // A disconnect during entropy collection must not commit the key afterwards.
@@ -4419,7 +4424,7 @@ static void test_link_encryption(void) {
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_conn_ctx[gap_conn_slot].security.status == 0x22);
     start_test_encrypted_central();
     gap_security->tx_counter = UINT64_C(1) << 39;
-    assert(gap_send_data(1, central_data, 1));
+    assert(gap_send_data(conn, 1, central_data, 1));
     receive_test_link_packet(1);
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_conn_ctx[gap_conn_slot].security.status == 0x3d);
 }
@@ -4549,18 +4554,18 @@ static void test_smp_pairing(void) {
     conn->rx_packet.llid = 2; conn->rx_packet.len = 5;
     memcpy(conn->rx_packet.data, att, 5); conn->queue_state.rx_ready = 1;
     size_t len = sizeof(out);
-    assert(gap_receive_data(&llid, out, &len) == 1);
+    assert(gap_receive_data(conn, &llid, out, &len) == 1);
     assert(llid == 2 && len == 5 && !memcmp(att, out, 5));
     // SMP waits for all fragments of an application PDU to be queued.
     gap_pairing_set(1);
     uint8_t first[5] = {3,0,4,0,0x0a}, tail[2] = {0,0};
     conn->queue_state.tx_queued = 0;
-    assert(gap_send_data(2, first, 5));
+    assert(gap_send_data(conn, 2, first, 5));
     assert(gap_pair());
     conn->queue_state.tx_queued = 0;
     gap_smp_poll_context(&gap_conn_ctx[gap_conn_slot]);
     assert(smp->tx_queue->length && !conn->queue_state.tx_queued);
-    assert(gap_send_data(1, tail, 2));
+    assert(gap_send_data(conn, 1, tail, 2));
     conn->queue_state.tx_queued = 0;
     gap_smp_poll_context(&gap_conn_ctx[gap_conn_slot]);
     assert(!smp->tx_queue->length && conn->queue_state.tx_queued && conn->tx_packet.data[2] == 6);

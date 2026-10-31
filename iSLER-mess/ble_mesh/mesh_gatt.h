@@ -821,10 +821,10 @@ void mesh_gatt_poll(void) {
     if (!mesh_gatt.transport.tx_queue_link->length) {
         uint8_t llid, fragment[BLE_GATT_TRANSPORT_LL_MAX];
         size_t len = sizeof(fragment);
-        int received = gap_receive_data_for(conn, &llid, fragment, &len);
+        int received = gap_receive_data(conn, &llid, fragment, &len);
+
         if (received < 0 || (received > 0 &&
-            gatt_transport_receive_fragment(
-                &mesh_gatt.transport, llid, fragment, len) < 0
+            gatt_transport_receive_fragment( &mesh_gatt.transport, llid, fragment, len) < 0
         )) {
             (void)gap_disconnect(0x13);
             return;
@@ -842,12 +842,11 @@ void mesh_gatt_poll(void) {
         const uint8_t *fragment;
         uint16_t len;
         int ready = gatt_transport_tx_peek(&mesh_gatt.transport,
-            tx_octets,
-            &llid, &fragment, &len);
+                                        tx_octets, &llid, &fragment, &len);
         if (ready < 0) {
             (void)gap_disconnect(0x13);
         }
-        else if (ready && gap_send_data_for(conn, llid, fragment, len)) {
+        else if (ready && gap_send_data(conn, llid, fragment, len)) {
             (void)gatt_transport_tx_sent(&mesh_gatt.transport, len, now_ms);
         }
 
