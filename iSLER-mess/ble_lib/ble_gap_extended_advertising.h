@@ -238,7 +238,7 @@ static struct {
 #if GAP_CENTRAL_SUPPORT
         volatile uint8_t phase, tx_end_valid;
         uint8_t set_id;
-        uint64_t response_deadline_ticks;
+        uint64_t resp_deadline_ticks;
 #endif
 #if GAP_PERIPHERAL_SUPPORT
         volatile uint8_t reply_armed;
@@ -1594,6 +1594,7 @@ static int gap_pawr_exchange(
     uint8_t peer_type = set->pawr_connect.peer_type;
     const uint8_t *peer_address = set->pawr_connect.peer_address;
     uint8_t local_address[6], local_type, crc_init[3];
+
     int peer_slot = gap_identity_find(peer_address, peer_type);
     gap_local_addr_select(peer_slot, local_address, &local_type);
 
@@ -1609,6 +1610,7 @@ static int gap_pawr_exchange(
     memcpy(request + 2, local_address, 6);
     memcpy(request + 8, peer_address, 6);
     write_u32_le(request + 14, access_address);
+
     if (!GAP_RANDOM_BYTES(crc_init, sizeof(crc_init))) {
         set->pawr_connect.pending = 0;
         return 0;
@@ -1632,13 +1634,13 @@ static int gap_pawr_exchange(
     gap_ext_pawr.connect.request_end_ticks = 0;
     gap_ext_pawr.connect.tx_end_valid = 0;
     gap_ext_pawr.connect.set_id = (uint8_t)(set - gap_ext_adv);
-    gap_ext_pawr.connect.response_deadline_ticks = request_start_ticks + HW_TICKS_FROM_US(1000);
+    gap_ext_pawr.connect.resp_deadline_ticks = request_start_ticks + HW_TICKS_FROM_US(1000);
     gap_ext_pawr.connect.waiting = 1;
     gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_TX_PENDING;
     RADIO_TX_CLEAR_DONE();
-    if (!RADIO_LINK_TX_AT(request, request_start_ticks,
-                          set->periodic.params.access_address, channel,
-                          1, set->aux_phy, set->aux_phy, set->periodic.params.crc_init)
+
+    if (!RADIO_LINK_TX_AT(request, request_start_ticks, set->periodic.params.access_address,
+                        channel, 1, set->aux_phy, set->aux_phy, set->periodic.params.crc_init)
     ) {
         gap_ext_pawr.connect.waiting = 0;
         gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_IDLE;
@@ -1713,9 +1715,8 @@ static int gap_pawr_advertiser_poll(void) {
             if (data_len) memcpy(frame + 6, set->periodic.data, data_len);
 
             RADIO_TX_CLEAR_DONE();
-            if (!RADIO_LINK_TX_AT(frame, tx_start_ticks,
-                                  set->periodic.params.access_address, channel,
-                                  0, set->aux_phy, set->aux_phy, set->periodic.params.crc_init)
+            if (!RADIO_LINK_TX_AT(frame, tx_start_ticks, set->periodic.params.access_address,
+                            channel, 0, set->aux_phy, set->aux_phy, set->periodic.params.crc_init)
             ) {
                 gap_ext_pawr.advertiser.phase = GAP_PAWR_ADV_IDLE;
                 RADIO_STOP();
@@ -1761,7 +1762,7 @@ static int gap_pawr_advertiser_poll(void) {
 
             if (gap_ext_pawr.response.ready) {
                 gap_pawr_report_push(set, gap_ext_pawr.advertiser.set_id,
-                    gap_ext_pawr.advertiser.event_counter, subevent, tx_start_ticks);
+                        gap_ext_pawr.advertiser.event_counter, subevent, tx_start_ticks);
                 gap_ext_pawr.response.ready = 0;
             }
             if (now < slot_end_ticks) return 1;
@@ -2752,7 +2753,7 @@ static int gap_ext_send_due(uint32_t now) {
 
         if (gap_ext_pawr.connect.phase == GAP_PAWR_CONNECT_TX_PENDING) {
             if (!RADIO_TX_DONE()) {
-                if (ticks < gap_ext_pawr.connect.response_deadline_ticks)
+                if (ticks < gap_ext_pawr.connect.resp_deadline_ticks)
                     return 1;
 
                 gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_IDLE;
@@ -2766,14 +2767,14 @@ static int gap_ext_send_due(uint32_t now) {
                     gap_ext_pawr.connect.tx_end_valid = 1;
                 }
                 gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_RESPONSE_PENDING;
-                gap_ext_pawr.connect.response_deadline_ticks =
+                gap_ext_pawr.connect.resp_deadline_ticks =
                     gap_ext_pawr.connect.request_end_ticks + HW_TICKS_FROM_US(1000);
             }
         }
 
         if (gap_ext_pawr.connect.phase != GAP_PAWR_CONNECT_IDLE) {
             if (!gap_ext_pawr.connect.response_ready &&
-                ticks < gap_ext_pawr.connect.response_deadline_ticks
+                ticks < gap_ext_pawr.connect.resp_deadline_ticks
             ) return 1;
 
             gap_ext_pawr.connect.waiting = 0;

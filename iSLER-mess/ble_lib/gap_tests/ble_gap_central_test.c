@@ -1655,7 +1655,7 @@ static void test_pawr_advertiser_connection(void) {
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(set->pawr_connect.pending && gap_ext_pawr.connect.waiting);
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
-    fake_radio_ticks = gap_ext_pawr.connect.response_deadline_ticks;
+    fake_radio_ticks = gap_ext_pawr.connect.resp_deadline_ticks;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !set->pawr_connect.pending);
 
