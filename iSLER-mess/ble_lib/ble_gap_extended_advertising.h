@@ -1784,15 +1784,15 @@ static int gap_pawr_advertiser_poll(void) {
 static uint16_t gap_ext_chain_pdu_build(
     uint8_t *frame, const uint8_t *data, uint16_t data_offset,
     uint16_t remaining, uint16_t adi, uint8_t address_type,
-    uint8_t phy, uint8_t channel, uint8_t *has_chain
+    uint8_t phy, uint8_t channel
 ) {
-    *has_chain = remaining > GAP_EXT_ADV_FINAL_DATA_MAX;
+    uint8_t has_chain = remaining > GAP_EXT_ADV_FINAL_DATA_MAX;
     uint16_t chunk = remaining;
     uint8_t ext_len = 3;
     uint8_t flags = 0x08;
     uint8_t pdu_len = (uint8_t)(1 + ext_len + chunk);
 
-    if (*has_chain) {
+    if (has_chain) {
         chunk = GAP_EXT_ADV_CHAIN_DATA_MAX;
         ext_len = 6;
         flags = 0x18;
@@ -1817,17 +1817,14 @@ static int gap_ext_chain_arm(uint64_t start_ticks) {
     gap_extended_adv_set *set = &gap_ext_adv[gap_ext_chain.set_id];
     uint16_t data_len = (set->flags & GAP_EXT_SCANNABLE) ? set->scan_resp_len : set->data_len;
     uint16_t offset = data_len - gap_ext_chain.remaining;
-    uint8_t has_chain;
-    uint16_t chunk = gap_ext_chain_pdu_build(gap_ext_adv_frame,
-        set->data, offset, gap_ext_chain.remaining,
-        gap_ext_chain.adi, gap_ext_chain.address_type, set->aux_phy,
-        gap_ext_chain.channel, &has_chain);
-    gap_ext_chain.remaining -= chunk;
+
+    gap_ext_chain.remaining -= gap_ext_chain_pdu_build(gap_ext_adv_frame, set->data, offset,
+                            gap_ext_chain.remaining, gap_ext_chain.adi, gap_ext_chain.address_type,
+                            set->aux_phy, gap_ext_chain.channel);
 
     RADIO_TX_CLEAR_DONE();
-    if (!RADIO_LINK_TX_AT(gap_ext_adv_frame, start_ticks,
-                          BLE_ADV_ACCESS_ADDRESS, gap_ext_chain.channel, 0,
-                          set->aux_phy, set->aux_phy, 0x555555)
+    if (!RADIO_LINK_TX_AT(gap_ext_adv_frame, start_ticks, BLE_ADV_ACCESS_ADDRESS,
+                        gap_ext_chain.channel, 0, set->aux_phy, set->aux_phy, 0x555555)
     ) {
         gap_ext_chain.phase = GAP_EXT_CHAIN_IDLE;
         return 0;
@@ -1859,10 +1856,9 @@ static int gap_periodic_tx_arm(uint64_t start_ticks, uint8_t first) {
     gap_extended_adv_set *set = &gap_ext_adv[gap_periodic_train.set_id];
     uint8_t *frame = gap_ext_adv_frame;
     uint16_t remaining = set->periodic.data_len - gap_periodic_train.offset;
-    uint8_t has_chain;
     uint16_t chunk = gap_ext_chain_pdu_build(frame, set->periodic.data,
         gap_periodic_train.offset, remaining, gap_periodic_train.adi, 0,
-        set->aux_phy, gap_periodic_train.channel, &has_chain);
+        set->aux_phy, gap_periodic_train.channel);
 
     RADIO_TX_CLEAR_DONE();
     uint64_t now = RADIO_TICKS();
@@ -1872,11 +1868,10 @@ static int gap_periodic_tx_arm(uint64_t start_ticks, uint8_t first) {
         RADIO_LINK_TX(frame, set->periodic.params.access_address,
                       gap_periodic_train.channel, 0, set->aux_phy, set->aux_phy,
                       set->periodic.params.crc_init);
-    } else if (!RADIO_LINK_TX_AT(frame, start_ticks,
-                                 set->periodic.params.access_address,
-                                 gap_periodic_train.channel, 0,
-                                 set->aux_phy, set->aux_phy,
-                                 set->periodic.params.crc_init)
+    }
+    else if (!RADIO_LINK_TX_AT(frame, start_ticks,
+                    set->periodic.params.access_address, gap_periodic_train.channel, 0,
+                    set->aux_phy, set->aux_phy, set->periodic.params.crc_init)
     ) {
         RADIO_STOP();
         return 0;
