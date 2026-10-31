@@ -342,24 +342,33 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
         gap_conn_poll_all();
     gap_hw_scan_poll();
 
+    uint32_t now = GET_MILLIS();
+    int received = 0;
+    int receive_error = 0;
     if (mesh_gatt_rx_count) {
         uint8_t slot = mesh_gatt_rx_head;
-        if (*len < mesh_gatt_rx_queue[slot].len)
-            return -1;
-        *len = mesh_gatt_rx_queue[slot].len;
-        memcpy(adv_data, mesh_gatt_rx_queue[slot].data, *len);
-        mesh_gatt_rx_head = (slot + 1) % MESH_GATT_RX_QUEUE_SIZE;
-        mesh_gatt_rx_count--;
-        return 1;
+        if (*len < mesh_gatt_rx_queue[slot].len) {
+            receive_error = 1;
+        }
+        else {
+            *len = mesh_gatt_rx_queue[slot].len;
+            memcpy(adv_data, mesh_gatt_rx_queue[slot].data, *len);
+            mesh_gatt_rx_head = (slot + 1) % MESH_GATT_RX_QUEUE_SIZE;
+            mesh_gatt_rx_count--;
+            received = 1;
+        }
     }
-
-    uint32_t now = GET_MILLIS();
-    const uint8_t mesh_ad_types[] = {
-        MESH_PROV_AD_TYPE, MESH_BEACON_AD_TYPE, MESH_NETWORK_AD_TYPE
-    };
-    int received = gap_scan_take_ad(mesh_ad_types,
-        sizeof(mesh_ad_types), adv_data, len, rssi);
-    if (received < 0) return -1;
+    else {
+        const uint8_t mesh_ad_types[] = {
+            MESH_PROV_AD_TYPE, MESH_BEACON_AD_TYPE, MESH_NETWORK_AD_TYPE
+        };
+        received = gap_scan_take_ad(mesh_ad_types,
+            sizeof(mesh_ad_types), adv_data, len, rssi);
+        if (received < 0) {
+            receive_error = 1;
+            received = 0;
+        }
+    }
 
     int slot = mesh_adv_queue_next(now);
     uint32_t sent_at;
@@ -370,12 +379,15 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
         now, &sent_at, &jitter);
     if (send_result < 0) return -1;
     if (send_result == 2) return 0;
+
     if (send_result == 1 && radio_queue[slot].remaining &&
         --radio_queue[slot].remaining) {
         radio_queue[slot].started = 1;
         radio_queue[slot].order = radio_order++;
         radio_queue[slot].send_at_ms = sent_at + radio_queue[slot].interval_ms + jitter;
     }
+    if (receive_error) return -1;
+
     // Finish Node Reset after its reply is sent; retry failed flash operations.
     if (reset_slot >= 0 && !radio_queue[reset_slot].remaining) {
         mesh_state_record empty = {0};
