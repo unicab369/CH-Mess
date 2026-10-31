@@ -466,44 +466,6 @@ int mesh_gatt_gap_device_name_set(const uint8_t *name, size_t len) {
     return 1;
 }
 
-// Device Name access follows the discoverable bits in the active advertising
-// data. This policy belongs to the Mesh GATT adapter, which consumes that data.
-static int mesh_gatt_gap_data_discoverable(const uint8_t *data, size_t len) {
-    for (size_t offset = 0; offset < len;) {
-        uint8_t type;
-        const uint8_t *value;
-        size_t value_len;
-        int result = gap_ad_parse_next(data, len, &offset, &type, &value,
-                                 &value_len);
-        if (result <= 0) return 0;
-        if (type == GAP_AD_FLAGS && value_len >= 1 && (value[0] & 0x03))
-            return 1;
-    }
-    return 0;
-}
-
-static int mesh_gatt_gap_discoverable(void) {
-#if GAP_EXT_ADV_SUPPORT
-    for (uint8_t set = 0; set < GAP_EXT_ADV_SET_COUNT; set++) {
-        if (gap_ext_adv[set].enabled &&
-            mesh_gatt_gap_data_discoverable(gap_ext_adv[set].data,
-                gap_ext_adv[set].data_len)
-        ) return 1;
-    }
-#endif
-    return gap_adv.enabled && mesh_gatt_gap_data_discoverable(
-        adv_tx.advertising.data, gap_adv.data_len);
-}
-
-// Refresh Device Name access permissions from the active Flags AD structure.
-static void mesh_gatt_gap_policy_update(void) {
-    ble_gatt_attribute *name = gatt_server_find(&mesh_gatt.server,
-        MESH_GATT_HANDLE_GAP_DEVICE_NAME);
-    if (!name) return;
-    name->permissions = mesh_gatt_gap_discoverable() ? BLE_GATT_PERM_READ :
-        BLE_GATT_PERM_READ_AUTHN;
-}
-
 void mesh_gatt_proxy_set_rx_callback(
     mesh_gatt_proxy_rx_fn callback,
                                       void *context
@@ -781,7 +743,11 @@ static void mesh_gatt_link_reset(void) {
 void mesh_gatt_poll(void) {
     if (!mesh_gatt_ensure_initialized())
         return;
-    mesh_gatt_gap_policy_update();
+    ble_gatt_attribute *name = gatt_server_find(&mesh_gatt.server,
+        MESH_GATT_HANDLE_GAP_DEVICE_NAME);
+    if (name)
+        name->permissions = gap_adv_is_discoverable() ? BLE_GATT_PERM_READ :
+            BLE_GATT_PERM_READ_AUTHN;
     gap_conn_l2cap_access link_access;
     uint8_t connected = gap_conn_l2cap_current(&link_access);
     uint16_t tx_octets = link_access.tx_octets;

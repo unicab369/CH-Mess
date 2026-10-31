@@ -1851,6 +1851,44 @@ static int gap_conn_accept(
 
 #include "ble_gap_connection_poll.h"
 
+// Return whether active advertising data contains a discoverable Flags AD field.
+int gap_adv_is_discoverable(void) {
+    uint8_t type;
+    const uint8_t *value;
+    size_t value_len;
+
+#if GAP_EXT_ADV_SUPPORT
+    for (uint8_t set = 0; set < GAP_EXT_ADV_SET_COUNT; set++) {
+        if (!gap_ext_adv[set].enabled)
+            continue;
+        const uint8_t *data = gap_ext_adv[set].data;
+        size_t len = gap_ext_adv[set].data_len;
+
+        for (size_t offset = 0; offset < len;) {
+            if (gap_ad_parse_next(data, len, &offset, &type, &value, &value_len) <= 0)
+                break;
+            if (type == GAP_AD_FLAGS && value_len >= 1 && (value[0] & 0x03))
+                return 1;
+        }
+    }
+#endif
+
+#if GAP_LEGACY_ADV_SUPPORT
+    if (gap_adv.enabled) {
+        const uint8_t *data = adv_tx.advertising.data;
+        size_t len = gap_adv.data_len;
+
+        for (size_t offset = 0; offset < len;) {
+            if (gap_ad_parse_next(data, len, &offset, &type, &value, &value_len) <= 0)
+                break;
+            if (type == GAP_AD_FLAGS && value_len >= 1 && (value[0] & 0x03))
+                return 1;
+        }
+    }
+#endif
+    return 0;
+}
+
 // L2CAP adapter types and operations.
 
 typedef struct {
