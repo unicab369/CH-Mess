@@ -80,12 +80,20 @@ static struct {
 
     // Active-scanner copy of the advertisement received over the air
     // kept while waiting for SCAN_RSP.
+    // The returned SCAN_RSP is stored separately in gap_rx_packet.
     struct {
         uint8_t frame[2 + 37];
         volatile uint8_t ready;
         volatile int8_t rssi;
     } pending_adv;
 } gap_scan;
+
+// General received packet, paired with its receive metadata.
+static struct {
+    uint8_t frame[2 + 37];
+    volatile uint8_t ready;
+    volatile int8_t rssi;
+} gap_rx_packet;
 
 // Encrypted Advertising Data key state.
 static struct {
