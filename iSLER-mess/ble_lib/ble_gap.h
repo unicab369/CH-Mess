@@ -1270,7 +1270,7 @@ static void gap_address_hash(
 #endif
 
 #if GAP_PRIVACY_SUPPORT
-static gap_address gap_identity_address;
+static gap_address gap_identity_addr;
 
 static int gap_private_addr_generate(
     const uint8_t irk[16], uint8_t address[6], const uint8_t previous[6]
@@ -1316,19 +1316,20 @@ static int gap_private_addr_generate(
 #if GAP_IDENTITY_COUNT > 0
 static int gap_identity_find(const uint8_t address[6], uint8_t type) {
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
-        if (!gap_identities[i].used)
+        gap_identity *identity = &gap_identities[i];
+        if (!identity->used)
             continue;
 
-        if (type == gap_identities[i].peer.type &&
-            memcmp(address, gap_identities[i].peer.address, 6) == 0
+        if (type == identity->peer.type &&
+            memcmp(address, identity->peer.address, 6) == 0
         ) return i;
 
         if (type && (address[5] & 0xc0) == 0x40) {
-            if (!gap_identities[i].has_irk)
+            if (!identity->has_irk)
                 continue; // Zero IRK: identity only.
 
             uint8_t hash[3];
-            gap_address_hash(gap_identities[i].irk, address + 3, hash);
+            gap_address_hash(identity->irk, address + 3, hash);
             if (memcmp(hash, address, 3) == 0)
                 return i;
         }
@@ -1685,9 +1686,9 @@ static void gap_local_addr_select(
             memcpy(address, gap_identities[slot].local_address, 6);
         }
         else {
-            *type = gap_identity_address.type;
+            *type = gap_identity_addr.type;
             if (*type)
-                memcpy(address, gap_identity_address.address, 6);
+                memcpy(address, gap_identity_addr.address, 6);
             else RADIO_PUBLIC_ADDRESS(address);
         }
         return;
@@ -1709,9 +1710,10 @@ static void gap_local_addr_select(
 int gap_set_static_addr(const uint8_t address[6]) {
     if (gap_is_busy() || !gap_static_addr_valid(address)) return 0;
     memcpy(gap_own_address.address, address, 6);
+
 #if GAP_PRIVACY_SUPPORT
-    memcpy(gap_identity_address.address, address, 6);
-    gap_identity_address.type = 1;
+    memcpy(gap_identity_addr.address, address, 6);
+    gap_identity_addr.type = 1;
     gap_privacy_timeout_15s = 0;
 #endif
     gap_own_address.type = 1;
@@ -1724,8 +1726,8 @@ int gap_use_public_address(void) {
     if (gap_is_busy()) return 0;
 
 #if GAP_PRIVACY_SUPPORT
+    gap_identity_addr.type = 0;
     gap_privacy_timeout_15s = 0;
-    gap_identity_address.type = 0;
 #endif
     gap_own_address.type = 0;
     return 1;

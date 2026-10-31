@@ -860,10 +860,10 @@ static int gap_smp_local_identity(uint8_t irk[16], uint8_t address[7]) {
     if (!nonzero) return 0;
 
     memcpy(irk, gap_privacy.irk, 16);
-    address[0] = gap_identity_address.type;
+    address[0] = gap_identity_addr.type;
 
-    if (gap_identity_address.type)
-        memcpy(address + 1, gap_identity_address.address, 6);
+    if (gap_identity_addr.type)
+        memcpy(address + 1, gap_identity_addr.address, 6);
     else
         RADIO_PUBLIC_ADDRESS(address + 1);
     return 1;
