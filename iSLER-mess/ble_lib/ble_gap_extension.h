@@ -331,8 +331,8 @@ static uint32_t gap_periodic_tx_us(size_t data_len, uint8_t phy) {
         uint8_t ext_len = 3;
         uint8_t flags = 0x08;
 
-        if (remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX) {
-            chunk = GAP_EXT_ADV_CHAIN_PDU_DATA_MAX;
+        if (remaining > GAP_EXT_ADV_FINAL_DATA_MAX) {
+            chunk = GAP_EXT_ADV_CHAIN_DATA_MAX;
             ext_len = 6;
             flags = 0x18;
         }
@@ -424,7 +424,7 @@ int gap_pawr_set(
 
     if (resp_delay >= interval ||
         (uint32_t)resp_spacing > (interval - resp_delay) * 10 ||
-        set->periodic.data_len > GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 3
+        set->periodic.data_len > GAP_EXT_ADV_FINAL_DATA_MAX - 3
     ) return 0;
 
     uint32_t airtime_us = gap_periodic_tx_us(set->periodic.data_len, set->aux_phy);
@@ -528,7 +528,7 @@ int gap_periodic_adv_update(
     // walking the caller's AD structures through gap_ext_data_valid().
     if (!set->periodic.enabled ||
         (gap_periodic_train.active && gap_periodic_train.set_id == set_id) ||
-        (set->pawr.enabled && len > GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 3) ||
+        (set->pawr.enabled && len > GAP_EXT_ADV_FINAL_DATA_MAX - 3) ||
         !gap_ext_data_valid(data, len))
         return 0;
 
@@ -1681,14 +1681,14 @@ static uint16_t gap_ext_chain_pdu_build(
     uint16_t remaining, uint16_t adi, uint8_t address_type,
     uint8_t phy, uint8_t channel, uint8_t *has_chain
 ) {
-    *has_chain = remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
+    *has_chain = remaining > GAP_EXT_ADV_FINAL_DATA_MAX;
     uint16_t chunk = remaining;
     uint8_t ext_len = 3;
     uint8_t flags = 0x08;
     uint8_t pdu_len = (uint8_t)(1 + ext_len + chunk);
 
     if (*has_chain) {
-        chunk = GAP_EXT_ADV_CHAIN_PDU_DATA_MAX;
+        chunk = GAP_EXT_ADV_CHAIN_DATA_MAX;
         ext_len = 6;
         flags = 0x18;
         pdu_len = (uint8_t)(1 + ext_len + chunk);
@@ -2612,8 +2612,8 @@ static int gap_ext_send_due(uint32_t now) {
             RADIO_STOP();
             gap_ext_adv_scan.waiting = 0;
             gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
-            if (set->scan_resp_len > GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 4) {
-                uint16_t remaining = set->scan_resp_len - GAP_EXT_ADV_FIRST_PDU_DATA_MAX;
+            if (set->scan_resp_len > GAP_EXT_ADV_FINAL_DATA_MAX - 4) {
+                uint16_t remaining = set->scan_resp_len - GAP_EXT_ADV_FIRST_DATA_MAX;
                 uint64_t next_start = gap_ext_adv_scan.response_ticks + HW_TICKS_FROM_US(
                     ((gap_phy_airtime_us(gap_ext_adv_frame[1], set->aux_phy) + 629) / 30) * 30);
                 if (!gap_ext_chain_send(gap_ext_aux.set_id, remaining, gap_ext_aux.adi,
@@ -2921,7 +2921,7 @@ static int gap_ext_send_due(uint32_t now) {
 
             uint8_t *response = gap_ext_adv_frame;
             uint16_t first_chunk = set->scan_resp_len;
-            uint8_t has_chain = first_chunk > GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 4;
+            uint8_t has_chain = first_chunk > GAP_EXT_ADV_FINAL_DATA_MAX - 4;
             uint8_t payload_offset = 12;
             response[0] = adv_header;
             response[1] = (uint8_t)(10 + first_chunk);
@@ -2930,7 +2930,7 @@ static int gap_ext_send_due(uint32_t now) {
             memcpy(response + 4, address, 6);
             write_u16_le(response + 10, adi);
             if (has_chain) {
-                first_chunk = GAP_EXT_ADV_FIRST_PDU_DATA_MAX;
+                first_chunk = GAP_EXT_ADV_FIRST_DATA_MAX;
                 payload_offset = 15;
                 response[1] = (uint8_t)(13 + first_chunk);
                 response[2] = 12;

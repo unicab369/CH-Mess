@@ -2290,7 +2290,7 @@ static void test_extended_scannable_advertising(void) {
     assert(scan_response[1] == 253 && scan_response[2] == 12 &&
            scan_response[3] == 0x19 &&
            !memcmp(scan_response + 10, primary + 4, 2) &&
-           !memcmp(scan_response + 15, data, GAP_EXT_ADV_FIRST_PDU_DATA_MAX));
+           !memcmp(scan_response + 15, data, GAP_EXT_ADV_FIRST_DATA_MAX));
     assert(captured_extended_channels[2] == 0 &&
            captured_extended_channels[3] == 1);
     assert(captured_extended_ticks[3] - captured_extended_ticks[2] >= 2729 &&
