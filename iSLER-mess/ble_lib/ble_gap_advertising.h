@@ -77,8 +77,7 @@ static struct {
     // Scan report queue, duplicate tracking, and scan-response peer.
     uint8_t head, count;
     uint8_t seen_count, seen_next;
-    uint8_t response_accepted;
-    gap_address response_peer;
+    gap_address response_peer; // Encoded type: 0=none, 1=public, 2=random.
 
     // Advertisement held until its active-scan SCAN_REQ exchange is handled.
     struct {
@@ -792,9 +791,12 @@ static inline void gap_receive_report(
 #endif
 
     if (gap_scanner.discovery_mode != GAP_DISCOVERY_ALL) {
+        // Reserve zero for no accepted peer; encoded type is 1=public, 2=random.
+        uint8_t response_peer_type = address_type + 1;
+
         if (pdu_type == SCAN_RSP) {
-            if (!gap_scan.response_accepted ||
-                gap_scan.response_peer.type != address_type ||
+            if (!gap_scan.response_peer.type ||
+                gap_scan.response_peer.type != response_peer_type ||
                 memcmp(gap_scan.response_peer.address, frame + 2, 6) != 0
             ) return;
         }
@@ -802,7 +804,7 @@ static inline void gap_receive_report(
             uint8_t flags = 0;
 
             if (GAP_SCANNABLE_ADV_PDU_MASK & (1u << pdu_type))
-                gap_scan.response_accepted = 0;
+                gap_scan.response_peer.type = 0;
 
             for (uint8_t offset = 0; offset < data_len;) {
                 uint8_t field_len = frame[8 + offset];
@@ -819,8 +821,7 @@ static inline void gap_receive_report(
                 return;
 
             if (GAP_SCANNABLE_ADV_PDU_MASK & (1u << pdu_type)) {
-                gap_scan.response_accepted = 1;
-                gap_scan.response_peer.type = address_type;
+                gap_scan.response_peer.type = response_peer_type;
                 memcpy(gap_scan.response_peer.address, frame + 2, 6);
             }
         }
