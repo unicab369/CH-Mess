@@ -3015,20 +3015,21 @@ static int gap_ext_send_due(uint32_t now) {
     uint8_t *primary = gap_ext_primary_frame;
     uint8_t *frame = gap_ext_aux_frame;
 
-    if (!resume_aux) {
+    // On resume, scannable/connectable events listen for requests instead of
+    // rebuilding their already-transmitted advertising PDUs.
+    if (resume_aux) {
+        if (set->scannable || set->connectable) {
+            gap_ext_aux_rx_start();
+            return 1;
+        }
+    }
+    else {
         primary[0] = adv_header;
         primary[1] = 7;
         primary[2] = 6; // ExtHdrLen=6; mode bits are set below.
         primary[3] = 0x18; // ADI and AuxPtr.
         write_u16_le(primary + 4, adi);
         gap_aux_ptr_write(primary + 6, 0, 480, set->aux_phy);
-    }
-
-    // Scannable and connectable AUX events resume by listening for requests;
-    // their advertising PDUs are prepared only on the initial pass.
-    if (resume_aux && (set->scannable || set->connectable)) {
-        gap_ext_aux_rx_start();
-        return 1;
     }
 
     if (set->scannable) {
