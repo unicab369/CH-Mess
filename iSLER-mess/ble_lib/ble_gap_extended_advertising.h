@@ -1888,15 +1888,6 @@ static int gap_periodic_tx_arm(uint64_t start_ticks, uint8_t first) {
     return 1;
 }
 
-static int gap_periodic_train_arm_next(void) {
-    gap_extended_adv_set *set = &gap_ext_adv[gap_periodic_train.set_id];
-    uint32_t airtime_us = gap_phy_airtime_us(gap_ext_adv_frame[1], set->aux_phy);
-    uint64_t next_start = gap_periodic_train.pdu_start + HW_TICKS_FROM_US(
-        30 * ((airtime_us + 629) / 30));
-    gap_periodic_train.channel = (uint8_t)((gap_periodic_train.channel + 1) % 37);
-    return gap_periodic_tx_arm(next_start, 0);
-}
-
 // -----------------------------------------------------------------------------
 // Extended scan radio processing and periodic sync transfer
 // -----------------------------------------------------------------------------
@@ -2641,7 +2632,11 @@ static int gap_ext_send_due(uint32_t now) {
             return 1;
         }
 
-        if (!gap_periodic_train_arm_next()) {
+        uint64_t next_start = gap_periodic_train.pdu_start + HW_TICKS_FROM_US(30 *
+                            ((airtime_us + 629) / 30));
+        gap_periodic_train.channel = (uint8_t)((gap_periodic_train.channel + 1) % 37);
+
+        if (!gap_periodic_tx_arm(next_start, 0)) {
             gap_periodic_train.active = 0;
             return -1;
         }
