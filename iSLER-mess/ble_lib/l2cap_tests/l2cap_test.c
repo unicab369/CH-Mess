@@ -2,8 +2,6 @@
 #include <stdint.h>
 #include <string.h>
 #define L2CAP_SDU_MAX 517
-#define L2CAP_REASSEMBLER_USE_8BIT 0
-#define L2CAP_CONNECTION_USE_8BIT 0
 #define L2CAP_CHANNEL_MTU_MAX 517
 #define L2CAP_CHANNEL_MAX 4
 #define L2CAP_LOCAL_MAX_SDU_SIZE 120

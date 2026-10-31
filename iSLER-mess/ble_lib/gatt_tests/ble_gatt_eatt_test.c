@@ -5,8 +5,6 @@
 #define BLE_GATT_EATT_MAX_BEARERS 2
 #define L2CAP_CHANNEL_MAX 2
 #define L2CAP_SDU_MAX 517
-#define L2CAP_REASSEMBLER_USE_8BIT 0
-#define L2CAP_CONNECTION_USE_8BIT 0
 #include "ble_gatt_transport_test_adapter.h"
 
 typedef struct {

@@ -52,20 +52,9 @@
 #define L2CAP_LOCAL_MAX_PDU_PAYLOAD L2CAP_CHANNEL_MPS_MAX
 #endif
 
-// Select the counter widths.
-#ifndef L2CAP_REASSEMBLER_USE_8BIT
-#define L2CAP_REASSEMBLER_USE_8BIT 1
-#endif
-#ifndef L2CAP_CONNECTION_USE_8BIT
-#define L2CAP_CONNECTION_USE_8BIT 1
-#endif
-
 // Configuration checks.
 #if L2CAP_SDU_MAX > 65531u
 #error "L2CAP_SDU_MAX must leave room for the 4-byte L2CAP header"
-#endif
-#if L2CAP_REASSEMBLER_USE_8BIT && L2CAP_SDU_MAX > 251u
-#error "Disable L2CAP_REASSEMBLER_USE_8BIT when L2CAP_SDU_MAX exceeds 251"
 #endif
 #if L2CAP_CHANNEL_MAX < 1 || L2CAP_CHANNEL_MAX > 32
 #error "L2CAP_CHANNEL_MAX must be 1..32"
@@ -83,19 +72,15 @@
 #error "L2CAP_LOCAL_MAX_PDU_PAYLOAD must be 23..L2CAP_CHANNEL_MPS_MAX"
 #endif
 
-#if L2CAP_CONNECTION_USE_8BIT && \
-    (L2CAP_CHANNEL_MTU_MAX > 255u || L2CAP_CHANNEL_MPS_MAX > 255u)
-#error "Disable L2CAP_CONNECTION_USE_8BIT when channel MTU or MPS exceeds 255"
-#endif
-
-// Derived counter types.
-#if L2CAP_REASSEMBLER_USE_8BIT
+// Reassembly counters include the 4-byte header, so 8 bits support SDUs up to 251 bytes.
+#if L2CAP_SDU_MAX <= 251u
 typedef uint8_t l2cap_reassembly_bytes;
 #else
 typedef uint16_t l2cap_reassembly_bytes;
 #endif
 
-#if L2CAP_CONNECTION_USE_8BIT
+// Connection counters use 8 bits when both configured channel limits fit in 8 bits.
+#if L2CAP_CHANNEL_MTU_MAX <= 255u && L2CAP_CHANNEL_MPS_MAX <= 255u
 typedef uint8_t l2cap_connection_bytes;
 #else
 typedef uint16_t l2cap_connection_bytes;
