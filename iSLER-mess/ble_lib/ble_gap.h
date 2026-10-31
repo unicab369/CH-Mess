@@ -1913,6 +1913,7 @@ static inline int ble_gap_l2cap_poll(void) {
 
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
         gap_l2cap_peer *peer = &gap_l2cap_peers[slot];
+
         if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot))) {
             if (peer->initialized) {
                 l2cap_conn_reset(peer->connection, 0x0013);
@@ -1960,8 +1961,7 @@ static inline int ble_gap_l2cap_poll(void) {
             if (!max_len || max_len > GAP_L2CAP_LL_MAX)
                 return -1;
 
-            uint16_t remaining = peer->tx_queue->length - peer->tx_queue->offset;
-            uint16_t chunk = MIN(remaining, max_len);
+            uint16_t chunk = MIN(peer->tx_queue->length - peer->tx_queue->offset, max_len);
             uint8_t llid = peer->tx_queue->offset ? 1 : 2;
 
             if (gap_send_data(conn, llid, peer->tx_queue->data + peer->tx_queue->offset, chunk)) {
@@ -2045,9 +2045,7 @@ static inline int ble_gap_l2cap_poll(void) {
         if (!peer->update_applied)
             l2cap_conn_tick(peer->connection, GET_MILLIS());
 
-        if (result < 0)
-            return result;
-
+        if (result < 0) return result;
         work += result;
     }
 
