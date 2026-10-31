@@ -5,64 +5,19 @@
 #include <stdint.h>
 #include <string.h>
 
-#ifndef MIN
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-#endif
-#ifndef MAX
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
-#endif
-
-static inline uint32_t subtract_clamp0_32(uint32_t value, uint32_t amount) {
-    return value > amount ? value - amount : 0;
-}
-
-static inline uint64_t subtract_clamp0_64(uint64_t value, uint64_t amount) {
-    return value > amount ? value - amount : 0;
-}
-
-#ifndef IN_RANGE_INCLUSIVE
-#define IN_RANGE_INCLUSIVE(value, min, max) \
-    ((value) >= (min) && (value) <= (max))
-#endif
-#ifndef IN_RANGE_EXCLUSIVE
-#define IN_RANGE_EXCLUSIVE(value, min, max) \
-    ((value) > (min) && (value) < (max))
-#endif
-
-#ifndef L2CAP_SDU_MAX
-// SMP Secure Connections public keys are 65-byte PDUs.
-#define L2CAP_SDU_MAX 65
-#endif
-#if L2CAP_SDU_MAX > 65531u
-#error "L2CAP_SDU_MAX must leave room for the 4-byte L2CAP header"
-#endif
-
-// Counters include the 4-byte header; 8-bit mode supports SDUs up to 251 bytes.
-#ifndef L2CAP_REASSEMBLER_USE_8BIT
-    #define L2CAP_REASSEMBLER_USE_8BIT 1
-#endif
-
-#if L2CAP_REASSEMBLER_USE_8BIT
-    #if L2CAP_SDU_MAX > 251u
-        #error "Disable L2CAP_REASSEMBLER_USE_8BIT when L2CAP_SDU_MAX exceeds 251"
-    #endif
-typedef uint8_t l2cap_reassembly_bytes;
-#else
-typedef uint16_t l2cap_reassembly_bytes;
-#endif
-
-enum {
-    L2CAP_CID_ATT = 0x0004,
-    L2CAP_CID_LE_SIGNALING = 0x0005,
-    L2CAP_CID_SMP = 0x0006
-};
-
+// Protocol constants.
 #define L2CAP_SIGNALING_MTU 23u
 #define L2CAP_DYNAMIC_CID_MIN 0x0040u
 #define L2CAP_DYNAMIC_CID_MAX 0x007fu
 #define L2CAP_ECFC_CHANNELS_MAX 5u
 #define L2CAP_ECFC_MTU_MIN 64u
 #define L2CAP_ECFC_MPS_MIN 64u
+
+// Build-time limits and defaults.
+#ifndef L2CAP_SDU_MAX
+// SMP Secure Connections public keys are 65-byte PDUs.
+#define L2CAP_SDU_MAX 65
+#endif
 
 #ifndef L2CAP_SIGNAL_TIMEOUT_MS
 #define L2CAP_SIGNAL_TIMEOUT_MS 30000u
@@ -71,11 +26,6 @@ enum {
 #ifndef L2CAP_CHANNEL_MAX
 #define L2CAP_CHANNEL_MAX 1
 #endif
-
-#if L2CAP_CHANNEL_MAX < 1 || L2CAP_CHANNEL_MAX > 32
-#error "L2CAP_CHANNEL_MAX must be 1..32"
-#endif
-
 #ifndef L2CAP_SERVICE_REGISTRY_MAX
 #define L2CAP_SERVICE_REGISTRY_MAX 4
 #endif
@@ -90,7 +40,6 @@ enum {
 #define L2CAP_CHANNEL_MPS_MAX 251
 #endif
 
-// Device-wide defaults; configure_channel may adjust them for a service.
 #ifndef L2CAP_INITIAL_CREDITS
 #define L2CAP_INITIAL_CREDITS 8
 #endif
@@ -103,35 +52,76 @@ enum {
 #define L2CAP_LOCAL_MAX_PDU_PAYLOAD L2CAP_CHANNEL_MPS_MAX
 #endif
 
+// Select the counter widths.
+#ifndef L2CAP_REASSEMBLER_USE_8BIT
+#define L2CAP_REASSEMBLER_USE_8BIT 1
+#endif
+#ifndef L2CAP_CONNECTION_USE_8BIT
+#define L2CAP_CONNECTION_USE_8BIT 1
+#endif
+
+// Configuration checks.
+#if L2CAP_SDU_MAX > 65531u
+#error "L2CAP_SDU_MAX must leave room for the 4-byte L2CAP header"
+#endif
+#if L2CAP_REASSEMBLER_USE_8BIT && L2CAP_SDU_MAX > 251u
+#error "Disable L2CAP_REASSEMBLER_USE_8BIT when L2CAP_SDU_MAX exceeds 251"
+#endif
+#if L2CAP_CHANNEL_MAX < 1 || L2CAP_CHANNEL_MAX > 32
+#error "L2CAP_CHANNEL_MAX must be 1..32"
+#endif
 #if L2CAP_CHANNEL_MTU_MAX < 23 || L2CAP_CHANNEL_MTU_MAX > 65535
 #error "L2CAP_CHANNEL_MTU_MAX must be 23..65535"
 #endif
-
 #if L2CAP_CHANNEL_MPS_MAX < 23 || L2CAP_CHANNEL_MPS_MAX > 65535
 #error "L2CAP_CHANNEL_MPS_MAX must be 23..65535"
 #endif
-
 #if L2CAP_LOCAL_MAX_SDU_SIZE < 23 || L2CAP_LOCAL_MAX_SDU_SIZE > L2CAP_CHANNEL_MTU_MAX
 #error "L2CAP_LOCAL_MAX_SDU_SIZE must be 23..L2CAP_CHANNEL_MTU_MAX"
 #endif
-
 #if L2CAP_LOCAL_MAX_PDU_PAYLOAD < 23 || L2CAP_LOCAL_MAX_PDU_PAYLOAD > L2CAP_CHANNEL_MPS_MAX
 #error "L2CAP_LOCAL_MAX_PDU_PAYLOAD must be 23..L2CAP_CHANNEL_MPS_MAX"
 #endif
 
-// Select the integer width used for connection and channel byte limits.
-#ifndef L2CAP_CONNECTION_USE_8BIT
-    #define L2CAP_CONNECTION_USE_8BIT 1
+#if L2CAP_CONNECTION_USE_8BIT && \
+    (L2CAP_CHANNEL_MTU_MAX > 255u || L2CAP_CHANNEL_MPS_MAX > 255u)
+#error "Disable L2CAP_CONNECTION_USE_8BIT when channel MTU or MPS exceeds 255"
+#endif
+
+// Derived counter types.
+#if L2CAP_REASSEMBLER_USE_8BIT
+typedef uint8_t l2cap_reassembly_bytes;
+#else
+typedef uint16_t l2cap_reassembly_bytes;
 #endif
 
 #if L2CAP_CONNECTION_USE_8BIT
-    #if L2CAP_CHANNEL_MTU_MAX > 255u || L2CAP_CHANNEL_MPS_MAX > 255u
-        #error "Disable L2CAP_CONNECTION_USE_8BIT when chann MTU or MPS exceeds 255"
-    #endif
 typedef uint8_t l2cap_connection_bytes;
 #else
 typedef uint16_t l2cap_connection_bytes;
 #endif
+
+#ifndef MIN
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
+#ifndef MAX
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#endif
+
+#ifndef IN_RANGE_INCLUSIVE
+#define IN_RANGE_INCLUSIVE(value, min, max) \
+    ((value) >= (min) && (value) <= (max))
+#endif
+#ifndef IN_RANGE_EXCLUSIVE
+#define IN_RANGE_EXCLUSIVE(value, min, max) \
+    ((value) > (min) && (value) < (max))
+#endif
+
+enum {
+    L2CAP_CID_ATT = 0x0004,
+    L2CAP_CID_LE_SIGNALING = 0x0005,
+    L2CAP_CID_SMP = 0x0006
+};
 
 // LE signaling command codes implemented by the connection manager.
 enum {

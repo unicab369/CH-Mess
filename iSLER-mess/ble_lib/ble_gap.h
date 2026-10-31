@@ -1706,6 +1706,15 @@ int gap_use_public_address(void) {
     return 1;
 }
 
+// Clamp timing adjustments that may extend before the start of the timer range.
+static inline uint32_t subtract_clamp0_32(uint32_t value, uint32_t amount) {
+    return value > amount ? value - amount : 0;
+}
+
+static inline uint64_t subtract_clamp0_64(uint64_t value, uint64_t amount) {
+    return value > amount ? value - amount : 0;
+}
+
 #include "ble_gap_advertising.h"
 
 #include "ble_gap_connection.h"
