@@ -782,13 +782,12 @@ void mesh_gatt_poll(void) {
     if (!mesh_gatt_ensure_initialized())
         return;
     mesh_gatt_gap_policy_update();
-    const gap_conn_context *conn = gap_conn_ctx_current();
-    uint8_t connected = (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
-        (conn->is_central || !conn->link_layer.first_event);
+    gap_conn_l2cap_access link_access;
+    uint8_t connected = gap_conn_l2cap_current(&link_access);
+    uint16_t tx_octets = link_access.tx_octets;
     if (connected) {
-        gap_conn_context *link = &gap_conn_ctx[gap_conn_slot];
-        l2cap_connection *l2cap = &link->l2cap;
-        l2cap_tx_queue *tx_queue = &link->l2cap_tx_queue;
+        l2cap_connection *l2cap = link_access.link;
+        l2cap_tx_queue *tx_queue = link_access.tx_queue;
         if (!tx_queue->data || tx_queue->capacity < 4) {
             (void)gap_disconnect(0x13);
             return;
@@ -876,7 +875,7 @@ void mesh_gatt_poll(void) {
         const uint8_t *fragment;
         uint16_t len;
         int ready = gatt_transport_tx_peek(&mesh_gatt.transport,
-            gap_conn_ctx_current()->data_length.tx_octets,
+            tx_octets,
             &llid, &fragment, &len);
         if (ready < 0) {
             (void)gap_disconnect(0x13);

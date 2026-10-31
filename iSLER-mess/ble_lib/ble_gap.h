@@ -1077,6 +1077,31 @@ const gap_conn_context *gap_conn_ctx_current(void) {
     return &gap_conn_ctx[gap_conn_slot];
 }
 
+typedef struct {
+    l2cap_connection *link;
+    l2cap_tx_queue *tx_queue;
+    uint16_t tx_octets;
+} gap_conn_l2cap_access;
+
+// Application-facing
+// Provide the active link's L2CAP resources to a bearer sharing GAP's connection.
+static inline int gap_conn_l2cap_current(gap_conn_l2cap_access *access) {
+    if (!access) return 0;
+    memset(access, 0, sizeof(*access));
+
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
+        return 0;
+
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    if (!conn->is_central && conn->link_layer.first_event)
+        return 0;
+
+    access->link = &conn->l2cap;
+    access->tx_queue = &conn->l2cap_tx_queue;
+    access->tx_octets = conn->data_length.tx_octets;
+    return 1;
+}
+
 // Return conservative on-air time for a Link Layer PDU payload length.
 // LE Coded uses the slower S=8 data coding as its scheduling upper bound.
 static inline uint32_t gap_phy_airtime_us(

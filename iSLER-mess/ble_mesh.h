@@ -337,7 +337,7 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
     if (!adv_data || !len) return -1;
     if (rssi) *rssi = 127;
     mesh_gatt_poll();
-    int connection_busy = (gap_conn_slot_mask != 0);
+    int connection_busy = gap_conn_count() != 0;
     if (connection_busy)
         gap_conn_poll_all();
     gap_hw_scan_poll();
