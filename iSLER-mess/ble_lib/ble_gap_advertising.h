@@ -58,7 +58,7 @@ static struct {
 } gap_scan_seen[GAP_SCAN_SEEN_COUNT];
 
 typedef struct {
-    uint8_t report_head, report_count;
+    uint8_t head, count;
     uint8_t seen_count, seen_next;
 } gap_report_state;
 
@@ -539,8 +539,7 @@ int gap_adv_start_directed(
         if (!gap_privacy.resolvable) return 0;
 
         if (slot >= 0 && gap_identities[slot].has_irk) {
-            if (!gap_private_addr_generate(gap_identities[slot].irk,
-                                           target.address, peer->address))
+            if (!gap_private_addr_generate(gap_identities[slot].irk, target.address, peer->address))
                 return 0;
             target.type = 1;
         }
@@ -690,7 +689,8 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     write_u32_le(request + 14, access_address);
 
     uint8_t crc_init[3];
-    if (!GAP_RANDOM_BYTES(crc_init, sizeof(crc_init))) return 0;
+    if (!GAP_RANDOM_BYTES(crc_init, sizeof(crc_init)))
+        return 0;
     memcpy(request + 18, crc_init, sizeof(crc_init));
     request[21] = 1; // transmit window size: 1.25 ms
     write_u16_le(request + 24, gap_central_timing.interval);
@@ -741,26 +741,18 @@ int gap_conn_start(const gap_address *peer) {
     return 0;
 }
 
-// Application facing
-int gap_conn_initiating(void) {
-    return gap_initiator.active;
-}
-
-// Application facing
-void gap_conn_cancel(void) {
-    if (gap_initiator.active) gap_scan_stop();
-}
 #endif // GAP_CENTRAL_SUPPORT
 
 // Application facing
 // Return 1 with a report, 0 when empty. Reports are copied out of a bounded FIFO.
 int gap_scan_poll(gap_scan_report *report) {
-    if (!gap_scan.report_state.report_count) return 0;
-    *report = gap_scan_reports[gap_scan.report_state.report_head];
+    if (!gap_scan.report_state.count) return 0;
+    *report = gap_scan_reports[gap_scan.report_state.head];
 
-    gap_scan.report_state.report_head =
-        (gap_scan.report_state.report_head + 1) % GAP_SCAN_REPORT_COUNT;
-    gap_scan.report_state.report_count--;
+    gap_scan.report_state.head++;
+    if (gap_scan.report_state.head == GAP_SCAN_REPORT_COUNT)
+        gap_scan.report_state.head = 0;
+    gap_scan.report_state.count--;
     return 1;
 }
 
@@ -772,24 +764,22 @@ static inline void gap_receive_report(
         return;
 
     uint8_t pdu_type = frame[0] & 0x0f;
-    // Legacy advertising, directed advertising, scan response. Requests and
-    // connection indications are link-layer control traffic, not GAP reports.
-
     if (!(GAP_SCAN_REPORT_PDU_MASK & (1u << pdu_type)) ||
         (pdu_type == ADV_DIRECT_IND && payload_len != 12)
     ) return;
 
-    uint8_t data_len = payload_len - 6;
-
-    if (pdu_type == ADV_DIRECT_IND)
-        data_len = 0; // ADV_DIRECT_IND has a second address.
-
     uint8_t address_type = (frame[0] >> 6) & 1;
     int slot = gap_identity_find(frame + 2, address_type);
-    if (!gap_peer_allowed(slot, frame + 2, address_type)) return;
+    if (!gap_peer_allowed(slot, frame + 2, address_type))
+        return;
+
 #if GAP_PRIVACY_SUPPORT
     if (gap_privacy.scan_filter && slot < 0) return;
 #endif
+
+    uint8_t data_len = 0; // ADV_DIRECT_IND has a second address, not AdvData.
+    if (pdu_type != ADV_DIRECT_IND)
+        data_len = payload_len - 6;
 
     if (gap_scanner.discovery_mode != GAP_DISCOVERY_ALL) {
         // Reserve zero for no accepted peer; encoded type is 1=public, 2=random.
@@ -802,8 +792,7 @@ static inline void gap_receive_report(
         }
         else {
             uint8_t flags = 0;
-            uint8_t discoverable_mask =
-                gap_scanner.discovery_mode == GAP_DISCOVERY_LIMITED ? 0x01 : 0x03;
+            uint8_t discoverable = (gap_scanner.discovery_mode == GAP_DISCOVERY_LIMITED) ? 0x01 : 0x03;
 
             // Discard the previous peer; this advertisement may replace it if accepted.
             if (GAP_SCANNABLE_ADV_PDU_MASK & (1u << pdu_type))
@@ -819,7 +808,7 @@ static inline void gap_receive_report(
                         flags = frame[10 + offset];
 
                     // Flags may appear anywhere, but only once in this data block.
-                    if (!(flags & discoverable_mask)) return;
+                    if (!(flags & discoverable)) return;
                     break;
                 }
 
@@ -838,6 +827,7 @@ static inline void gap_receive_report(
 
     const uint8_t *identity_address = frame + 2;
     uint8_t identity_type = address_type;
+
 #if GAP_IDENTITY_COUNT > 0
     if (slot >= 0) {
         identity_address = gap_identities[slot].peer.address;
@@ -847,9 +837,8 @@ static inline void gap_receive_report(
 
     if (gap_scanner.filter_duplicates) {
         // Legacy duplicates use advertiser identity and report class, not payload contents.
-        uint8_t scan_response = (pdu_type == SCAN_RSP);
         // Bit 0 stores address type; bit 1 distinguishes scan responses.
-        uint8_t seen_kind = identity_type | (scan_response << 1);
+        uint8_t seen_kind = identity_type | ((pdu_type == SCAN_RSP) << 1);
         uint8_t seen_slot = gap_scan.report_state.seen_count;
 
         for (uint8_t i = 0; i < gap_scan.report_state.seen_count; i++) {
@@ -860,8 +849,9 @@ static inline void gap_receive_report(
 
         if (seen_slot == GAP_SCAN_SEEN_COUNT) {
             seen_slot = gap_scan.report_state.seen_next;
-            gap_scan.report_state.seen_next =
-                (gap_scan.report_state.seen_next + 1) % GAP_SCAN_SEEN_COUNT;
+            gap_scan.report_state.seen_next++;
+            if (gap_scan.report_state.seen_next == GAP_SCAN_SEEN_COUNT)
+                gap_scan.report_state.seen_next = 0;
         }
         else {
             gap_scan.report_state.seen_count++;
@@ -871,18 +861,19 @@ static inline void gap_receive_report(
         memcpy(gap_scan_seen[seen_slot].address, identity_address, 6);
     }
 
-    if (gap_scan.report_state.report_count == GAP_SCAN_REPORT_COUNT) {
-        gap_scan.report_state.report_head =
-            (gap_scan.report_state.report_head + 1) % GAP_SCAN_REPORT_COUNT;
-        gap_scan.report_state.report_count--;
+    if (gap_scan.report_state.count == GAP_SCAN_REPORT_COUNT) {
+        gap_scan.report_state.head++;
+        if (gap_scan.report_state.head == GAP_SCAN_REPORT_COUNT)
+            gap_scan.report_state.head = 0;
+        gap_scan.report_state.count--;
     }
 
-    uint8_t report_slot = (gap_scan.report_state.report_head +
-                           gap_scan.report_state.report_count) % GAP_SCAN_REPORT_COUNT;
+    uint8_t report_slot = (gap_scan.report_state.head +
+                           gap_scan.report_state.count) % GAP_SCAN_REPORT_COUNT;
     gap_scan_report *report = &gap_scan_reports[report_slot];
     report->pdu_type = pdu_type;
     report->address.type = address_type;
-    report->resolved = slot >= 0;
+    report->resolved = (slot >= 0);
     report->identity_address.type = identity_type;
     report->has_target = (pdu_type == ADV_DIRECT_IND);
     report->target_address.type = (frame[0] >> 7) & 1;
@@ -896,7 +887,7 @@ static inline void gap_receive_report(
     if (data_len)
         memcpy(report->data, frame + 8, data_len);
     // Publish the queue entry only after all of its fields are filled.
-    gap_scan.report_state.report_count++;
+    gap_scan.report_state.count++;
 }
 
 // Application facing

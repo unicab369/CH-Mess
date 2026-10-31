@@ -1043,12 +1043,12 @@ static void gap_ext_report_queue(
         seen->data_hash = data_hash;
     }
 
-    if (gap_ext_report_state.report_count == GAP_EXT_ADV_REPORT_COUNT) {
-        gap_ext_report_state.report_head = (gap_ext_report_state.report_head + 1) % GAP_EXT_ADV_REPORT_COUNT;
-        gap_ext_report_state.report_count--;
+    if (gap_ext_report_state.count == GAP_EXT_ADV_REPORT_COUNT) {
+        gap_ext_report_state.head = (gap_ext_report_state.head + 1) % GAP_EXT_ADV_REPORT_COUNT;
+        gap_ext_report_state.count--;
     }
 
-    uint8_t slot = (gap_ext_report_state.report_head + gap_ext_report_state.report_count) % GAP_EXT_ADV_REPORT_COUNT;
+    uint8_t slot = (gap_ext_report_state.head + gap_ext_report_state.count) % GAP_EXT_ADV_REPORT_COUNT;
     gap_ext_report *report = &gap_ext_adv_reports[slot];
 
     report->has_address = identity->has_address;
@@ -1062,17 +1062,17 @@ static void gap_ext_report_queue(
     report->data_len = data_len;
 
     if (data_len) memcpy(report->data, data, data_len);
-    gap_ext_report_state.report_count++;
+    gap_ext_report_state.count++;
 }
 
 // Application facing
 // Return one complete reassembled extended advertising report. report must be
 // a valid writable pointer.
 int gap_ext_scan_poll(gap_ext_report *report) {
-    if (!gap_ext_report_state.report_count) return 0;
-    *report = gap_ext_adv_reports[gap_ext_report_state.report_head];
-    gap_ext_report_state.report_head = (gap_ext_report_state.report_head + 1) % GAP_EXT_ADV_REPORT_COUNT;
-    gap_ext_report_state.report_count--;
+    if (!gap_ext_report_state.count) return 0;
+    *report = gap_ext_adv_reports[gap_ext_report_state.head];
+    gap_ext_report_state.head = (gap_ext_report_state.head + 1) % GAP_EXT_ADV_REPORT_COUNT;
+    gap_ext_report_state.count--;
     return 1;
 }
 

@@ -508,7 +508,7 @@ static void test_connect_request(void) {
     assert(request[21] == 1 && request[24] == 24 && request[28] == 200);
     assert(request[30] == 0xff && request[33] == 0xff && request[34] == 0x1f);
     assert(!gap_conn_start(test_address(peer, 0)));
-    gap_conn_cancel();
+    gap_scan_stop();
     assert(!gap_initiator.active && !gap_scanner.scanning);
 
     const uint8_t local_random[6] = {0x11, 0x22, 0x33, 0x44, 0x55, 0xc6};
@@ -517,7 +517,7 @@ static void test_connect_request(void) {
     request = adv_tx.connect_request;
     assert(request[0] == 0xc5);
     assert(memcmp(request + 2, local_random, 6) == 0);
-    gap_conn_cancel();
+    gap_scan_stop();
 }
 
 static void test_central_initiation_while_connectable_advertising(void) {
@@ -566,7 +566,7 @@ static void test_connection_timing_configuration(void) {
            adv_tx.connect_request[29] == 1);
     assert(gap_initiator.deadline_ms == now_ms + 45000);
     assert(!gap_conn_timing_set(&timing)); // Settings are locked while scanning.
-    gap_conn_cancel();
+    gap_scan_stop();
 
     timing.attempt_timeout_s = 1;
     assert(gap_conn_timing_set(&timing));
@@ -651,7 +651,7 @@ static void test_private_rotation(void) {
     random_seed++;
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_own_address.address, 6) == 0);
-    gap_conn_cancel();
+    gap_scan_stop();
     gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(gap_conn_slot);
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_own_address.address, 6) == 0);
@@ -733,13 +733,13 @@ static int test_ext_scan_receive(uint8_t kind, const uint8_t *pdu,
         gap_ext_scan.slot = 0;
         gap_ext_scan.rx_phy = GAP_PHY_1M;
     }
-    uint8_t reports_before = gap_ext_report_state.report_count;
+    uint8_t reports_before = gap_ext_report_state.count;
     uint8_t had_context = 0;
     for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
         had_context |= gap_ext_ctx[i].active &&
             (int32_t)(gap_ext_ctx[i].deadline_ms - GET_MILLIS()) > 0;
     gap_ext_scan_process();
-    if (had_context || gap_ext_report_state.report_count != reports_before) return 1;
+    if (had_context || gap_ext_report_state.count != reports_before) return 1;
     for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
         if (gap_ext_ctx[i].active) return 1;
     return kind == GAP_EXT_ADV_PRIMARY_PDU && fields.has_aux_ptr;
@@ -1081,7 +1081,7 @@ static void test_scanning_and_advertising_coexistence(void) {
     gap_adv_stop(0);
     assert(gap_conn_start(test_address(peer, 0)));
     assert(gap_initiator.active && gap_scanner.scanning);
-    gap_conn_cancel();
+    gap_scan_stop();
     static const uint8_t scan_response[] = {2, 0x0a, 0};
     assert(gap_adv_start(0, ADV_IND, data, sizeof(data),
         scan_response, sizeof(scan_response), 100));
@@ -2309,7 +2309,7 @@ static void test_extended_scannable_advertising(void) {
         assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
             captured_extended_pdus[i], captured_extended_pdu_lengths[i], -40));
     }
-    assert(gap_ext_report_state.report_count == 1);
+    assert(gap_ext_report_state.count == 1);
     assert(gap_ext_scan_poll(&report));
     assert(report.sid == 6 && report.data_len == sizeof(data) &&
            !memcmp(report.data, data, sizeof(data)));
@@ -2530,7 +2530,7 @@ static void test_auto_connection_establishment(void) {
     gap_hw_scan_poll();
     assert(gap_initiator.active &&
            gap_scanner.scanning); // Background mode has no attempt timeout.
-    gap_conn_cancel();
+    gap_scan_stop();
     assert(!gap_initiator.active && !(gap_initiator.mode == GAP_CONN_MODE_AUTO) &&
            !gap_scanner.scanning);
 
@@ -2765,7 +2765,7 @@ static void test_peer_local_keys(void) {
     memcpy(rx_frame + 8, test_rpa, 6);
     gap_hw_received();
     assert(gap_initiator.active && !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)));
-    gap_conn_cancel();
+    gap_scan_stop();
     assert(gap_privacy_configure(NULL, 0, 0));
     uint8_t static_identity[6] = {9, 8, 7, 6, 5, 0xc4};
     assert(gap_set_static_addr(static_identity));
@@ -2774,12 +2774,12 @@ static void test_peer_local_keys(void) {
     assert(gap_conn_start(test_address(test_identity, 0)));
     assert(adv_tx.connect_request[0] & 0x40);
     assert(memcmp(adv_tx.connect_request + 2, static_identity, 6) == 0);
-    gap_conn_cancel();
+    gap_scan_stop();
     // Null removes the override and restores the global RPA.
     assert(gap_identity_local_key(test_address(test_identity, 0), NULL));
     assert(gap_conn_start(test_address(test_identity, 0)));
     assert(memcmp(adv_tx.connect_request + 2, gap_own_address.address, 6) == 0);
-    gap_conn_cancel();
+    gap_scan_stop();
     assert(gap_privacy_configure(NULL, 0, 0));
 }
 
@@ -2847,7 +2847,7 @@ static void test_nonresolvable_private_addresses(void) {
     assert(gap_conn_start(test_address(test_identity, 0)));
     assert((adv_tx.connect_request[7] & 0xc0) == 0);
     assert(memcmp(adv_tx.connect_request + 2, gap_own_address.address, 6) == 0);
-    gap_conn_cancel();
+    gap_scan_stop();
     // Outstanding active scan exchanges retain their NRPA through timeout.
     gap_scan_start(1);
     memset(rx_frame, 0, sizeof(rx_frame));
