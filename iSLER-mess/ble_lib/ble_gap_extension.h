@@ -243,7 +243,6 @@ static struct {
 typedef struct {
     uint8_t has_address;
     gap_address peer;
-    uint8_t resolved;
     gap_address identity;
     uint8_t has_adi, sid;
     uint16_t did;
@@ -1053,7 +1052,6 @@ static void gap_ext_report_queue(
 
     report->has_address = identity->has_address;
     report->peer = identity->peer;
-    report->resolved = id_slot >= 0;
     report->identity = *peer;
     report->has_adi = identity->has_adi;
     report->sid = identity->sid;

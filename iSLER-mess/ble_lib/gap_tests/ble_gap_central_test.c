@@ -671,7 +671,7 @@ static void test_scan_identity_filter(void) {
     gap_receive_report(frame, 6, -40);
     gap_scan_report report;
     assert(gap_scan_poll(&report));
-    assert(report.resolved && report.identity_address.type == 0);
+    assert(report.identity_address.type == 0);
     assert(memcmp(report.address.address, test_rpa, 6) == 0);
     assert(memcmp(report.identity_address.address, test_identity, 6) == 0);
     // Another RPA with the same identity and payload is a duplicate.
@@ -945,7 +945,7 @@ static void test_extended_advertising_reassembly(void) {
         private_auxiliary, sizeof(private_auxiliary), -40) == 1);
     assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
         chain, sizeof(chain), -40) == 1);
-    assert(gap_ext_scan_poll(&report) && report.resolved &&
+    assert(gap_ext_scan_poll(&report) &&
            report.identity.type == 0 &&
            !memcmp(report.identity.address, test_identity, 6));
     gap_scan_stop();
@@ -2597,11 +2597,13 @@ static void test_peer_privacy_modes(void) {
     frame[0] = 0x42;
     memcpy(frame + 2, test_rpa, 6);
     gap_receive_report(frame, 6, -40);
-    assert(gap_scan_poll(&report) && report.resolved);
+    assert(gap_scan_poll(&report) && report.identity_address.type == 0 &&
+           !memcmp(report.identity_address.address, test_identity, 6));
     // Unlisted peers continue to obey the optional filter setting.
     frame[2] ^= 1;
     gap_receive_report(frame, 6, -40);
-    assert(gap_scan_poll(&report) && !report.resolved);
+    assert(gap_scan_poll(&report) && report.identity_address.type == 1 &&
+           !memcmp(report.identity_address.address, frame + 2, 6));
     gap_scan_stop();
     assert(gap_identity_privacy(test_address(test_identity, 0), GAP_PRIVACY_DEVICE));
     assert(gap_identity_set(test_address(test_identity, 0), test_irk)); // Preserve mode
@@ -2609,7 +2611,8 @@ static void test_peer_privacy_modes(void) {
     frame[0] = 2;
     memcpy(frame + 2, test_identity, 6);
     gap_receive_report(frame, 6, -40);
-    assert(gap_scan_poll(&report) && report.resolved);
+    assert(gap_scan_poll(&report) && report.identity_address.type == 0 &&
+           !memcmp(report.identity_address.address, test_identity, 6));
     gap_scan_stop();
     assert(gap_identity_privacy(test_address(test_identity, 0), GAP_PRIVACY_NETWORK));
     // All-zero IRKs still allow identity addresses in network mode.
