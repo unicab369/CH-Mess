@@ -787,8 +787,8 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 #if GAP_PERIPHERAL_SUPPORT
     if (pdu_type == CONNECT_IND && gap_ext_adv_connect.waiting &&
         !gap_ext_adv_connect.response_started && frame[1] == 34 &&
-        ((frame[0] >> 7) & 1) == gap_ext_adv_connect.address_type &&
-        memcmp(frame + 8, gap_ext_adv_connect.address, 6) == 0 &&
+        ((frame[0] >> 7) & 1) == gap_ext_adv_connect.peer.type &&
+        memcmp(frame + 8, gap_ext_adv_connect.peer.address, 6) == 0 &&
         gap_conn_request_valid(frame) && gap_conn_free_slot() >= 0
     ) {
         uint8_t initiator_type = (frame[0] >> 6) & 1;
@@ -804,11 +804,11 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             memcpy(gap_ext_adv_connect.request, frame, 36);
             gap_ext_adv_connect.request_ticks = received_ticks;
             gap_ext_adv_frame[0] = ADV_EXT_IND |
-                (gap_ext_adv_connect.address_type << 6) | (initiator_type << 7);
+                (gap_ext_adv_connect.peer.type << 6) | (initiator_type << 7);
             gap_ext_adv_frame[1] = 14;
             gap_ext_adv_frame[2] = 13;
             gap_ext_adv_frame[3] = 0x03; // AdvA and TargetA.
-            memcpy(gap_ext_adv_frame + 4, gap_ext_adv_connect.address, 6);
+            memcpy(gap_ext_adv_frame + 4, gap_ext_adv_connect.peer.address, 6);
             memcpy(gap_ext_adv_frame + 10, frame + 2, 6);
             RADIO_TX_CLEAR_DONE();
             gap_ext_adv_connect.response_started = 1;

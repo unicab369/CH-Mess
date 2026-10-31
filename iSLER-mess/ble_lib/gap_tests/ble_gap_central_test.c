@@ -414,10 +414,10 @@ void RADIO_LINK_RX(uint32_t access_address, uint8_t channel,
     if (inject_ext_connect_request && gap_ext_adv_connect.waiting) {
         static const uint8_t initiator[6] = {0x51, 0x52, 0x53, 0x54, 0x55, 0x56};
         memset(rx_frame, 0, sizeof(rx_frame));
-        rx_frame[0] = CONNECT_IND | (gap_ext_adv_connect.address_type << 7);
+        rx_frame[0] = CONNECT_IND | (gap_ext_adv_connect.peer.type << 7);
         rx_frame[1] = 34;
         memcpy(rx_frame + 2, initiator, 6);
-        memcpy(rx_frame + 8, gap_ext_adv_connect.address, 6);
+        memcpy(rx_frame + 8, gap_ext_adv_connect.peer.address, 6);
         if (inject_ext_connect_request == 2) rx_frame[8] ^= 1;
         write_u32_le(rx_frame + 14, 0x12345678);
         rx_frame[18] = 0x56; rx_frame[19] = 0x34; rx_frame[20] = 0x12;
