@@ -1051,7 +1051,9 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             // Preserve the advertisement while sending SCAN_REQ promptly.
             memcpy(gap_scan.pending_adv.frame, frame, (size_t)frame[1] + 2);
             memcpy(gap_scan.active_address.address, frame + 2, 6);
-            gap_scan.active_deadline_ms = GET_MILLIS() + 10;
+
+            //! NOTE: Allow 2 ms for a SCAN_RSP; IFS handles the packet spacing.
+            gap_scan.resp_deadline_ms = GET_MILLIS() + 2;
             // Store 1/2 for public/random; zero means no response is pending.
             gap_scan.active_address.type = advertiser_type + 1;
             gap_scan.pending_adv.rssi = RADIO_RSSI();
@@ -1960,8 +1962,9 @@ void gap_hw_scan_poll(void) {
     }
 
 #endif // GAP_EXT_ADV_SUPPORT
+
     if (gap_scan.active_address.type) {
-        if ((int32_t)(now - gap_scan.active_deadline_ms) < 0)
+        if ((int32_t)(now - gap_scan.resp_deadline_ms) < 0)
             return;
         gap_scan.active_address.type = 0;
     }
