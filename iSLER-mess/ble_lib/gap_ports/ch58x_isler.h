@@ -155,11 +155,13 @@ void iSLER_Radio_Transmitted_Cb(void) {
             gap_ext_adv_scan.response_started) {
             gap_link.receive_after_tx = 0;
             gap_extended_adv_set *set = &gap_ext_adv[gap_ext_aux.set_id];
+
             if (set->scan_resp_len > GAP_EXT_ADV_FINAL_DATA_MAX - 4) {
                 uint16_t remaining = set->scan_resp_len - GAP_EXT_ADV_FIRST_DATA_MAX;
                 uint64_t next_start = gap_ext_adv_scan.response_ticks + HW_TICKS_FROM_US(
                     ((gap_phy_airtime_us(gap_ext_adv_frame[1], set->aux_phy) + 629) / 30) * 30);
                 gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
+
                 if (!gap_ext_chain_send(gap_ext_aux.set_id, remaining, gap_ext_aux.adi,
                                         gap_ext_aux.address_type, next_start))
                     gap_ext_aux.phase = GAP_EXT_AUX_FAILED;

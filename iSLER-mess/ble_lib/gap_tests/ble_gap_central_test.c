@@ -1885,12 +1885,12 @@ static void test_pawr_observer_response(void) {
     assert(gap_report_poll(&report) && report.slot == 0 &&
            report.event_counter == 12 && report.data_len == 3 &&
            !memcmp(report.data, (uint8_t[]){2, 0x01, 0x06}, 3));
-    assert(gap_ext_scan.pawr_response_tx_pending);
+    assert(gap_ext_scan.pawr_resp_tx_pending);
     gap_hw_scan_poll();
-    assert(gap_ext_scan.pawr_response_tx_pending);
+    assert(gap_ext_scan.pawr_resp_tx_pending);
     fake_tx_done = 1;
     gap_hw_scan_poll();
-    assert(!gap_ext_scan.pawr_response_tx_pending);
+    assert(!gap_ext_scan.pawr_resp_tx_pending);
 
     // Repeating mode sends the configured response at each selected subevent.
     memcpy(gap_ext_scan.frame, subevent_pdu, sizeof(subevent_pdu));
@@ -1903,7 +1903,7 @@ static void test_pawr_observer_response(void) {
     gap_ext_scan_process();
     assert(captured_extended_count == 2 && sync->pawr.pending &&
            sync->event_counter == 14);
-    assert(gap_ext_scan.pawr_response_tx_pending);
+    assert(gap_ext_scan.pawr_resp_tx_pending);
     gap_hw_scan_poll();
 
     // Disabling repeat leaves one final transmission, then consumes the data.
@@ -1919,10 +1919,10 @@ static void test_pawr_observer_response(void) {
     gap_ext_scan_process();
     assert(captured_extended_count == 3 && !sync->pawr.pending &&
            sync->event_counter == 15);
-    assert(gap_ext_scan.pawr_response_tx_pending);
-    fake_radio_ticks = gap_ext_scan.pawr_response_deadline;
+    assert(gap_ext_scan.pawr_resp_tx_pending);
+    fake_radio_ticks = gap_ext_scan.pawr_resp_deadline;
     gap_hw_scan_poll();
-    assert(!gap_ext_scan.pawr_response_tx_pending);
+    assert(!gap_ext_scan.pawr_resp_tx_pending);
     fake_tx_done = 1;
     gap_sync_reports.head = gap_sync_reports.count = 0;
     fake_radio_tick_autoincrement = 0;

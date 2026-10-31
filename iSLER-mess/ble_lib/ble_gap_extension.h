@@ -144,8 +144,8 @@ static struct {
     volatile uint8_t request_phase;
     uint32_t request_deadline_ms;
     uint64_t request_end_ticks;
-    uint8_t pawr_response_tx_pending;
-    uint64_t pawr_response_deadline;
+    uint8_t pawr_resp_tx_pending;
+    uint64_t pawr_resp_deadline;
 } gap_ext_scan;
 
 // Extended advertising scan-response state
@@ -158,6 +158,7 @@ static volatile struct {
     uint16_t offset, adi;
     uint64_t pdu_start;
 } gap_periodic_train;
+
 enum {
     GAP_EXT_AUX_IDLE, GAP_EXT_AUX_PRIMARY, GAP_EXT_AUX_PENDING,
     GAP_EXT_AUX_SCAN_WINDOW, GAP_EXT_AUX_CONNECT_WINDOW, GAP_EXT_AUX_FAILED
@@ -1935,7 +1936,7 @@ static void gap_ext_scan_report_process(
 
 // Handle a received extended scan PDU, including follow-on AuxPtr and sync work.
 static void gap_ext_scan_process(void) {
-    if (gap_ext_scan.pawr_response_tx_pending) return;
+    if (gap_ext_scan.pawr_resp_tx_pending) return;
     if (!gap_ext_scan.ready) return;
 
     int slot = -1;
@@ -2105,10 +2106,9 @@ static void gap_ext_scan_process(void) {
                 sync->aux_phy = aux_phy;
                 sync->window_active = 1;
                 sync->window_chain = 1;
-                sync->end_ticks = gap_ext_scan.ticks + HW_TICKS_FROM_US(
-                                  after_packet_us + unit_us + widen_us);
+                sync->end_ticks = gap_ext_scan.ticks + HW_TICKS_FROM_US(after_packet_us + unit_us + widen_us);
                 sync->start_ticks = gap_ext_scan.ticks + HW_TICKS_FROM_US(
-                                    subtract_clamp0_32(after_packet_us, widen_us));
+                                                    subtract_clamp0_32(after_packet_us, widen_us));
             }
         }
         return;
@@ -2169,8 +2169,8 @@ static void gap_ext_scan_process(void) {
             if (RADIO_LINK_TX_AT(response, response_start, sync->pawr.timing.resp_access_addr,
                                  response_channel, 0, sync->phy, sync->phy, sync->params.crc_init)
             ) {
-                gap_ext_scan.pawr_response_deadline = response_start + HW_TICKS_FROM_US(1000);
-                gap_ext_scan.pawr_response_tx_pending = 1;
+                gap_ext_scan.pawr_resp_deadline = response_start + HW_TICKS_FROM_US(1000);
+                gap_ext_scan.pawr_resp_tx_pending = 1;
             }
         }
 
@@ -2536,7 +2536,7 @@ static void gap_ext_aux_primary_start(
 
 static int gap_ext_send_due(uint32_t now) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_ext_scan.pawr_response_tx_pending) return 1;
+    if (gap_ext_scan.pawr_resp_tx_pending) return 1;
     if (gap_periodic_train.failed) {
         gap_periodic_train.failed = 0;
         return -1;
