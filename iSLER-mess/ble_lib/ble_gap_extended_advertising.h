@@ -1676,19 +1676,12 @@ static int gap_pawr_advertiser_poll(void) {
         uint64_t now = RADIO_TICKS();
         uint8_t subevent = gap_ext_pawr.advertiser.subevent;
 
-        uint64_t interval_ticks = HW_TICKS_FROM_US(
-            (uint32_t)(set->pawr.subevents > 1 ? set->pawr.subevent_int :
-                       set->periodic.params.interval) * 1250);
+        uint64_t interval_ticks = HW_TICKS_FROM_US((uint32_t)(set->pawr.subevents > 1 ?
+                        set->pawr.subevent_int : set->periodic.params.interval) * 1250);
         uint64_t tx_start_ticks = gap_ext_pawr.advertiser.event_start_ticks +
                                   (uint64_t)subevent * interval_ticks;
-
-        uint64_t slot_ticks = tx_start_ticks +
-            HW_TICKS_FROM_US((uint32_t)set->pawr.resp_delay * 1250);
-        uint64_t slot_start_ticks = subtract_clamp0_64(slot_ticks, HW_TICKS_FROM_US(150));
-        uint64_t slot_end_ticks = slot_ticks + HW_TICKS_FROM_US((uint32_t)set->pawr.resp_slots *
-                                                set->pawr.resp_spacing * 125);
         uint8_t channel = gap_sync_channel(&set->periodic.params,
-            (uint16_t)(gap_ext_pawr.advertiser.event_counter ^ subevent));
+                        (uint16_t)(gap_ext_pawr.advertiser.event_counter ^ subevent));
 
         if (gap_ext_pawr.advertiser.phase == GAP_PAWR_ADV_SEND) {
             if (subevent >= set->pawr.subevents) {
@@ -1708,8 +1701,7 @@ static int gap_pawr_advertiser_poll(void) {
             }
 #endif
 
-            uint16_t adi = (uint16_t)(((set->sid & 0x0f) << 12) |
-                                      (set->periodic.did & 0x0fff));
+            uint16_t adi = (uint16_t)(((set->sid & 0x0f) << 12) | (set->periodic.did & 0x0fff));
             uint16_t data_len = set->pawr.data_pending ? set->periodic.data_len : 0;
             uint8_t *frame = gap_ext_adv_frame;
             frame[0] = ADV_EXT_IND;
@@ -1747,8 +1739,12 @@ static int gap_pawr_advertiser_poll(void) {
         }
 
         if (gap_ext_pawr.advertiser.phase == GAP_PAWR_ADV_SLOT_WAIT) {
+            uint64_t slot_ticks = tx_start_ticks + HW_TICKS_FROM_US((uint32_t)set->pawr.resp_delay * 1250);
+            uint64_t slot_end_ticks = slot_ticks + HW_TICKS_FROM_US(
+                                    (uint32_t)set->pawr.resp_slots * set->pawr.resp_spacing * 125);
+
             if (!gap_ext_pawr.response.listening) {
-                if (now < slot_start_ticks) return 1;
+                if (now < subtract_clamp0_64(slot_ticks, HW_TICKS_FROM_US(150))) return 1;
                 if (now >= slot_end_ticks) {
                     gap_ext_pawr.advertiser.subevent++;
                     gap_ext_pawr.advertiser.phase = GAP_PAWR_ADV_SEND;
@@ -1765,19 +1761,18 @@ static int gap_pawr_advertiser_poll(void) {
 
             if (gap_ext_pawr.response.ready) {
                 gap_pawr_report_push(set, gap_ext_pawr.advertiser.set_id,
-                    gap_ext_pawr.advertiser.event_counter, subevent,
-                    tx_start_ticks);
+                    gap_ext_pawr.advertiser.event_counter, subevent, tx_start_ticks);
                 gap_ext_pawr.response.ready = 0;
             }
             if (now < slot_end_ticks) return 1;
-
             if (gap_rx_armed) RADIO_STOP();
+
             gap_rx_armed = 0;
             gap_ext_pawr.response.listening = 0;
             gap_ext_pawr.advertiser.subevent++;
             gap_ext_pawr.advertiser.phase = GAP_PAWR_ADV_SEND;
         }
-    }
+    } // for(;;)
 }
 
 // Build one data PDU for an extended or periodic advertising chain.
@@ -1856,6 +1851,8 @@ static int gap_periodic_tx_arm(uint64_t start_ticks, uint8_t first) {
     gap_extended_adv_set *set = &gap_ext_adv[gap_periodic_train.set_id];
     uint8_t *frame = gap_ext_adv_frame;
     uint16_t remaining = set->periodic.data_len - gap_periodic_train.offset;
+
+    // Apply the consumed length only after TX setup succeeds.
     uint16_t chunk = gap_ext_chain_pdu_build(frame, set->periodic.data,
         gap_periodic_train.offset, remaining, gap_periodic_train.adi, 0,
         set->aux_phy, gap_periodic_train.channel);
