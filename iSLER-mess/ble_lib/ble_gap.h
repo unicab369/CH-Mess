@@ -1889,7 +1889,7 @@ typedef struct {
     l2cap_connection *connection;
     l2cap_reassembler reassembler;
     uint8_t initialized, connected;
-    uint8_t update_applied;
+    uint8_t gap_update_queued;
     l2cap_tx_queue *tx_queue;
 } gap_l2cap_peer;
 
@@ -1948,7 +1948,7 @@ static inline int ble_gap_l2cap_poll(void) {
         }
 
         if (!connected) {
-            if (!peer->update_applied)
+            if (!peer->gap_update_queued)
                 l2cap_conn_tick(peer->connection, GET_MILLIS());
             continue;
         }
@@ -2002,7 +2002,7 @@ static inline int ble_gap_l2cap_poll(void) {
         l2cap_connection *l2cap = peer->connection;
 
         if (l2cap->periph_update_pending) {
-            if (peer->update_applied ||
+            if (peer->gap_update_queued ||
                 !l2cap->periph_update_due_ms ||
                 (int32_t)(GET_MILLIS() - l2cap->periph_update_due_ms) < 0
             ) {
@@ -2010,9 +2010,9 @@ static inline int ble_gap_l2cap_poll(void) {
                     if (l2cap_update_reply(l2cap, 0))
                         result = 1;
                 }
-                else if (peer->update_applied) {
+                else if (peer->gap_update_queued) {
                     if (l2cap_update_reply(l2cap, 1)) {
-                        peer->update_applied = 0;
+                        peer->gap_update_queued = 0;
                         result = 1;
                     }
                 }
@@ -2026,10 +2026,10 @@ static inline int ble_gap_l2cap_poll(void) {
                     if (gap_conn_update(conn, interval, l2cap->periph_update_latency,
                                                         l2cap->periph_update_timeout)
                     ) {
-                        peer->update_applied = 1;
+                        peer->gap_update_queued = 1;
 
                         if (l2cap_update_reply(l2cap, 1)) {
-                            peer->update_applied = 0;
+                            peer->gap_update_queued = 0;
                             result = 1;
                         }
                     }
@@ -2037,12 +2037,12 @@ static inline int ble_gap_l2cap_poll(void) {
             }
         }
         else {
-            peer->update_applied = 0;
+            peer->gap_update_queued = 0;
         }
 
         // Once GAP queued the update, keep retrying the L2CAP response rather
         // than timing out and rejecting a change that GAP has already queued.
-        if (!peer->update_applied)
+        if (!peer->gap_update_queued)
             l2cap_conn_tick(peer->connection, GET_MILLIS());
 
         if (result < 0) return result;
