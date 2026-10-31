@@ -542,6 +542,10 @@ typedef struct {
     uint64_t rx_counter;     // Expected incoming encryption packet counter.
     uint32_t started_ms;     // Start time used to enforce procedure timeouts.
 } gap_security_context;
+
+// One callback runs at a time; decrypted frames are consumed there or copied
+// into the receiving link's rx_packet before the callback ends.
+static uint8_t gap_rx_plain[2 + GAP_CONN_PACKET_BUFFER_MAX];
 #endif
 
 // Legacy advertiser state.
@@ -978,12 +982,6 @@ static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];
 static uint16_t gap_conn_generations[GAP_CONNECTION_COUNT];
 static uint8_t gap_conn_slot;
 static uint8_t gap_conn_slot_mask;
-// Only one radio receive callback runs at a time. Decrypted frames are consumed
-// there or copied into the receiving link's rx_packet before the callback ends.
-#if GAP_SECURITY_SUPPORT >= 1
-static uint8_t gap_rx_plain[2 + GAP_CONN_PACKET_BUFFER_MAX];
-#endif
-
 // Packed 2-bit classification for each of 37 data channels (74 bits total);
 // per channel: 0=unknown, 1=good, 2=reserved, 3=bad. Channel 0 uses the
 // lowest 2 bits; the upper 6 bits of the final byte are unused.
