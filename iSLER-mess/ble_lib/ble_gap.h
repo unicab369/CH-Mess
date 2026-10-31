@@ -1862,12 +1862,10 @@ typedef struct {
 } gap_conn_ref;
 
 typedef struct {
-    gap_conn_ref conn_ref;
-    l2cap_connection *connection;
     l2cap_reassembler reassembler;
+    uint16_t generation;
     uint8_t initialized, connected;
     uint8_t gap_update_queued;
-    l2cap_tx_queue *tx_queue;
 } gap_l2cap_peer;
 
 static gap_l2cap_peer gap_l2cap_peers[GAP_CONNECTION_COUNT];
@@ -1929,68 +1927,69 @@ static inline int ble_gap_l2cap_poll(void) {
 
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
         gap_l2cap_peer *peer = &gap_l2cap_peers[slot];
+        gap_conn_context *conn = &gap_conn_ctx[slot];
 
         if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot))) {
             if (peer->initialized) {
-                l2cap_conn_reset(peer->connection, 0x0013);
+                l2cap_conn_reset(&conn->l2cap, 0x0013);
                 memset(peer, 0, sizeof(*peer));
             }
             continue;
         }
 
-        gap_conn_context *conn = &gap_conn_ctx[slot];
         conn_ref.slot = slot;
         conn_ref.generation = gap_conn_generations[slot];
 
-        if (!peer->initialized || peer->conn_ref.generation != conn_ref.generation) {
+        if (!peer->initialized || peer->generation != conn_ref.generation) {
             if (peer->initialized)
-                l2cap_conn_reset(peer->connection, 0x0013);
+                l2cap_conn_reset(&conn->l2cap, 0x0013);
 
             memset(peer, 0, sizeof(*peer));
-            peer->conn_ref = conn_ref;
-            peer->connection = &conn->l2cap;
-            peer->tx_queue = &conn->l2cap_tx_queue;
+            peer->generation = conn_ref.generation;
             peer->initialized = 1;
         }
+
+        l2cap_connection *l2cap = &conn->l2cap;
+        l2cap_tx_queue *tx_queue = &conn->l2cap_tx_queue;
 
         uint8_t connected = conn->is_central || !conn->link_layer.first_event;
 
         if (connected != peer->connected) {
-            if (!connected) l2cap_conn_reset(peer->connection, 0);
+            if (!connected) l2cap_conn_reset(l2cap, 0);
             peer->connected = connected;
-            peer->tx_queue->length = 0;
-            peer->tx_queue->offset = 0;
+            tx_queue->length = 0;
+            tx_queue->offset = 0;
             memset(&peer->reassembler, 0, sizeof(peer->reassembler));
         }
 
         if (!connected) {
             if (!peer->gap_update_queued)
-                l2cap_conn_tick(peer->connection, GET_MILLIS());
+                l2cap_conn_tick(l2cap, GET_MILLIS());
             continue;
         }
 
         int result = 0;
 
-        if (peer->tx_queue->length) {
+        if (tx_queue->length) {
             uint16_t max_len = conn->data_length.tx_octets;
 
             if (!max_len || max_len > GAP_L2CAP_LL_MAX)
                 return -1;
 
-            uint16_t chunk = MIN(peer->tx_queue->length - peer->tx_queue->offset, max_len);
-            uint8_t llid = peer->tx_queue->offset ? 1 : 2;
+            uint16_t chunk = MIN(tx_queue->length - tx_queue->offset, max_len);
+            uint8_t llid = tx_queue->offset ? 1 : 2;
 
-            if (gap_send_data(conn, llid, peer->tx_queue->data + peer->tx_queue->offset, chunk)) {
-                peer->tx_queue->offset = (uint16_t)(peer->tx_queue->offset + chunk);
+            if (gap_send_data(conn, llid, tx_queue->data + tx_queue->offset, chunk)) {
+                tx_queue->offset = (uint16_t)(tx_queue->offset + chunk);
 
-                if (peer->tx_queue->offset == peer->tx_queue->length) {
-                    peer->tx_queue->length = 0;
-                    peer->tx_queue->offset = 0;
+                if (tx_queue->offset == tx_queue->length) {
+                    tx_queue->length = 0;
+                    tx_queue->offset = 0;
                 }
                 result = 1;
             }
         }
-        else if (l2cap_ecfc_pump(peer->connection) && peer->tx_queue->length) {
+        else if (l2cap_ecfc_pump(l2cap) && tx_queue->length) {
             result = 1;
         }
         else {
@@ -2010,14 +2009,12 @@ static inline int ble_gap_l2cap_poll(void) {
                                                         fragment, len, &cid, &sdu, &sdu_len);
                     if (assembled < 0) return assembled;
                     if (assembled > 0) {
-                        result = l2cap_receive(peer->connection, cid, sdu, sdu_len);
+                        result = l2cap_receive(l2cap, cid, sdu, sdu_len);
                         if (result < 0) return result;
                     }
                 }
             }
         }
-
-        l2cap_connection *l2cap = peer->connection;
 
         if (!l2cap->periph_update_pending) {
             peer->gap_update_queued = 0;
@@ -2058,7 +2055,7 @@ static inline int ble_gap_l2cap_poll(void) {
         // Once GAP queued the update, keep retrying the L2CAP response rather
         // than timing out and rejecting a change that GAP has already queued.
         if (!peer->gap_update_queued)
-            l2cap_conn_tick(peer->connection, GET_MILLIS());
+            l2cap_conn_tick(l2cap, GET_MILLIS());
 
         work += result;
     }
