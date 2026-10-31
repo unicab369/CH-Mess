@@ -122,14 +122,14 @@ void iSLER_Radio_Transmitted_Cb(void) {
         return;
     }
     if (gap_ext_aux.phase == GAP_EXT_AUX_PENDING &&
-        gap_ext_adv[gap_ext_aux.set_id].scannable) {
+        (gap_ext_adv[gap_ext_aux.set_id].flags & GAP_EXT_SCANNABLE)) {
         gap_ext_aux_rx_start();
         return;
     }
 
 #if GAP_PERIPHERAL_SUPPORT
     if (gap_ext_aux.phase == GAP_EXT_AUX_PENDING &&
-        gap_ext_adv[gap_ext_aux.set_id].connectable) {
+        (gap_ext_adv[gap_ext_aux.set_id].flags & GAP_EXT_CONNECTABLE)) {
         gap_ext_aux_rx_start();
         return;
     }

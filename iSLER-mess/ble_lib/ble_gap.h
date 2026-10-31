@@ -312,8 +312,13 @@ typedef struct {
 } gap_periodic_params;
 
 // Extended advertising set configuration and scheduler state.
+enum {
+    GAP_EXT_SCANNABLE = 1u << 0,
+    GAP_EXT_CONNECTABLE = 1u << 1
+};
+
 typedef struct {
-    uint8_t enabled, sid, scannable, connectable, aux_phy;
+    uint8_t enabled, sid, flags, aux_phy;
     struct {
         uint8_t enabled, sync_info_sent;
         uint16_t data_len, event_counter, did;

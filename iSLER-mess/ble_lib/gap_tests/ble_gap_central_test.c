@@ -386,8 +386,7 @@ int RADIO_LINK_TX_AT(const uint8_t *frame, uint64_t start_ticks,
     mock_radio_link_tx(frame);
     if (tx_buffer == gap_ext_aux_frame &&
         gap_ext_aux.phase == GAP_EXT_AUX_PENDING &&
-        (gap_ext_adv[gap_ext_aux.set_id].scannable ||
-         gap_ext_adv[gap_ext_aux.set_id].connectable))
+        gap_ext_adv[gap_ext_aux.set_id].flags)
         gap_ext_aux_rx_start();
     return 1;
 }

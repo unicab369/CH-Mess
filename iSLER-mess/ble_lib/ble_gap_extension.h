@@ -358,7 +358,8 @@ int gap_periodic_adv_start(
     if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
     gap_extended_adv_set *set = &gap_ext_adv[set_id];
 
-    if (!set->enabled || set->scannable || set->connectable ||
+    if (!set->enabled ||
+        set->flags ||
         set->periodic.enabled || interval < 6 ||
         !gap_ext_data_valid(data, len) ||
         (uint32_t)interval * 1250 < gap_periodic_tx_us(len, set->aux_phy) ||
@@ -621,8 +622,7 @@ int gap_ext_adv_start_phy(
     if (len) memcpy(set->data, data, len);
     set->data_len = (uint16_t)len;
     set->scan_resp_len = 0;
-    set->scannable = 0;
-    set->connectable = 0;
+    set->flags = 0;
     set->aux_phy = aux_phy;
     set->sid = sid;
     set->interval_ms = interval_ms;
@@ -647,7 +647,7 @@ int gap_ext_adv_scan_start(
     gap_extended_adv_set *set = &gap_ext_adv[set_id];
     memcpy(set->data, scan_response, scan_resp_len);
     set->scan_resp_len = (uint16_t)scan_resp_len;
-    set->scannable = 1;
+    set->flags |= GAP_EXT_SCANNABLE;
     return 1;
 }
 
@@ -659,7 +659,7 @@ int gap_ext_adv_connect_start(
     if (RADIO_DATA_MAX < 27 ||
         !gap_ext_adv_start_phy(set_id, NULL, 0, sid, interval_ms, aux_phy))
         return 0;
-    gap_ext_adv[set_id].connectable = 1;
+    gap_ext_adv[set_id].flags |= GAP_EXT_CONNECTABLE;
     return 1;
 }
 #endif
@@ -1815,7 +1815,7 @@ static uint16_t gap_ext_chain_pdu_build(
 
 static int gap_ext_chain_arm(uint64_t start_ticks) {
     gap_extended_adv_set *set = &gap_ext_adv[gap_ext_chain.set_id];
-    uint16_t data_len = set->scannable ? set->scan_resp_len : set->data_len;
+    uint16_t data_len = (set->flags & GAP_EXT_SCANNABLE) ? set->scan_resp_len : set->data_len;
     uint16_t offset = data_len - gap_ext_chain.remaining;
     uint8_t has_chain;
     uint16_t chunk = gap_ext_chain_pdu_build(gap_ext_adv_frame,
@@ -2619,7 +2619,7 @@ static void gap_ext_aux_rx_start(void) {
     gap_ext_aux.window_deadline = RADIO_TICKS() + HW_TICKS_FROM_US(1500);
     gap_ext_aux.phase = GAP_EXT_AUX_CONNECT_WINDOW;
 
-    if (set->scannable)
+    if (set->flags & GAP_EXT_SCANNABLE)
         gap_ext_aux.phase = GAP_EXT_AUX_SCAN_WINDOW;
 
     RADIO_LINK_RX(BLE_ADV_ACCESS_ADDRESS, 0, set->aux_phy, 0x555555);
@@ -3009,7 +3009,7 @@ static int gap_ext_send_due(uint32_t now) {
     // On resume, scannable/connectable events listen for requests instead of
     // rebuilding their already-transmitted advertising PDUs.
     if (resume_aux) {
-        if (set->scannable || set->connectable) {
+        if (set->flags) {
             gap_ext_aux_rx_start();
             return 1;
         }
@@ -3023,7 +3023,7 @@ static int gap_ext_send_due(uint32_t now) {
         gap_aux_ptr_write(primary + 6, 0, 480, set->aux_phy);
     }
 
-    if (set->scannable) {
+    if (set->flags & GAP_EXT_SCANNABLE) {
         // Scannable extended events carry no AdvData in AUX_ADV_IND. The data
         // is sent in AUX_SCAN_RSP after a scanner requests it.
         primary[2] |= 0x80; // AdvMode=scannable.
@@ -3064,7 +3064,7 @@ static int gap_ext_send_due(uint32_t now) {
         return 1;
     }
 #if GAP_PERIPHERAL_SUPPORT
-    else if (set->connectable) {
+    else if (set->flags & GAP_EXT_CONNECTABLE) {
         primary[2] |= 0x40; // AdvMode=connectable.
         frame[0] = adv_header;
         frame[1] = 10;
@@ -3164,10 +3164,11 @@ static int gap_ext_send_due(uint32_t now) {
 
             if (units > 0x1fff) units = 0; // The scanner will use a later SyncInfo.
             uint16_t offset = (uint16_t)units;
-            if (units_300 && units) offset |= 1 << 13;
+            if (units_300 && units)
+                offset |= 1 << 13;
+
             write_u16_le(sync_info, offset); // Offset adjust is zero.
             write_u16_le(sync_info + 2, set->periodic.params.interval);
-
             memcpy(sync_info + 4, set->periodic.params.channel_map, 5);
             sync_info[8] = (uint8_t)((sync_info[8] & 0x1f) | ((set->periodic.params.sca & 7) << 5));
             write_u32_le(sync_info + 9, set->periodic.params.access_address);
