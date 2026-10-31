@@ -598,10 +598,10 @@ int gap_ext_adv_start_phy(
     if (gap_initiator.active) return 0;
 #endif
 
-#if GAP_LEGACY_ADV_SUPPORT
+#if GAP_LEGACY_ADV_SET_COUNT > 0
     for (uint8_t i = 0; i < GAP_LEGACY_ADV_SET_COUNT; i++)
         if (gap_adv_sets[i].enabled) return 0;
-#endif
+#endif // GAP_LEGACY_ADV_SET_COUNT > 0
 
     if (gap_conn_slot_mask != 0 || set->enabled ||
         set->periodic.enabled || sid > 15 ||

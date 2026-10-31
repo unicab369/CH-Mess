@@ -91,7 +91,7 @@ static struct {
     uint8_t slot, slot_valid, poll_cursor;
 } gap_poll;
 
-#if GAP_LEGACY_ADV_SUPPORT
+#if GAP_LEGACY_ADV_SET_COUNT > 0
 enum {
     GAP_LEGACY_ADV_TX = 1,
     GAP_LEGACY_ADV_RX,
@@ -109,7 +109,7 @@ static struct {
     uint8_t conn_req_frame[36];
     uint64_t conn_req_ticks;
 } adv_evt;
-#endif
+#endif // GAP_LEGACY_ADV_SET_COUNT > 0
 
 static uint8_t gap_conn_rate_busy(const gap_conn_context *conn) {
     uint8_t busy = (conn->queued_action & GAP_QUEUED_RATE_MASK) ||
@@ -557,9 +557,9 @@ static void gap_privacy_poll(uint32_t now) {
     if (gap_initiator.active) return;
 #endif
 
-#if GAP_LEGACY_ADV_SUPPORT
+#if GAP_LEGACY_ADV_SET_COUNT > 0
     if (adv_evt.rx_event) return;
-#endif
+#endif // GAP_LEGACY_ADV_SET_COUNT > 0
 
     if (!gap_privacy_timeout_15s ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
@@ -594,7 +594,7 @@ static void gap_privacy_poll(uint32_t now) {
     }
 #endif
 
-#if GAP_LEGACY_ADV_SUPPORT
+#if GAP_LEGACY_ADV_SET_COUNT > 0
     for (uint8_t i = 0; i < GAP_LEGACY_ADV_SET_COUNT; i++) {
         gap_legacy_adv_set *advertiser = &gap_adv_sets[i];
         if (!advertiser->enabled)
@@ -611,7 +611,7 @@ static void gap_privacy_poll(uint32_t now) {
         }
 #endif
     }
-#endif
+#endif // GAP_LEGACY_ADV_SET_COUNT > 0
 
     gap_privacy_timeout_15s = next_timeout_15s;
     gap_privacy_next_rotation_ms = now + (uint32_t)next_timeout_15s * 15000;

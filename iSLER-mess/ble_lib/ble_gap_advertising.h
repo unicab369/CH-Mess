@@ -466,7 +466,7 @@ static inline int gap_ad_data_valid(const uint8_t *data, size_t len) {
     return 1;
 }
 
-#if GAP_LEGACY_ADV_SUPPORT
+#if GAP_LEGACY_ADV_SET_COUNT > 0
 static inline void gap_adv_enable(
     gap_legacy_adv_set *advertiser,
     uint8_t pdu_type, uint16_t interval_ms, int peer_slot
@@ -571,7 +571,7 @@ int gap_adv_stop_set(uint8_t set_id) {
     return 1;
 }
 
-#endif // GAP_LEGACY_ADV_SUPPORT
+#endif // GAP_LEGACY_ADV_SET_COUNT > 0
 
 // Application facing
 // Restrict Peripheral scan and connection requests to peers in the Filter
@@ -654,10 +654,10 @@ int gap_scan_configure(
 static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     if (active_scan > 1) return 0;
 
-#if GAP_LEGACY_ADV_SUPPORT
+#if GAP_LEGACY_ADV_SET_COUNT > 0
     for (uint8_t i = 0; i < GAP_LEGACY_ADV_SET_COUNT; i++)
         if (gap_adv_sets[i].enabled) return 0;
-#endif
+#endif // GAP_LEGACY_ADV_SET_COUNT > 0
 
     if (gap_conn_free_slot() < 0 || gap_scanner.scanning ||
         gap_initiator.active || GAP_EXT_ADVERTISING_ENABLED

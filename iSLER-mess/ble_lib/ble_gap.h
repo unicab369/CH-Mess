@@ -32,14 +32,11 @@
 #ifndef GAP_EXT_ADV_SUPPORT
 #define GAP_EXT_ADV_SUPPORT 0
 #endif
-#ifndef GAP_LEGACY_ADV_SUPPORT
-#define GAP_LEGACY_ADV_SUPPORT 1
-#endif
 #ifndef GAP_LEGACY_ADV_SET_COUNT
 #define GAP_LEGACY_ADV_SET_COUNT 2
 #endif
-#if GAP_LEGACY_ADV_SET_COUNT < 1 || GAP_LEGACY_ADV_SET_COUNT > 255
-#error "GAP_LEGACY_ADV_SET_COUNT must be between 1 and 255"
+#if GAP_LEGACY_ADV_SET_COUNT < 0 || GAP_LEGACY_ADV_SET_COUNT > 255
+#error "GAP_LEGACY_ADV_SET_COUNT must be between 0 and 255"
 #endif
 #ifndef GAP_CONNECTION_COUNT
 #define GAP_CONNECTION_COUNT 1
@@ -544,7 +541,7 @@ static uint8_t gap_rx_plain[2 + GAP_CONN_PACKET_BUFFER_MAX];
 #endif
 
 // Legacy advertiser state.
-#if GAP_LEGACY_ADV_SUPPORT
+#if GAP_LEGACY_ADV_SET_COUNT > 0
 typedef struct {
     uint8_t enabled;      // Legacy advertising is enabled.
     uint8_t pdu_type;      // Advertising PDU type currently being transmitted.
@@ -568,7 +565,7 @@ typedef struct {
 static gap_legacy_adv_set gap_adv_sets[GAP_LEGACY_ADV_SET_COUNT];
 static uint8_t gap_adv_next_set;
 
-#endif
+#endif // GAP_LEGACY_ADV_SET_COUNT > 0
 
 // Filter policy is shared by legacy and extended advertising.
 static struct {
@@ -1057,10 +1054,10 @@ static inline void gap_bytes_reverse(
 
 // Return whether scanning, advertising, a connection, or initiation is active.
 static inline int gap_is_busy(void) {
-#if GAP_LEGACY_ADV_SUPPORT
+#if GAP_LEGACY_ADV_SET_COUNT > 0
     for (uint8_t i = 0; i < GAP_LEGACY_ADV_SET_COUNT; i++)
         if (gap_adv_sets[i].enabled) return 1;
-#endif
+#endif // GAP_LEGACY_ADV_SET_COUNT > 0
 
 #if GAP_CENTRAL_SUPPORT
     if (gap_initiator.active) return 1;
@@ -1845,7 +1842,7 @@ int gap_adv_is_discoverable(void) {
     }
 #endif
 
-#if GAP_LEGACY_ADV_SUPPORT
+#if GAP_LEGACY_ADV_SET_COUNT > 0
     for (uint8_t i = 0; i < GAP_LEGACY_ADV_SET_COUNT; i++) {
         if (!gap_adv_sets[i].enabled)
             continue;
@@ -1859,7 +1856,7 @@ int gap_adv_is_discoverable(void) {
                 return 1;
         }
     }
-#endif
+#endif // GAP_LEGACY_ADV_SET_COUNT > 0
     return 0;
 }
 

@@ -32,9 +32,9 @@ connection-parameter bounds and the selected update parameters. Together these
 unions save 16 bytes per connection on this ABI; the listed sizes include them.
 With `GAP_PERIPHERAL_SUPPORT=0` (Central-only), the Peripheral member is omitted
 from each connection context, saving another 32 bytes per link on the CH582 ABI.
-The table's advertising sizes assume `GAP_LEGACY_ADV_SUPPORT=1` (the default).
-Setting it to `0` omits `gap_adv` and `adv_evt` and removes the legacy payload
-from `adv_tx`; Central builds retain its 36-byte connection request.
+The table's advertising sizes assume `GAP_LEGACY_ADV_SET_COUNT=2` (the default).
+Setting it to `0` omits legacy advertising state and payload buffers; Central
+builds retain the 36-byte connection request.
 
 | Structure | Purpose | Size | Allocation / build configuration |
 | --- | --- | ---: | --- |

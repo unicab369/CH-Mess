@@ -33,10 +33,11 @@ their global RAM state. The `gap_privacy_filter()` and
 `gap_privacy_configure()` APIs are unavailable in this build. Use
 `gap_use_public_address()` or `gap_set_static_addr()` to select a local address.
 
-`GAP_LEGACY_ADV_SUPPORT` defaults to `1`. Set it to `0` before including
+`GAP_LEGACY_ADV_SET_COUNT` defaults to `2`. Set it to `0` before including
 `ble_gap.h` to omit legacy advertising state, payload buffers, APIs, and radio
-transmit handling. Scanning, Central connection initiation, and extended
-advertising remain available when their own support is enabled.
+transmit handling. A positive count enables that many legacy advertising sets.
+Scanning, Central connection initiation, and extended advertising remain
+available when their own support is enabled.
 
 `GAP_IDENTITY_COUNT` accepts values from `0` to `32`. Set it to `0` to disable
 peer identity storage and resolution; identity management and resolution APIs

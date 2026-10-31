@@ -1144,9 +1144,9 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     if (gap_scanner.active && adv_length_valid) {
         if ((pdu_type == ADV_IND || pdu_type == ADV_SCAN_IND) &&
 
-#if GAP_LEGACY_ADV_SUPPORT
+#if GAP_LEGACY_ADV_SET_COUNT > 0
             !adv_evt.rx_event &&
-#endif // GAP_LEGACY_ADV_SUPPORT
+#endif // GAP_LEGACY_ADV_SET_COUNT > 0
 
 #if GAP_CENTRAL_SUPPORT
             (gap_initiator.mode != GAP_CONN_MODE_SELECTIVE || peer_matches) &&
@@ -1201,7 +1201,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         }
     }
 
-#if GAP_LEGACY_ADV_SUPPORT
+#if GAP_LEGACY_ADV_SET_COUNT > 0
     if (adv_evt.rx_event &&
 
 #if GAP_PRIVACY_SUPPORT
@@ -1259,7 +1259,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 #endif // GAP_PERIPHERAL_SUPPORT
 
     }
-#endif // GAP_LEGACY_ADV_SUPPORT
+#endif // GAP_LEGACY_ADV_SET_COUNT > 0
 
     memcpy(gap_rx.frame, frame, (size_t)frame[1] + 2);
     gap_rx.rssi = RADIO_RSSI();
@@ -1289,12 +1289,12 @@ void gap_hw_init(void) {
     memset(gap_aux_request, 0, sizeof(gap_aux_request));
 #endif // GAP_EXT_ADV_SUPPORT
 
-#if GAP_LEGACY_ADV_SUPPORT
+#if GAP_LEGACY_ADV_SET_COUNT > 0
     adv_evt.rx_event = 0;
     adv_evt.scan_resp_started = 0;
     adv_evt.conn_req_ready = 0;
     gap_adv_next_set = 0;
-#endif // GAP_LEGACY_ADV_SUPPORT
+#endif // GAP_LEGACY_ADV_SET_COUNT > 0
     gap_rx_armed = 0;
     gap_poll.slot = 0;
     gap_poll.slot_valid = 0;
@@ -1684,9 +1684,9 @@ static void gap_conn_poll(void) {
 // Run housekeeping for every live link and let the first due link claim the
 // shared radio until its connection event finishes.
 static inline void gap_conn_poll_all(void) {
-#if GAP_LEGACY_ADV_SUPPORT
+#if GAP_LEGACY_ADV_SET_COUNT > 0
     if (adv_evt.phase) return;
-#endif
+#endif // GAP_LEGACY_ADV_SET_COUNT > 0
 #if GAP_CENTRAL_SUPPORT
     if (gap_connect_tx.phase != GAP_CONNECT_TX_IDLE) return;
 #endif
@@ -1751,9 +1751,9 @@ static inline void gap_conn_poll_all(void) {
 void gap_hw_scan_poll(void) {
     uint32_t now = GET_MILLIS();
 
-#if GAP_LEGACY_ADV_SUPPORT
+#if GAP_LEGACY_ADV_SET_COUNT > 0
     if (adv_evt.phase) return;
-#endif
+#endif // GAP_LEGACY_ADV_SET_COUNT > 0
 
 #if GAP_EXT_ADV_SUPPORT
     if (gap_ext_scan.pawr_response_tx_pending) {
@@ -2150,7 +2150,7 @@ int gap_send_due(
 ) {
     if (gap_poll.slot_valid) return 0;
 
-#if GAP_LEGACY_ADV_SUPPORT
+#if GAP_LEGACY_ADV_SET_COUNT > 0
     if (adv_evt.phase) {
         gap_legacy_adv_set *advertiser = &gap_adv_sets[adv_evt.set_id];
 
@@ -2260,9 +2260,9 @@ int gap_send_due(
             return 1;
         }
     }
-#endif // GAP_LEGACY_ADV_SUPPORT
+#endif // GAP_LEGACY_ADV_SET_COUNT > 0
 
-// Keep this after GAP_LEGACY_ADV_SUPPORT: finish active legacy advertising
+// Keep this after the legacy advertising block: finish active legacy advertising
 // before privacy rotation or starting another procedure on the shared radio.
 #if GAP_PRIVACY_SUPPORT
     gap_privacy_poll(now);
@@ -2282,7 +2282,7 @@ int gap_send_due(
 // Keep legacy fallback after GAP_PRIVACY_SUPPORT and GAP_EXT_ADV_SUPPORT:
 // privacy rotation updates its address first, and extended advertising gets
 // priority for the shared radio.
-#if GAP_LEGACY_ADV_SUPPORT
+#if GAP_LEGACY_ADV_SET_COUNT > 0
     int selected_legacy_set = -1;
     for (uint8_t offset = 0; offset < GAP_LEGACY_ADV_SET_COUNT; offset++) {
         uint8_t set_id = (gap_adv_next_set + offset) % GAP_LEGACY_ADV_SET_COUNT;
@@ -2374,7 +2374,7 @@ int gap_send_due(
     (void)sent_at;
     (void)jitter;
     return 0;
-#endif // GAP_LEGACY_ADV_SUPPORT
+#endif // GAP_LEGACY_ADV_SET_COUNT > 0
 }
 
 #endif // GAP_CONNECTION_POLL_H
