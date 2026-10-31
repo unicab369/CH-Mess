@@ -338,10 +338,9 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
     if (rssi) *rssi = 127;
     mesh_gatt_poll();
     int connection_busy = (gap_conn_slot_mask != 0);
-    if (connection_busy) {
+    if (connection_busy)
         gap_conn_poll_all();
-        gap_hw_scan_poll();
-    }
+    gap_hw_scan_poll();
 
     if (mesh_gatt_rx_count) {
         uint8_t slot = mesh_gatt_rx_head;
@@ -412,8 +411,6 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
             }
         }
     }
-
-    gap_hw_scan_poll();
     return received;
 }
 
