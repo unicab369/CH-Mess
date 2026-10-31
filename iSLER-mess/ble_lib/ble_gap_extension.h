@@ -95,7 +95,6 @@ typedef struct {
     // Most recently received periodic event data.
     uint8_t event_data_active;
     uint16_t did, data_len;
-    int8_t rssi;
     uint8_t data[GAP_EXT_ADV_DATA_MAX];
 
     // PAwR configuration and queued response state.
@@ -2001,15 +2000,7 @@ static void gap_ext_scan_process(void) {
                 uint32_t airtime_us = gap_phy_airtime_us(pdu[1], packet_phy);
 
                 if (fields.aux_offset_us > airtime_us) {
-                    uint32_t tx_ca_ppm = fields.aux_ca ? 50 : 500;
-                    uint32_t offset_unit_us = fields.aux_offset_unit ? 300 : 30;
-                    uint32_t widen_us = ((tx_ca_ppm + 500) * (fields.aux_offset_us + offset_unit_us) +
-                                                                999999) / 1000000 + 2;
-
-                    // AuxOffset starts at the PDU start; the timestamp is captured
-                    // at PDU reception completion, so subtract this PDU's airtime.
-                    uint32_t after_packet_us = fields.aux_offset_us - airtime_us;
-                    int aux_slot = kind == GAP_EXT_ADV_AUXILIARY_PDU ? slot : -1;
+                    int aux_slot = slot;
 
                     if (aux_slot < 0) {
                         for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
@@ -2024,6 +2015,13 @@ static void gap_ext_scan_process(void) {
                     }
 
                     gap_aux_request_context *request = &gap_aux_request[aux_slot];
+                    uint32_t tx_ca_ppm = fields.aux_ca ? 50 : 500;
+                    uint32_t offset_unit_us = fields.aux_offset_unit ? 300 : 30;
+                    uint32_t widen_us = ((tx_ca_ppm + 500) * (fields.aux_offset_us + offset_unit_us) +
+                                                            999999) / 1000000 + 2;
+                    // AuxOffset starts at the PDU start; the timestamp is captured
+                    // at PDU reception completion, so subtract this PDU's airtime.
+                    uint32_t after_packet_us = fields.aux_offset_us - airtime_us;
                     uint64_t start_ticks = HW_TICKS_FROM_US(subtract_clamp0_32(after_packet_us, widen_us));
                     request->start_ticks = gap_ext_scan.ticks + start_ticks;
                     // The AuxPtr receive window lasts only a few milliseconds.
@@ -2074,8 +2072,6 @@ static void gap_ext_scan_process(void) {
         }
     }
 
-    sync->phy = packet_phy;
-
     if (fields.payload.len) {
         if (fields.payload.len > GAP_EXT_ADV_DATA_MAX - sync->data_len) {
             sync->event_data_active = 0;
@@ -2086,6 +2082,8 @@ static void gap_ext_scan_process(void) {
         memcpy(sync->data + sync->data_len, fields.payload.data, fields.payload.len);
         sync->data_len += fields.payload.len;
     }
+
+    sync->phy = packet_phy;
 
     if (fields.has_aux_ptr && !fields.aux_offset_zero) {
         sync->event_data_active = 1;
@@ -2111,76 +2109,77 @@ static void gap_ext_scan_process(void) {
                                     subtract_clamp0_32(after_packet_us, widen_us));
             }
         }
+        return;
     }
-    else {
-        sync->event_data_active = 0;
 
-        if (!gap_ext_data_valid(sync->data, sync->data_len)) {
-            sync->data_len = 0;
-            return;
-        }
+    sync->event_data_active = 0;
 
-        if (gap_sync_reports.count == GAP_PERIODIC_REPORT_COUNT) {
-            gap_sync_reports.head = (gap_sync_reports.head + 1) % GAP_PERIODIC_REPORT_COUNT;
-            gap_sync_reports.count--;
-        }
-
-        uint8_t tail = (gap_sync_reports.head + gap_sync_reports.count) % GAP_PERIODIC_REPORT_COUNT;
-        gap_periodic_report *report = &gap_sync_reports.items[tail];
-
-        report->slot = (uint8_t)slot;
-        report->sid = sync->sid;
-        report->event_counter = sync->last_event_counter;
-        report->did = sync->did;
-        sync->rssi = gap_ext_scan.rssi;
-        report->rssi = sync->rssi;
-        report->data_len = sync->data_len;
-
-        if (report->data_len)
-            memcpy(report->data, sync->data, report->data_len);
-        gap_sync_reports.count++;
+    if (!gap_ext_data_valid(sync->data, sync->data_len)) {
         sync->data_len = 0;
+        return;
+    }
 
-        if (!fields.has_aux_ptr && !fields.sync.has_info &&
-            fields.identity.has_adi && sync->pawr.pending
-        ) {
-            // This received PAwR subevent PDU anchors the response slot.
-            // The slot schedule below determines TX time; it is not simply
-            // T_IFS after the received packet.
-            uint64_t response_start = subtract_clamp0_64(gap_ext_scan.ticks,
-                            HW_TICKS_FROM_US(gap_phy_airtime_us(pdu[1], packet_phy))) +
-                            HW_TICKS_FROM_US((uint32_t)sync->pawr.timing.resp_delay * 1250 +
-                            (uint32_t)sync->pawr.slot * sync->pawr.timing.resp_spacing * 125);
+    if (gap_sync_reports.count == GAP_PERIODIC_REPORT_COUNT) {
+        gap_sync_reports.head = (gap_sync_reports.head + 1) % GAP_PERIODIC_REPORT_COUNT;
+        gap_sync_reports.count--;
+    }
+
+    uint8_t tail = (gap_sync_reports.head + gap_sync_reports.count) % GAP_PERIODIC_REPORT_COUNT;
+    gap_periodic_report *report = &gap_sync_reports.items[tail];
+
+    report->slot = (uint8_t)slot;
+    report->sid = sync->sid;
+    report->event_counter = sync->last_event_counter;
+    report->did = sync->did;
+    report->rssi = gap_ext_scan.rssi;
+    report->data_len = sync->data_len;
+
+    if (report->data_len)
+        memcpy(report->data, sync->data, report->data_len);
+    gap_sync_reports.count++;
+    sync->data_len = 0;
+
+    if (!fields.has_aux_ptr && !fields.sync.has_info &&
+        fields.identity.has_adi && sync->pawr.pending
+    ) {
+        // This received PAwR subevent PDU anchors the response slot.
+        // The slot schedule below determines TX time; it is not simply
+        // T_IFS after the received packet.
+        uint64_t response_start = subtract_clamp0_64(gap_ext_scan.ticks,
+                        HW_TICKS_FROM_US(gap_phy_airtime_us(pdu[1], packet_phy))) +
+                        HW_TICKS_FROM_US((uint32_t)sync->pawr.timing.resp_delay * 1250 +
+                        (uint32_t)sync->pawr.slot * sync->pawr.timing.resp_spacing * 125);
+
+        if (response_start >= gap_ext_scan.ticks + HW_TICKS_FROM_US(150)) {
+            uint8_t *response = gap_ext_adv_frame;
+            // AUX_SYNC_SUBEVENT_RSP uses the extended advertising PDU format.
+            response[0] = ADV_EXT_IND;
+            response[1] = (uint8_t)(2 + sync->pawr.response_data_len);
+            response[2] = 1; // No AdvA or ADI.
+            response[3] = 0;
+
+            if (sync->pawr.response_data_len)
+                memcpy(response + 4, sync->pawr.response_data, sync->pawr.response_data_len);
+            RADIO_TX_CLEAR_DONE();
+
             uint8_t response_channel = gap_sync_channel(&sync->params,
                             (uint16_t)(sync->last_event_counter ^ sync->pawr.subevent));
-
-            if (response_start >= gap_ext_scan.ticks + HW_TICKS_FROM_US(150)) {
-                uint8_t *response = gap_ext_adv_frame;
-                // AUX_SYNC_SUBEVENT_RSP uses the extended advertising PDU format.
-                response[0] = ADV_EXT_IND;
-                response[1] = (uint8_t)(2 + sync->pawr.response_data_len);
-                response[2] = 1; // No AdvA or ADI.
-                response[3] = 0;
-
-                if (sync->pawr.response_data_len)
-                    memcpy(response + 4, sync->pawr.response_data, sync->pawr.response_data_len);
-                RADIO_TX_CLEAR_DONE();
-                if (RADIO_LINK_TX_AT(response, response_start,
-                                     sync->pawr.timing.resp_access_addr,
-                                     response_channel, 0, sync->phy, sync->phy,
-                                     sync->params.crc_init)
-                ) {
-                    gap_ext_scan.pawr_response_deadline = response_start + HW_TICKS_FROM_US(1000);
-                    gap_ext_scan.pawr_response_tx_pending = 1;
-                }
-            }
-
-            if (!sync->pawr.repeat) {
-                sync->pawr.pending = 0;
-                sync->pawr.response_data_len = 0;
+            if (RADIO_LINK_TX_AT(response, response_start,
+                                 sync->pawr.timing.resp_access_addr,
+                                 response_channel, 0, sync->phy, sync->phy,
+                                 sync->params.crc_init)
+            ) {
+                gap_ext_scan.pawr_response_deadline = response_start + HW_TICKS_FROM_US(1000);
+                gap_ext_scan.pawr_response_tx_pending = 1;
             }
         }
+
+        if (!sync->pawr.repeat) {
+            sync->pawr.pending = 0;
+            sync->pawr.response_data_len = 0;
+        }
     }
+
 }
 
 // Import LL_PERIODIC_SYNC_IND's SyncInfo and schedule its first PA event from
