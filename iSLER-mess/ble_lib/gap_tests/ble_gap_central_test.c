@@ -530,7 +530,7 @@ static void test_central_initiation_while_connectable_advertising(void) {
     // The current GAP API serializes legacy advertising and direct initiation.
     assert(!gap_conn_start(test_address(peer_address, 0)));
     assert(gap_adv_sets[0].enabled && !gap_initiator.active && !gap_scanner.scanning);
-    gap_adv_stop_set(0);
+    gap_adv_stop(0);
 }
 
 static void test_connection_timing_configuration(void) {
@@ -645,7 +645,7 @@ static void test_private_rotation(void) {
     assert(memcmp(first, gap_own_address.address, 6) != 0);
     assert(memcmp(gap_adv_sets[0].local.address, gap_own_address.address, 6) == 0);
     assert(gap_resolve(test_address(gap_own_address.address, 1), &identity));
-    gap_adv_stop_set(0);
+    gap_adv_stop(0);
     // Initiation retains InitA even if the rotation timeout expires.
     assert(gap_conn_start(test_address(test_identity, 0)));
     memcpy(first, gap_own_address.address, 6);
@@ -1080,7 +1080,7 @@ static void test_scanning_and_advertising_coexistence(void) {
     assert(!gap_initiator.active && !gap_scanner.scanning &&
            gap_adv_sets[0].enabled && link_tx_count == tx_before + 9);
 
-    gap_adv_stop_set(0);
+    gap_adv_stop(0);
     assert(gap_conn_start(test_address(peer, 0)));
     assert(gap_initiator.active && gap_scanner.scanning);
     gap_conn_cancel();
@@ -1090,7 +1090,7 @@ static void test_scanning_and_advertising_coexistence(void) {
     assert(!gap_conn_start(test_address(peer, 0)));
     assert(gap_adv_sets[0].enabled && !gap_initiator.active &&
            !gap_scanner.scanning);
-    gap_adv_stop_set(0);
+    gap_adv_stop(0);
     gap_hw_scan_poll();
 }
 
@@ -2756,7 +2756,7 @@ static void test_peer_local_keys(void) {
     assert(adv_evt.conn_req_ready);
     adv_evt.rx_event = 0;
     adv_evt.conn_req_ready = 0;
-    gap_adv_stop_set(0);
+    gap_adv_stop(0);
 
     // An explicit zero key uses the configured local identity, never an RPA.
     assert(gap_identity_local_key(test_address(test_identity, 0), (uint8_t[16]){0}));
@@ -2844,7 +2844,7 @@ static void test_nonresolvable_private_addresses(void) {
     assert(memcmp(first, gap_own_address.address, 6) != 0);
     assert(memcmp(gap_adv_sets[0].local.address, gap_own_address.address, 6) == 0);
     assert(aes_count == before);
-    gap_adv_stop_set(0);
+    gap_adv_stop(0);
     // Local peer keys cannot replace a selected NRPA when initiating.
     assert(gap_conn_start(test_address(test_identity, 0)));
     assert((adv_tx.connect_request[7] & 0xc0) == 0);

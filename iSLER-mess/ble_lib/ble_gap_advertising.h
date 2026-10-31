@@ -558,7 +558,7 @@ int gap_adv_start_directed(
 #endif // GAP_PERIPHERAL_SUPPORT
 
 // Application facing
-int gap_adv_stop_set(uint8_t set_id) {
+int gap_adv_stop(uint8_t set_id) {
     if (set_id >= GAP_LEGACY_ADV_SET_COUNT) return 0;
     gap_adv_sets[set_id].enabled = 0;
     return 1;
@@ -673,32 +673,33 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     if (!gap_access_addr(&access_address))
         return 0;
 
-    memset(adv_tx.connect_request, 0, sizeof(adv_tx.connect_request));
+    uint8_t *request = adv_tx.connect_request;
+    memset(request, 0, sizeof(adv_tx.connect_request));
     uint8_t local_type;
     int peer_slot = -1;
 
     if (mode == GAP_CONN_MODE_DIRECT) {
         peer_type = gap_initiator.peer.type;
         peer_slot = gap_identity_find(gap_initiator.peer.address, peer_type);
-        memcpy(adv_tx.connect_request + 8, gap_initiator.peer.address, 6);
+        memcpy(request + 8, gap_initiator.peer.address, 6);
     }
 
-    gap_local_addr_select(peer_slot, adv_tx.connect_request + 2, &local_type);
-    adv_tx.connect_request[0] = CONNECT_IND | (local_type << 6) | (peer_type << 7);
-    adv_tx.connect_request[1] = 34;
-    write_u32_le(adv_tx.connect_request + 14, access_address);
+    gap_local_addr_select(peer_slot, request + 2, &local_type);
+    request[0] = CONNECT_IND | (local_type << 6) | (peer_type << 7);
+    request[1] = 34;
+    write_u32_le(request + 14, access_address);
 
     uint8_t crc_init[3];
     if (!GAP_RANDOM_BYTES(crc_init, sizeof(crc_init))) return 0;
-    memcpy(adv_tx.connect_request + 18, crc_init, sizeof(crc_init));
-    adv_tx.connect_request[21] = 1; // transmit window size: 1.25 ms
-    write_u16_le(adv_tx.connect_request + 24, gap_central_timing.interval);
-    write_u16_le(adv_tx.connect_request + 26, gap_central_timing.latency);
-    write_u16_le(adv_tx.connect_request + 28, gap_central_timing.supervision_timeout);
+    memcpy(request + 18, crc_init, sizeof(crc_init));
+    request[21] = 1; // transmit window size: 1.25 ms
+    write_u16_le(request + 24, gap_central_timing.interval);
+    write_u16_le(request + 26, gap_central_timing.latency);
+    write_u16_le(request + 28, gap_central_timing.supervision_timeout);
 
-    memset(adv_tx.connect_request + 30, 0xff, 4);
-    adv_tx.connect_request[34] = 0x1f; // data channels 0 through 36
-    adv_tx.connect_request[35] = 5; // CSA #1 hop increment, SCA 500 ppm
+    memset(request + 30, 0xff, 4);
+    request[34] = 0x1f; // data channels 0 through 36
+    request[35] = 5; // CSA #1 hop increment, SCA 500 ppm
     gap_initiator.mode = mode;
     gap_initiator.peer.type = peer_type;
 

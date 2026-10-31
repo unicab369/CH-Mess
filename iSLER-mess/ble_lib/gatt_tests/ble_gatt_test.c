@@ -220,7 +220,7 @@ static void test_gap_service_characteristics(void) {
         mesh_gatt.server.encryption_key_size = 0;
     gap_wipe(&gap_ead_key, sizeof(gap_ead_key));
 
-    gap_adv_stop_set(0);
+    gap_adv_stop(0);
     mesh_gatt_gap_policy_update();
     assert(mesh_gatt.server.attrs[
            MESH_GATT_HANDLE_GAP_DEVICE_NAME - 1].permissions ==

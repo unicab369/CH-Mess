@@ -991,8 +991,7 @@ static gap_address gap_own_address;
 static union {
 #if GAP_CENTRAL_SUPPORT
     uint8_t connect_request[36];
-#endif
-#if !GAP_CENTRAL_SUPPORT
+#else
     uint8_t unused;
 #endif
 
