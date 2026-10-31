@@ -1274,23 +1274,15 @@ static uint8_t gap_conn_control(
             conn->central.channel_report_queued = 0;
             conn->connection_status = LL_ERR_REMOTE_FEATURE;
         }
+#endif // GAP_CENTRAL_SUPPORT
 #if GAP_PERIPHERAL_SUPPORT
-        else if (frame[3] == LL_CONNECTION_RATE_REQ && !conn->is_central &&
-            conn->peripheral.rate_req_pending
-        ) {
-            conn->peripheral.rate_req_pending = 0;
-            conn->connection_status = LL_ERR_REMOTE_FEATURE;
-        }
-#endif
-
-#elif GAP_PERIPHERAL_SUPPORT
         if (frame[3] == LL_CONNECTION_RATE_REQ && !conn->is_central &&
             conn->peripheral.rate_req_pending
         ) {
             conn->peripheral.rate_req_pending = 0;
             conn->connection_status = LL_ERR_REMOTE_FEATURE;
         }
-#endif
+#endif // GAP_PERIPHERAL_SUPPORT
 
         if (frame[3] == LL_CONNECTION_RATE_IND && conn->c_rate.update_pending) {
             conn->c_rate.update_pending = 0;
