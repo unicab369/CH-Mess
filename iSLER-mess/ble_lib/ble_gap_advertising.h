@@ -5,7 +5,6 @@
 #define GAP_EAD_RANDOMIZER_LEN 5
 #define GAP_EAD_MIC_LEN 4
 #define GAP_EAD_PLAINTEXT_MAX 245
-#define GAP_EAD_AD_STRUCTURE_MAX (GAP_EAD_PLAINTEXT_MAX + 11)
 
 #define GAP_SCAN_REPORT_PDU_MASK \
     ((1u << ADV_IND) | (1u << ADV_DIRECT_IND) | \
@@ -399,7 +398,7 @@ int gap_ead_decrypt(
     if (!gap_ead_key.set ||
         ead_len < 13 || ead[1] != GAP_AD_ENCRYPTED_DATA ||
         (size_t)ead[0] + 1 != ead_len ||
-        ead_len > GAP_EAD_AD_STRUCTURE_MAX
+        ead_len > GAP_EAD_PLAINTEXT_MAX + 11
     ) return 0;
 
     size_t plaintext_len = ead_len - 11;
