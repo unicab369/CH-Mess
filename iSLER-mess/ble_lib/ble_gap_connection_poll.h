@@ -915,6 +915,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         return;
     }
 #endif // GAP_EXT_ADV_SUPPORT
+
     if (frame[1] > 37) {
         gap_conn_slot = previous_slot;
         return;

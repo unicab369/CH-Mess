@@ -1554,28 +1554,6 @@ static int gap_pawr_conn_req_start(uint8_t slot, const uint8_t *request, size_t 
     return 1;
 }
 
-static int gap_pawr_conn_req_finish(
-    const uint8_t *request, uint64_t received_ticks
-) {
-    if (!gap_ext_pawr.connect.reply_armed || !RADIO_TX_DONE()) return 0;
-    gap_ext_pawr.connect.reply_armed = 0;
-    RADIO_STOP();
-
-    if (!gap_conn_accept(request, received_ticks, HW_TICKS_FROM_US(1250),
-                                                HW_TICKS_FROM_US(2500))
-    ) return 0;
-
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    conn->link_layer.peer_sca_ppm = 500;
-    conn->is_central = 0;
-#if GAP_CENTRAL_SUPPORT
-    gap_initiator.active = 0;
-#endif
-    gap_scanner.scanning = 0;
-    gap_scanner.active = 0;
-    gap_scanner.generation++;
-    return 1;
-}
 #endif // GAP_PERIPHERAL_SUPPORT
 
 // -----------------------------------------------------------------------------
@@ -2062,7 +2040,23 @@ static void gap_ext_scan_process(void) {
         if (!sync) return;
 #if GAP_PERIPHERAL_SUPPORT
         if ((pdu[0] & 0x0f) == CONNECT_IND) {
-            (void)gap_pawr_conn_req_finish(pdu, gap_ext_pawr.connect.reply_received_ticks);
+            if (gap_ext_pawr.connect.reply_armed && RADIO_TX_DONE()) {
+                gap_ext_pawr.connect.reply_armed = 0;
+                RADIO_STOP();
+
+                if (gap_conn_accept(pdu, gap_ext_pawr.connect.reply_received_ticks,
+                                    HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(2500))) {
+                    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+                    conn->link_layer.peer_sca_ppm = 500;
+                    conn->is_central = 0;
+#if GAP_CENTRAL_SUPPORT
+                    gap_initiator.active = 0;
+#endif
+                    gap_scanner.scanning = 0;
+                    gap_scanner.active = 0;
+                    gap_scanner.generation++;
+                }
+            }
             return;
         }
 #endif // GAP_PERIPHERAL_SUPPORT
