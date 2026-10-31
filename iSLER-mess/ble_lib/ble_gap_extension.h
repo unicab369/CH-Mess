@@ -1937,10 +1937,10 @@ static void gap_ext_scan_process(void) {
     if (gap_ext_scan.pawr_response_tx_pending) return;
     if (!gap_ext_scan.ready) return;
 
+    int slot = -1;
     uint8_t kind = gap_ext_scan.kind;
     uint8_t periodic = (kind == GAP_EXT_ADV_PERIODIC_PDU);
     uint8_t packet_phy = GAP_PHY_1M;
-    int slot = -1;
     gap_sync_context *sync = NULL;
 
     if (periodic) {
@@ -1960,23 +1960,25 @@ static void gap_ext_scan_process(void) {
             gap_aux_request[slot].active = 0;
     }
 
+    // Clear the receive state before discarding a periodic packet with no live sync.
     gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
     gap_ext_scan.ready = 0;
 
     if (gap_rx_armed) RADIO_STOP();
     gap_rx_armed = 0;
 
-    // Discard the packet after clearing RX state if its sync context is gone.
-    if (periodic && !sync) return;
     uint8_t *pdu = gap_ext_scan.frame;
     size_t pdu_len = (size_t)pdu[1] + 2;
 
+    if (periodic) {
+        if (!sync) return;
 #if GAP_PERIPHERAL_SUPPORT
-    if (periodic && (pdu[0] & 0x0f) == CONNECT_IND) {
-        (void)gap_pawr_conn_req_finish(pdu, gap_ext_pawr.connect.reply_received_ticks);
-        return;
-    }
+        if ((pdu[0] & 0x0f) == CONNECT_IND) {
+            (void)gap_pawr_conn_req_finish(pdu, gap_ext_pawr.connect.reply_received_ticks);
+            return;
+        }
 #endif // GAP_PERIPHERAL_SUPPORT
+    }
 
     gap_ext_fields fields;
     if (!gap_ext_adv_decode(pdu, pdu_len, &fields)) return;
@@ -2073,8 +2075,7 @@ static void gap_ext_scan_process(void) {
                 gap_sync_reports.count--;
             }
 
-            uint8_t tail = (gap_sync_reports.head + gap_sync_reports.count) %
-                           GAP_PERIODIC_REPORT_COUNT;
+            uint8_t tail = (gap_sync_reports.head + gap_sync_reports.count) % GAP_PERIODIC_REPORT_COUNT;
             gap_periodic_report *report = &gap_sync_reports.items[tail];
 
             report->slot = (uint8_t)slot;
