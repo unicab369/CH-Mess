@@ -133,8 +133,8 @@ void iSLER_Radio_Transmitted_Cb(void) {
         gap_ext_aux_rx_start();
         return;
     }
-    if (gap_ext_connect_resp.response_started)
-        gap_ext_connect_resp.waiting = 0;
+    if (gap_ext_aux_exchange.response_started)
+        gap_ext_aux_exchange.waiting = 0;
 #endif
 
 #if GAP_CENTRAL_SUPPORT
@@ -143,8 +143,8 @@ void iSLER_Radio_Transmitted_Cb(void) {
         gap_ext_pawr.connect.tx_end_valid = 1;
     }
 #endif
-    if (gap_ext_scan_resp.response_started)
-        gap_ext_scan_resp.waiting = 0;
+    if (gap_ext_aux_exchange.response_started)
+        gap_ext_aux_exchange.waiting = 0;
 #endif
 
     if (gap_link.ifs_tx_active) {
@@ -152,13 +152,13 @@ void iSLER_Radio_Transmitted_Cb(void) {
 
 #if GAP_EXT_ADV_SUPPORT
         if (gap_ext_aux.phase == GAP_EXT_AUX_SCAN_WINDOW &&
-            gap_ext_scan_resp.response_started) {
+            gap_ext_aux_exchange.response_started) {
             gap_link.receive_after_tx = 0;
             gap_extended_adv_set *set = &gap_ext_adv[gap_ext_aux.set_id];
 
             if (set->scan_resp_len > GAP_EXT_ADV_FINAL_DATA_MAX - 4) {
                 uint16_t remaining = set->scan_resp_len - GAP_EXT_ADV_FIRST_DATA_MAX;
-                uint64_t next_start = gap_ext_scan_resp.response_ticks + HW_TICKS_FROM_US(
+                uint64_t next_start = gap_ext_aux_exchange.detail.scan_response_ticks + HW_TICKS_FROM_US(
                     ((gap_phy_airtime_us(gap_ext_adv_frame[1], set->aux_phy) + 629) / 30) * 30);
                 gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
 
