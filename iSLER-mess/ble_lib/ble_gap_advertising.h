@@ -5,7 +5,6 @@
 #define GAP_EAD_RANDOMIZER_LEN 5
 #define GAP_EAD_MIC_LEN 4
 #define GAP_EAD_KEY_LEN 16
-#define GAP_EAD_IV_LEN 8
 #define GAP_EAD_PLAINTEXT_MAX 245
 #define GAP_EAD_AD_STRUCTURE_MAX (GAP_EAD_PLAINTEXT_MAX + 11)
 
@@ -98,7 +97,7 @@ static struct {
 // Encrypted Advertising Data key state.
 static struct {
     uint8_t session_key[GAP_EAD_KEY_LEN];
-    uint8_t iv[GAP_EAD_IV_LEN];
+    uint8_t iv[8];
     uint8_t set;
 } gap_ead_key;
 
@@ -317,7 +316,7 @@ int gap_ead_key_set(const uint8_t session_key[16], const uint8_t iv[8]) {
     if (!key_bits) return 0;
 
     memcpy(gap_ead_key.session_key, session_key, GAP_EAD_KEY_LEN);
-    memcpy(gap_ead_key.iv, iv, GAP_EAD_IV_LEN);
+    memcpy(gap_ead_key.iv, iv, sizeof(gap_ead_key.iv));
     gap_ead_key.set = 1;
     return 1;
 }
@@ -327,7 +326,7 @@ int gap_ead_key_set(const uint8_t session_key[16], const uint8_t iv[8]) {
 int gap_ead_key_get(uint8_t out[24]) {
     if (!gap_ead_key.set) return 0;
     memcpy(out, gap_ead_key.session_key, GAP_EAD_KEY_LEN);
-    memcpy(out + GAP_EAD_KEY_LEN, gap_ead_key.iv, GAP_EAD_IV_LEN);
+    memcpy(out + GAP_EAD_KEY_LEN, gap_ead_key.iv, sizeof(gap_ead_key.iv));
     return 1;
 }
 
@@ -371,7 +370,7 @@ int gap_ead_encrypt(
 
     uint8_t nonce[13], aad = 0xea;
     memcpy(nonce, randomizer, sizeof(randomizer));
-    memcpy(nonce + sizeof(randomizer), gap_ead_key.iv, GAP_EAD_IV_LEN);
+    memcpy(nonce + sizeof(randomizer), gap_ead_key.iv, sizeof(gap_ead_key.iv));
     uint8_t *encrypted_data = out + 7;
     memmove(encrypted_data, plaintext, plaintext_len);
 
@@ -410,7 +409,7 @@ int gap_ead_decrypt(
 
     uint8_t nonce[13], aad = 0xea;
     memcpy(nonce, ead + 2, GAP_EAD_RANDOMIZER_LEN);
-    memcpy(nonce + GAP_EAD_RANDOMIZER_LEN, gap_ead_key.iv, GAP_EAD_IV_LEN);
+    memcpy(nonce + GAP_EAD_RANDOMIZER_LEN, gap_ead_key.iv, sizeof(gap_ead_key.iv));
     memmove(out, ead + 7, plaintext_len);
 
     int decrypt_result = ccm_auth_decrypt(gap_ead_key.session_key, nonce,
