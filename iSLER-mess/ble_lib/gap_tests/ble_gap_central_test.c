@@ -673,9 +673,9 @@ static void test_scan_identity_filter(void) {
     gap_receive_report(frame, 6, -40);
     gap_scan_report report;
     assert(gap_scan_poll(&report));
-    assert(report.resolved && report.identity_type == 0);
-    assert(memcmp(report.address, test_rpa, 6) == 0);
-    assert(memcmp(report.identity_address, test_identity, 6) == 0);
+    assert(report.resolved && report.identity_address.type == 0);
+    assert(memcmp(report.address.address, test_rpa, 6) == 0);
+    assert(memcmp(report.identity_address.address, test_identity, 6) == 0);
     // Another RPA with the same identity and payload is a duplicate.
     uint8_t prand[3] = {3, 2, 0x41};
     memcpy(frame + 5, prand, 3);

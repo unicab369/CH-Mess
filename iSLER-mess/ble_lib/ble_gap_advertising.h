@@ -47,11 +47,10 @@ typedef struct {
 typedef struct {
     // Received advertising PDU and advertiser address.
     uint8_t pdu_type;
-    uint8_t address_type, address[6];
-    uint8_t resolved;
-    uint8_t identity_type, identity_address[6];
-    uint8_t has_target;
-    uint8_t target_address_type, target_address[6];
+    uint8_t resolved, has_target;
+    gap_address address;
+    gap_address identity_address;
+    gap_address target_address;
 
     // Received signal strength and AD payload.
     int8_t rssi;
@@ -60,6 +59,7 @@ typedef struct {
 } gap_scan_report;
 
 static gap_scan_report gap_scan_reports[GAP_SCAN_REPORT_COUNT];
+
 static struct {
     gap_address peer;
     uint8_t scan_response;
@@ -837,7 +837,7 @@ static inline void gap_receive_report(
 
     if (gap_scanner.filter_duplicates) {
         // Legacy duplicates use advertiser identity and report class, not payload contents.
-        uint8_t scan_response = pdu_type == SCAN_RSP;
+        uint8_t scan_response = (pdu_type == SCAN_RSP);
         uint8_t seen_slot = gap_scan.seen_count;
 
         for (uint8_t i = 0; i < gap_scan.seen_count; i++) {
@@ -868,18 +868,18 @@ static inline void gap_receive_report(
     uint8_t report_slot = (gap_scan.head + gap_scan.count) % GAP_SCAN_REPORT_COUNT;
     gap_scan_report *report = &gap_scan_reports[report_slot];
     report->pdu_type = pdu_type;
-    report->address_type = address_type;
+    report->address.type = address_type;
     report->resolved = slot >= 0;
-    report->identity_type = identity_type;
-    report->has_target = pdu_type == ADV_DIRECT_IND;
-    report->target_address_type = (frame[0] >> 7) & 1;
+    report->identity_address.type = identity_type;
+    report->has_target = (pdu_type == ADV_DIRECT_IND);
+    report->target_address.type = (frame[0] >> 7) & 1;
     report->rssi = rssi;
     report->data_len = data_len;
-    memcpy(report->address, frame + 2, 6);
-    memcpy(report->identity_address, identity_address, 6);
+    memcpy(report->address.address, frame + 2, 6);
+    memcpy(report->identity_address.address, identity_address, 6);
 
     if (report->has_target)
-        memcpy(report->target_address, frame + 8, 6);
+        memcpy(report->target_address.address, frame + 8, 6);
     if (data_len)
         memcpy(report->data, frame + 8, data_len);
     gap_scan.count++;

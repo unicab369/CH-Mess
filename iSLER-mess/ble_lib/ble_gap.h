@@ -580,7 +580,8 @@ static struct {
     uint16_t interval_ms;      // Time between scan-window starts, in milliseconds.
     uint16_t window_ms;        // Duration of each scan window, in milliseconds.
     uint8_t discovery_mode;    // Which advertising report classes the scanner accepts.
-    uint8_t filter_duplicates; // Suppress repeated reports for the same advertiser/data.
+    uint8_t filter_duplicates; // Suppress repeated reports per advertiser and report class;
+                               // disable to track presence, RSSI, or payload changes.
 } gap_scanner = {
     .interval_ms = 20, // Scan continuously by default: window equals interval.
     .window_ms = 20,
