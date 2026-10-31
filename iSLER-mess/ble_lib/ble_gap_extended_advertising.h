@@ -1648,8 +1648,7 @@ static int gap_pawr_advertiser_poll(void) {
                     gap_ext_pawr.connect.request_end_ticks = 0;
                     gap_ext_pawr.connect.tx_end_valid = 0;
                     gap_ext_pawr.connect.set_id = (uint8_t)(set - gap_ext_adv);
-                    gap_ext_pawr.connect.resp_deadline_ticks =
-                        tx_start_ticks + HW_TICKS_FROM_US(1000);
+                    gap_ext_pawr.connect.resp_deadline_ticks = tx_start_ticks + HW_TICKS_FROM_US(1000);
                     gap_ext_pawr.connect.waiting = 1;
                     gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_TX_PENDING;
                     RADIO_TX_CLEAR_DONE();
