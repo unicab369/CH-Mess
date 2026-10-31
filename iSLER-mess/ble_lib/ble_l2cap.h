@@ -1835,14 +1835,13 @@ static inline int l2cap_reassembler_feed(
             return 0;
         }
 
-        rx->bytes_expected = (l2cap_reassembly_bytes)(payload_len + 4u);
+        rx->bytes_expected = payload_len + 4u;
     }
     else if (!rx->bytes_expected) {
         return 0;
     }
 
-    l2cap_reassembly_bytes remaining =
-        (l2cap_reassembly_bytes)(rx->bytes_expected - rx->bytes_received);
+    l2cap_reassembly_bytes remaining = rx->bytes_expected - rx->bytes_received;
     if (len > remaining) {
         rx->bytes_expected = 0;
         rx->bytes_received = 0;
@@ -1850,7 +1849,7 @@ static inline int l2cap_reassembler_feed(
     }
 
     memcpy(rx->received_buffer + rx->bytes_received, fragment, len);
-    rx->bytes_received = (l2cap_reassembly_bytes)(rx->bytes_received + len);
+    rx->bytes_received += len;
     if (rx->bytes_received != rx->bytes_expected)
         return 0;
 
