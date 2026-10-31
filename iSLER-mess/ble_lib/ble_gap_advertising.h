@@ -792,17 +792,19 @@ static inline void gap_receive_report(
 
     if (gap_scanner.discovery_mode != GAP_DISCOVERY_ALL) {
         // Reserve zero for no accepted peer; encoded type is 1=public, 2=random.
-        uint8_t response_peer_type = address_type + 1;
+        uint8_t type = address_type + 1;
 
         if (pdu_type == SCAN_RSP) {
-            if (!gap_scan.response_peer.type ||
-                gap_scan.response_peer.type != response_peer_type ||
+            if (gap_scan.response_peer.type != type ||
                 memcmp(gap_scan.response_peer.address, frame + 2, 6) != 0
             ) return;
         }
         else {
             uint8_t flags = 0;
+            uint8_t discoverable_mask =
+                gap_scanner.discovery_mode == GAP_DISCOVERY_LIMITED ? 0x01 : 0x03;
 
+            // Discard the previous peer; this advertisement may replace it if accepted.
             if (GAP_SCANNABLE_ADV_PDU_MASK & (1u << pdu_type))
                 gap_scan.response_peer.type = 0;
 
@@ -811,17 +813,23 @@ static inline void gap_receive_report(
                 if (!field_len || (uint16_t)offset + field_len + 1 > data_len)
                     break;
 
-                if (field_len >= 2 && frame[9 + offset] == 0x01)
-                    flags = frame[10 + offset];
+                if (frame[9 + offset] == 0x01) {
+                    if (field_len >= 2)
+                        flags = frame[10 + offset];
+
+                    // Flags may appear anywhere, but only once in this data block.
+                    if (!(flags & discoverable_mask)) return;
+                    break;
+                }
+
                 offset += field_len + 1;
             }
 
-            // Check after scanning so Flags can appear anywhere in the payload.
-            if (!(flags & (gap_scanner.discovery_mode == GAP_DISCOVERY_LIMITED ? 0x01 : 0x03)))
-                return;
+            // No Flags structure means the device is not discoverable here.
+            if (!flags) return;
 
             if (GAP_SCANNABLE_ADV_PDU_MASK & (1u << pdu_type)) {
-                gap_scan.response_peer.type = response_peer_type;
+                gap_scan.response_peer.type = type;
                 memcpy(gap_scan.response_peer.address, frame + 2, 6);
             }
         }
