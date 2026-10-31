@@ -365,7 +365,6 @@ int gap_ead_encrypt(
     ) return 0;
 
     uint8_t randomizer[GAP_EAD_RANDOMIZER_LEN];
-
     if (!GAP_RANDOM_BYTES(randomizer, sizeof(randomizer)))
         return 0;
 
@@ -375,10 +374,9 @@ int gap_ead_encrypt(
     uint8_t *encrypted_data = out + 7;
     memmove(encrypted_data, plaintext, plaintext_len);
 
-    int encrypt_result = ccm_encrypt_and_tag(
-            gap_ead_key.session_key, nonce, sizeof(nonce),
-            &aad, sizeof(aad), encrypted_data, plaintext_len,
-            encrypted_data, encrypted_data + plaintext_len, GAP_EAD_MIC_LEN);
+    int encrypt_result = ccm_encrypt_and_tag(gap_ead_key.session_key, nonce, sizeof(nonce),
+                        &aad, sizeof(aad), encrypted_data, plaintext_len,
+                        encrypted_data, encrypted_data + plaintext_len, GAP_EAD_MIC_LEN);
 
     if (encrypt_result != CCM_OK) {
         gap_wipe(encrypted_data, plaintext_len + GAP_EAD_MIC_LEN);
@@ -415,8 +413,7 @@ int gap_ead_decrypt(
 
     int decrypt_result = ccm_auth_decrypt(gap_ead_key.session_key, nonce,
                             sizeof(nonce), &aad, sizeof(aad), out, plaintext_len,
-                            ead + 7 + plaintext_len,
-                            GAP_EAD_MIC_LEN, out);
+                            ead + 7 + plaintext_len, GAP_EAD_MIC_LEN, out);
 
     if (decrypt_result != CCM_OK || !gap_ead_plaintext_valid(out, plaintext_len)) {
         gap_wipe(out, plaintext_len);
