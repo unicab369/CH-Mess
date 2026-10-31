@@ -1745,18 +1745,6 @@ int gap_use_public_address(void) {
 
 static l2cap_ops gap_l2cap_ops;
 
-// Use the configured L2CAP defaults unless the application supplies a
-// service-specific configure_channel callback.
-static void gap_configure_channel_default(
-    void *context, uint16_t service_id, l2cap_channel_config *config
-) {
-    (void)context;
-    (void)service_id;
-    config->max_sdu_size = L2CAP_LOCAL_MAX_SDU_SIZE;
-    config->max_pdu_payload = L2CAP_LOCAL_MAX_PDU_PAYLOAD;
-    config->initial_credits = L2CAP_INITIAL_CREDITS;
-}
-
 // Validate a legacy CONNECT_IND and initialize its data-channel state.
 static int gap_conn_accept(
     const uint8_t frame[36], uint64_t received_ticks,
@@ -1903,42 +1891,41 @@ typedef struct {
     uint8_t initialized, connected;
     uint8_t update_applied;
     l2cap_tx_queue *tx_queue;
-} ble_gap_l2cap_peer;
+} gap_l2cap_peer;
 
-static ble_gap_l2cap_peer ble_gap_l2cap_peers[GAP_CONNECTION_COUNT];
+static gap_l2cap_peer gap_l2cap_peers[GAP_CONNECTION_COUNT];
 
 // Application-facing. Install shared accept/configure callbacks before polling;
 // pass NULL to use the default behavior. Each GAP link retains its own
 // transmit queue and references this shared callback configuration.
 static inline int ble_gap_l2cap_init(const l2cap_ops *upper) {
-    memset(ble_gap_l2cap_peers, 0, sizeof(ble_gap_l2cap_peers));
+    memset(gap_l2cap_peers, 0, sizeof(gap_l2cap_peers));
     memset(&gap_l2cap_ops, 0, sizeof(gap_l2cap_ops));
     if (upper) gap_l2cap_ops = *upper;
-    if (!gap_l2cap_ops.configure_channel)
-        gap_l2cap_ops.configure_channel = gap_configure_channel_default;
     return 1;
 }
 
 // Application-facing
 // Poll each live connection using its context without changing the selected slot.
 static inline int ble_gap_l2cap_poll(void) {
-    uint8_t seen[GAP_CONNECTION_COUNT] = {0};
     int work = 0;
     gap_conn_handle handle;
 
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
-        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)))
+        gap_l2cap_peer *peer = &gap_l2cap_peers[slot];
+        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot))) {
+            if (peer->initialized) {
+                l2cap_conn_reset(peer->connection, 0x0013);
+                memset(peer, 0, sizeof(*peer));
+            }
             continue;
+        }
 
         gap_conn_context *conn = &gap_conn_ctx[slot];
-        ble_gap_l2cap_peer *peer = &ble_gap_l2cap_peers[slot];
         handle.slot = slot;
         handle.generation = gap_conn_generations[slot];
-        seen[slot] = 1;
 
-        if (!peer->initialized ||
-            peer->handle.generation != handle.generation
-        ) {
+        if (!peer->initialized || peer->handle.generation != handle.generation) {
             if (peer->initialized)
                 l2cap_conn_reset(peer->connection, 0x0013);
 
@@ -2062,15 +2049,6 @@ static inline int ble_gap_l2cap_poll(void) {
             return result;
 
         work += result;
-    }
-
-    for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
-        ble_gap_l2cap_peer *peer = &ble_gap_l2cap_peers[slot];
-        if (!peer->initialized || seen[slot])
-            continue;
-
-        l2cap_conn_reset(peer->connection, 0x0013);
-        memset(peer, 0, sizeof(*peer));
     }
 
     return work;
