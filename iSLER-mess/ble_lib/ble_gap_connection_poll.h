@@ -1545,8 +1545,7 @@ static void gap_conn_poll(void) {
 
         // Re-read the interval each event; an Instant may update the schedule.
         do {
-            conn->link_layer.next_ticks +=
-                HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
+            conn->link_layer.next_ticks += HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
             gap_conn_event_advance(conn);
             gap_conn_update_apply(conn, 0);
             if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
