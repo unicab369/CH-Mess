@@ -74,8 +74,10 @@ static struct {
     // Scanner radio scheduling and active-scan request state.
     uint8_t channel_index, applied_generation;
     uint32_t interval_start_ms;
-    volatile uint8_t active_pending, active_address_type;
-    uint8_t active_address[6];
+    struct {
+        volatile uint8_t type; // Encoded: 0=none, 1=public, 2=random.
+        uint8_t address[6];
+    } active_address;
     uint32_t active_deadline_ms;
     GAP_RADIO_BUFFER_ATTR uint8_t request[14];
 
@@ -921,7 +923,7 @@ int gap_scan_take_ad(
     uint8_t payload_len = frame[1];
     int8_t packet_rssi = gap_rx.rssi;
 
-    if (!gap_scan.active_pending)
+    if (!gap_scan.active_address.type)
         gap_rx_armed = 0;
 
     gap_rx.ready = 0;

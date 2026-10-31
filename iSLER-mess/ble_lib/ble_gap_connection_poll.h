@@ -1036,7 +1036,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 #if GAP_CENTRAL_SUPPORT
             (gap_initiator.mode != GAP_CONN_MODE_SELECTIVE || peer_matches) &&
 #endif // GAP_CENTRAL_SUPPORT
-            !gap_scan.active_pending
+            !gap_scan.active_address.type
         ) {
 
 #if GAP_PRIVACY_SUPPORT
@@ -1050,10 +1050,10 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             // SCAN_REQ must start T_IFS after its on-air end, including CRC.
             // Preserve the advertisement while sending SCAN_REQ promptly.
             memcpy(gap_scan.pending_adv.frame, frame, (size_t)frame[1] + 2);
-            memcpy(gap_scan.active_address, frame + 2, 6);
-            gap_scan.active_address_type = advertiser_type;
+            memcpy(gap_scan.active_address.address, frame + 2, 6);
             gap_scan.active_deadline_ms = GET_MILLIS() + 10;
-            gap_scan.active_pending = 1;
+            // Store 1/2 for public/random; zero means no response is pending.
+            gap_scan.active_address.type = advertiser_type + 1;
             gap_scan.pending_adv.rssi = RADIO_RSSI();
             gap_scan.pending_adv.ready = 1;
 
@@ -1064,22 +1064,20 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             memcpy(gap_scan.request + 8, frame + 2, 6);
 
             if (!RADIO_IFS_TX_TIMER_ARM(gap_scan.request, BLE_ADV_ACCESS_ADDRESS,
-                                        37 + gap_scan.channel_index, 1,
-                                        GAP_PHY_1M, GAP_PHY_1M, 0x555555)
-            ) gap_scan.active_pending = 0;
+                            37 + gap_scan.channel_index, 1, GAP_PHY_1M, GAP_PHY_1M, 0x555555)
+            ) gap_scan.active_address.type = 0;
 
             gap_conn_slot = previous_slot;
             return;
         }
 
         if (pdu_type == SCAN_RSP &&
-            gap_scan.active_pending &&
-            ((frame[0] >> 6) & 1) == gap_scan.active_address_type &&
-            memcmp(frame + 2, gap_scan.active_address, 6) == 0
+            (((frame[0] >> 6) & 1) + 1) == gap_scan.active_address.type &&
+            memcmp(frame + 2, gap_scan.active_address.address, 6) == 0
         ) {
             memcpy(gap_rx.frame, frame, (size_t)frame[1] + 2);
             gap_rx.rssi = RADIO_RSSI();
-            gap_scan.active_pending = 0;
+            gap_scan.active_address.type = 0;
             gap_rx.ready = 1;
             gap_conn_slot = previous_slot;
             return;
@@ -1187,7 +1185,7 @@ void gap_hw_init(void) {
     gap_scan.channel_index = 0;
     gap_scan.applied_generation = gap_scanner.generation - 1;
     gap_scan.interval_start_ms = 0;
-    gap_scan.active_pending = 0;
+    gap_scan.active_address.type = 0;
     gap_rx.ready = 0;
     gap_rx.rssi = 127;
     gap_scan.pending_adv.ready = 0;
@@ -1817,7 +1815,7 @@ void gap_hw_scan_poll(void) {
     if (reset_scan) {
         if (gap_rx_armed) RADIO_STOP();
         gap_rx_armed = 0;
-        gap_scan.active_pending = 0;
+        gap_scan.active_address.type = 0;
         gap_scan.channel_index = 0;
         gap_scan.interval_start_ms = now;
         gap_scan.applied_generation = gap_scanner.generation;
@@ -1858,7 +1856,7 @@ void gap_hw_scan_poll(void) {
         request->active = 0;
     }
 
-    if (!gap_scan.active_pending) {
+    if (!gap_scan.active_address.type) {
         int slot = -1;
 
         for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
@@ -1962,10 +1960,10 @@ void gap_hw_scan_poll(void) {
     }
 
 #endif // GAP_EXT_ADV_SUPPORT
-    if (gap_scan.active_pending) {
+    if (gap_scan.active_address.type) {
         if ((int32_t)(now - gap_scan.active_deadline_ms) < 0)
             return;
-        gap_scan.active_pending = 0;
+        gap_scan.active_address.type = 0;
     }
 
     uint16_t interval_ms, window_ms;
@@ -2054,7 +2052,7 @@ int gap_send_due(
 #endif
                 gap_rx.ready = 0;
                 gap_scan.pending_adv.ready = 0;
-                gap_scan.active_pending = 0;
+                gap_scan.active_address.type = 0;
                 gap_rx_armed = 0;
                 gap_scanner.scanning = 0;
                 gap_scanner.active = 0;
