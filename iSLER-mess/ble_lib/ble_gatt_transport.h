@@ -1689,7 +1689,7 @@ static inline int ble_gap_gatt_poll(
 
         size_t fragment_len = sizeof(fragment);
         uint8_t llid = 0;
-        int received = gap_receive_data(&llid, fragment, &fragment_len);
+        int received = gap_receive_data_for(conn, &llid, fragment, &fragment_len);
         if (received < 0 || (received &&
             gatt_transport_receive_fragment(transport, llid, fragment,
                                             fragment_len) < 0)) {
@@ -1714,7 +1714,7 @@ static inline int ble_gap_gatt_poll(
         uint16_t tx_len = 0;
         if (gatt_transport_tx_peek(transport, max_payload, &llid,
                                    &tx_fragment, &tx_len) > 0 &&
-            gap_send_data(llid, tx_fragment, tx_len)) {
+            gap_send_data_for(conn, llid, tx_fragment, tx_len)) {
             (void)gatt_transport_tx_sent(transport, tx_len, GET_MILLIS());
             work++;
         }

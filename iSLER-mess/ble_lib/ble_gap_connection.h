@@ -2258,7 +2258,7 @@ int gap_conn_rate_set(
 int gap_channel_map_set(const uint8_t channels[5]) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (gap_conn_procedure_busy(conn) ||
+    if (!channels || gap_conn_procedure_busy(conn) ||
         !conn->is_central ||
         (channels[4] & 0xe0)
     ) return 0;
@@ -2446,12 +2446,11 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
 // remains valid if a PHY update returns to 1M without re-fragmentation.
 // data must point to len readable bytes; len must be nonzero.
 // Queue one LL data fragment. LLID 2 begins an L2CAP PDU; LLID 1 continues it.
-int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-
+static int gap_send_data_for(
+    gap_conn_context *conn, uint8_t llid, const uint8_t *data, size_t len
+) {
     if (!len ||
         (llid != 1 && llid != 2) ||
-        !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->link_layer.first_event) ||
         conn->queue_state.tx_queued ||
         conn->link_state.terminate_queued ||
@@ -2510,15 +2509,14 @@ int gap_disconnect(uint8_t reason) {
 
 // Copy one received LL data fragment; leave it queued if the output is too small.
 // Application facing. llid is optional; data and len must be valid pointers.
-int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-
+static int gap_receive_data_for(
+    gap_conn_context *conn, uint8_t *llid, uint8_t *data, size_t *len
+) {
     if (!conn->queue_state.rx_ready)
         return 0;
 
 #if GAP_SECURITY_SUPPORT >= 2
-    if (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))
-        gap_smp_poll_context(conn);
+    gap_smp_poll_context(conn);
 #endif
 
     if (*len < conn->rx_packet.len)
