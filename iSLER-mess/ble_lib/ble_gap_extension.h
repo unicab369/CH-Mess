@@ -181,7 +181,7 @@ static struct {
 
 static struct {
     volatile uint8_t waiting, response_started;
-    uint8_t address_type, address[6];
+    gap_address peer;
     uint64_t response_ticks;
 } gap_ext_adv_scan;
 
@@ -3043,30 +3043,29 @@ static int gap_ext_send_due(uint32_t now) {
         memcpy(frame + 4, address, sizeof(address));
         write_u16_le(frame + 10, adi);
 
-        uint8_t *response = gap_ext_adv_frame;
-        uint16_t first_chunk = set->scan_resp_len;
-        uint8_t has_chain = first_chunk > GAP_EXT_ADV_FINAL_DATA_MAX - 4;
         uint8_t payload_offset = 12;
-        response[0] = adv_header;
-        response[1] = (uint8_t)(10 + first_chunk);
-        response[2] = 9;
-        response[3] = 0x09;
-        memcpy(response + 4, address, 6);
-        write_u16_le(response + 10, adi);
-        if (has_chain) {
-            first_chunk = GAP_EXT_ADV_FIRST_DATA_MAX;
+        uint16_t first_chunk = set->scan_resp_len;
+        gap_ext_adv_frame[0] = adv_header;
+        gap_ext_adv_frame[1] = (uint8_t)(10 + first_chunk);
+        gap_ext_adv_frame[2] = 9;
+        gap_ext_adv_frame[3] = 0x09;
+        memcpy(gap_ext_adv_frame + 4, address, 6);
+        write_u16_le(gap_ext_adv_frame + 10, adi);
+
+        if (first_chunk > GAP_EXT_ADV_FINAL_DATA_MAX - 4) {
             payload_offset = 15;
-            response[1] = (uint8_t)(13 + first_chunk);
-            response[2] = 12;
-            response[3] = 0x19;
-            gap_aux_ptr_write(response + 12, 1,
-                ((gap_phy_airtime_us(response[1], set->aux_phy) + 629) / 30) * 30,
-                set->aux_phy);
+            first_chunk = GAP_EXT_ADV_FIRST_DATA_MAX;
+            gap_ext_adv_frame[1] = (uint8_t)(13 + first_chunk);
+            gap_ext_adv_frame[2] = 12;
+            gap_ext_adv_frame[3] = 0x19;
+            gap_aux_ptr_write(gap_ext_adv_frame + 12, 1,
+                ((gap_phy_airtime_us(gap_ext_adv_frame[1], set->aux_phy) + 629) / 30) * 30, set->aux_phy);
         }
-        memcpy(response + payload_offset, set->data, first_chunk);
+
+        memcpy(gap_ext_adv_frame + payload_offset, set->data, first_chunk);
         gap_ext_adv_scan.response_started = 0;
-        gap_ext_adv_scan.address_type = address_type;
-        memcpy(gap_ext_adv_scan.address, address, 6);
+        gap_ext_adv_scan.peer.type = address_type;
+        memcpy(gap_ext_adv_scan.peer.address, address, sizeof(gap_ext_adv_scan.peer.address));
         gap_ext_adv_scan.waiting = 1;
         // The TX completion callback schedules AUX using this frame, so
         // both packets must be ready before starting primary TX.

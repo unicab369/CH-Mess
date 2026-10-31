@@ -841,8 +841,8 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 
     if (pdu_type == SCAN_REQ && gap_ext_adv_scan.waiting) {
         if (frame[1] != 12 ||
-            ((frame[0] >> 7) & 1) != gap_ext_adv_scan.address_type ||
-            memcmp(frame + 8, gap_ext_adv_scan.address, 6) != 0
+            ((frame[0] >> 7) & 1) != gap_ext_adv_scan.peer.type ||
+            memcmp(frame + 8, gap_ext_adv_scan.peer.address, 6) != 0
         ) {
             gap_conn_slot = previous_slot;
             return;
