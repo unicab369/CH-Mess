@@ -1938,7 +1938,7 @@ static void test_periodic_advertising_sync(void) {
         2, 0x01
     };
     uint8_t chain_ind[7] = {0x07, 5, 3, 0x08, 0x02, 0x60, 0x06};
-    gap_periodic_sync_event event;
+    gap_sync_event event;
     gap_periodic_report report;
     now_ms = 900;
     fake_radio_ticks = 1000000;
@@ -3181,7 +3181,7 @@ static void test_periodic_sync_transfer_receive(void) {
         0x07, 9, 6, 0x18, 0x02, 0x60, 1, 20, 0, 2, 0x01
     };
     uint8_t valid_transfer[37];
-    gap_periodic_sync_event event;
+    gap_sync_event event;
     now_ms = 3000;
     fake_radio_ticks_enabled = 0;
     assert(gap_past_enable(1, 1000));

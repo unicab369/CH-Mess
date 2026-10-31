@@ -27,6 +27,19 @@ enum {
     GAP_EXT_REQ_CONNECT_DONE
 };
 
+typedef struct {
+    uint8_t has_address;
+    gap_address peer;
+    gap_address identity;
+    uint8_t has_adi, sid;
+    uint16_t did;
+    int8_t rssi;
+    uint16_t data_len;
+    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+} gap_ext_report;
+
+static gap_ext_report gap_ext_adv_reports[GAP_EXT_ADV_REPORT_COUNT];
+
 // -----------------------------------------------------------------------------
 // Extended scan reassembly and duplicate filtering
 // -----------------------------------------------------------------------------
@@ -46,27 +59,6 @@ static gap_ext_seen_entry gap_ext_adv_seen[GAP_EXT_ADV_SEEN_COUNT];
 static const uint16_t gap_sca_ppm[8] = {
     500, 250, 150, 100, 75, 50, 30, 20
 };
-
-typedef struct {
-    uint8_t type, slot, sid;
-    gap_address peer;
-} gap_periodic_sync_event;
-
-typedef struct {
-    uint8_t slot, sid;
-    uint16_t event_counter, did, data_len;
-    int8_t rssi;
-    uint8_t data[GAP_EXT_ADV_DATA_MAX];
-} gap_periodic_report;
-
-typedef struct {
-    uint8_t set_id, sid, subevent, response_slot;
-    uint8_t has_address;
-    gap_address peer;
-    uint16_t event_counter, data_len;
-    int8_t rssi;
-    uint8_t data[GAP_PAWR_RESPONSE_DATA_MAX];
-} gap_pawr_report;
 
 typedef struct {
     uint8_t has_timing, subevents;
@@ -103,20 +95,46 @@ typedef struct {
         uint8_t response_data[GAP_PAWR_RESPONSE_DATA_MAX];
     } pawr;
 } gap_sync_context;
+
 static gap_sync_context gap_syncs[GAP_PERIODIC_SYNC_COUNT];
 
+typedef struct {
+    uint8_t type, slot, sid;
+    gap_address peer;
+} gap_sync_event;
+
 static struct {
-    gap_periodic_sync_event items[GAP_PERIODIC_SYNC_EVENT_COUNT];
+    gap_sync_event items[GAP_PERIODIC_SYNC_EVENT_COUNT];
     uint8_t head, count;
 } gap_sync_events;
+
+
+typedef struct {
+    uint8_t slot, sid;
+    uint16_t event_counter, did, data_len;
+    int8_t rssi;
+    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+} gap_periodic_report;
+
 static struct {
     gap_periodic_report items[GAP_PERIODIC_REPORT_COUNT];
     uint8_t head, count;
 } gap_sync_reports;
+
+typedef struct {
+    uint8_t set_id, sid, subevent, response_slot;
+    uint8_t has_address;
+    gap_address peer;
+    uint16_t event_counter, data_len;
+    int8_t rssi;
+    uint8_t data[GAP_PAWR_RESPONSE_DATA_MAX];
+} gap_pawr_report;
+
 static struct {
     gap_pawr_report items[GAP_PAWR_RESPONSE_REPORT_COUNT];
     uint8_t head, count;
 } gap_pawr_reports;
+
 static struct {
     uint8_t enabled;
     uint32_t timeout_ms;
@@ -235,23 +253,6 @@ static struct {
         uint64_t event_start_ticks;
     } advertiser;
 } gap_ext_pawr;
-
-// Extended scan report and decoded advertising header types.
-// -----------------------------------------------------------------------------
-// Extended scan report state
-// -----------------------------------------------------------------------------
-typedef struct {
-    uint8_t has_address;
-    gap_address peer;
-    gap_address identity;
-    uint8_t has_adi, sid;
-    uint16_t did;
-    int8_t rssi;
-    uint16_t data_len;
-    uint8_t data[GAP_EXT_ADV_DATA_MAX];
-} gap_ext_report;
-
-static gap_ext_report gap_ext_adv_reports[GAP_EXT_ADV_REPORT_COUNT];
 
 // -----------------------------------------------------------------------------
 // Extended advertising decode and scan report assembly
@@ -1079,7 +1080,7 @@ int gap_ext_scan_poll(gap_ext_report *report) {
 // -----------------------------------------------------------------------------
 static void gap_sync_event_post(uint8_t slot, uint8_t type) {
     gap_sync_context *sync = &gap_syncs[slot];
-    gap_periodic_sync_event event;
+    gap_sync_event event;
     memset(&event, 0, sizeof(event));
     event.type = type;
     event.slot = (uint8_t)(sync - gap_syncs);
@@ -1254,7 +1255,7 @@ int gap_sync_pawr_accept(uint8_t slot, uint8_t enabled) {
 
 // Application facing
 // event must be a valid writable pointer.
-int gap_sync_event_poll(gap_periodic_sync_event *event) {
+int gap_sync_event_poll(gap_sync_event *event) {
     if (!gap_sync_events.count) return 0;
     *event = gap_sync_events.items[gap_sync_events.head];
     gap_sync_events.head = (gap_sync_events.head + 1) % GAP_PERIODIC_SYNC_EVENT_COUNT;
