@@ -115,7 +115,7 @@ static void test_mesh_services_registered_in_generic_database(void) {
 static void test_gap_service_characteristics(void) {
     assert(mesh_gatt_ensure_initialized());
     const uint8_t flags[] = {2, 0x01, 0x06};
-    assert(gap_adv_start(ADV_IND, flags, sizeof(flags), NULL, 0, 100));
+    assert(gap_adv_start_set(0, ADV_IND, flags, sizeof(flags), NULL, 0, 100));
     mesh_gatt_gap_policy_update();
     assert(mesh_gatt.server.attrs[
            MESH_GATT_HANDLE_GAP_DEVICE_NAME - 1].permissions ==
@@ -220,7 +220,7 @@ static void test_gap_service_characteristics(void) {
         mesh_gatt.server.encryption_key_size = 0;
     gap_wipe(&gap_ead_key, sizeof(gap_ead_key));
 
-    gap_adv_stop();
+    gap_adv_stop_set(0);
     mesh_gatt_gap_policy_update();
     assert(mesh_gatt.server.attrs[
            MESH_GATT_HANDLE_GAP_DEVICE_NAME - 1].permissions ==

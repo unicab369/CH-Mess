@@ -1211,6 +1211,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         ((frame[0] >> 7) & 1) == ((adv_evt.adv_frame[0] >> 6) & 1) &&
         memcmp(frame + 8, adv_evt.adv_frame + 2, 6) == 0
     ) {
+        gap_legacy_adv_set *advertiser = &gap_adv_sets[adv_evt.set_id];
         uint8_t adv_pdu_type = adv_evt.adv_frame[0] & 0x0f;
         uint8_t peer_allowed = gap_accept_list_match(frame + 2, (frame[0] >> 6) & 1, peer_slot);
 
@@ -1221,11 +1222,11 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             // This received SCAN_REQ is the previous packet on air.
             // SCAN_RSP must start T_IFS after the request's on-air end.
             adv_evt.scan_frame[0] = SCAN_RSP | (adv_evt.adv_frame[0] & 0x40);
-            adv_evt.scan_frame[1] = 6 + gap_adv.scan_resp_len;
+            adv_evt.scan_frame[1] = 6 + advertiser->scan_resp_len;
             memcpy(adv_evt.scan_frame + 2, adv_evt.adv_frame + 2, 6);
 
-            if (gap_adv.scan_resp_len)
-                memcpy(adv_evt.scan_frame + 8, adv_tx.advertising.scan_response, gap_adv.scan_resp_len);
+            if (advertiser->scan_resp_len)
+                memcpy(adv_evt.scan_frame + 8, advertiser->scan_response, advertiser->scan_resp_len);
 
             adv_evt.scan_resp_started = 1;
             if (!RADIO_IFS_TX_TIMER_ARM(adv_evt.scan_frame, BLE_ADV_ACCESS_ADDRESS,
@@ -1243,7 +1244,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
                             (!gap_adv_filter.connection_accept || peer_allowed);
 
         if (connect_ok && adv_pdu_type == ADV_DIRECT_IND) {
-            connect_ok = (peer_slot >= 0 && peer_slot == gap_adv.peer_slot) ||
+            connect_ok = (peer_slot >= 0 && peer_slot == advertiser->peer_slot) ||
                         (((frame[0] >> 6) & 1) == ((adv_evt.adv_frame[0] >> 7) & 1) &&
                         memcmp(frame + 2, adv_evt.adv_frame + 8, 6) == 0);
         }
@@ -1292,6 +1293,8 @@ void gap_hw_init(void) {
     adv_evt.rx_event = 0;
     adv_evt.scan_resp_started = 0;
     adv_evt.conn_req_ready = 0;
+    gap_adv_slot = 0;
+    gap_adv_next_set = 0;
 #endif // GAP_LEGACY_ADV_SUPPORT
     gap_rx_armed = 0;
     gap_poll.slot = 0;
@@ -2150,6 +2153,7 @@ int gap_send_due(
 
 #if GAP_LEGACY_ADV_SUPPORT
     if (adv_evt.phase) {
+        gap_adv_slot = adv_evt.set_id;
 
 #if GAP_PERIPHERAL_SUPPORT
         // A connection request was received; stop advertising and set up the connection.
@@ -2162,6 +2166,8 @@ int gap_send_due(
 
             if (gap_conn_accept(adv_evt.conn_req_frame, adv_evt.conn_req_ticks,
                                 HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))) {
+                if (adv_evt.send_gap)
+                    gap_adv.enabled = 0;
 #if GAP_CENTRAL_SUPPORT
                 gap_initiator.active = 0;
                 gap_initiator.mode = GAP_CONN_MODE_DIRECT;
@@ -2278,7 +2284,23 @@ int gap_send_due(
 // privacy rotation updates its address first, and extended advertising gets
 // priority for the shared radio.
 #if GAP_LEGACY_ADV_SUPPORT
-    int send_gap = gap_adv.enabled != 0 && (int32_t)(now - gap_adv.next_event_ms) >= 0;
+    int selected_legacy_set = -1;
+    for (uint8_t offset = 0; offset < GAP_LEGACY_ADV_SET_COUNT; offset++) {
+        uint8_t set_id = (gap_adv_next_set + offset) % GAP_LEGACY_ADV_SET_COUNT;
+
+        if (gap_adv_sets[set_id].enabled &&
+            (int32_t)(now - gap_adv_sets[set_id].next_event_ms) >= 0
+        ) {
+            selected_legacy_set = set_id;
+            break;
+        }
+    }
+
+    int send_gap = selected_legacy_set >= 0;
+    if (send_gap) {
+        gap_adv_slot = (uint8_t)selected_legacy_set;
+        gap_adv_next_set = (uint8_t)((selected_legacy_set + 1) % GAP_LEGACY_ADV_SET_COUNT);
+    }
     if (!send_gap && !fallback_ad)
         return 0;
 
@@ -2290,7 +2312,7 @@ int gap_send_due(
     uint8_t len = fallback_len;
 
     if (send_gap) {
-        data = adv_tx.advertising.data;
+        data = gap_adv.data;
         target_type = gap_adv.target.type;
         pdu_type = gap_adv.pdu_type;
         len = gap_adv.data_len;
@@ -2329,6 +2351,7 @@ int gap_send_due(
     uint8_t receive_after_tx = pdu_type != ADV_NONCONN_IND;
     adv_evt.channel = 37;
     adv_evt.send_gap = send_gap;
+    adv_evt.set_id = send_gap ? gap_adv_slot : 0;
     adv_evt.rx_event = receive_after_tx;
     gap_rx.ready = 0;
     adv_evt.scan_resp_started = 0;

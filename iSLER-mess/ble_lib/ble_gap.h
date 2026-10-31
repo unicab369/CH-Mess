@@ -35,6 +35,12 @@
 #ifndef GAP_LEGACY_ADV_SUPPORT
 #define GAP_LEGACY_ADV_SUPPORT 1
 #endif
+#ifndef GAP_LEGACY_ADV_SET_COUNT
+#define GAP_LEGACY_ADV_SET_COUNT 2
+#endif
+#if GAP_LEGACY_ADV_SET_COUNT < 1 || GAP_LEGACY_ADV_SET_COUNT > 255
+#error "GAP_LEGACY_ADV_SET_COUNT must be between 1 and 255"
+#endif
 #ifndef GAP_CONNECTION_COUNT
 #define GAP_CONNECTION_COUNT 1
 #endif
@@ -540,11 +546,11 @@ typedef struct {
 
 // Legacy advertiser state.
 #if GAP_LEGACY_ADV_SUPPORT
-static struct {
+typedef struct {
     uint8_t enabled;      // Legacy advertising is enabled.
     uint8_t pdu_type;      // Advertising PDU type currently being transmitted.
-    uint8_t data_len;      // Number of valid bytes in adv_tx.advertising.data.
-    uint8_t scan_resp_len; // Number of valid bytes in adv_tx.advertising.scan_response.
+    uint8_t data_len;      // Number of valid advertising-data bytes.
+    uint8_t scan_resp_len; // Number of valid scan-response bytes.
     struct {
         uint8_t type;       // Address type used in the advertising PDU.
         uint8_t address[6]; // Device address in Bluetooth byte order.
@@ -556,7 +562,15 @@ static struct {
     int8_t peer_slot;          // Accepted peer's connection slot, or a negative value if none.
     uint16_t interval_ms;      // Time between advertising events, in milliseconds.
     uint32_t next_event_ms;    // Scheduled time of the next advertising event.
-} gap_adv;
+    uint8_t data[GAP_ADV_DATA_MAX];
+    uint8_t scan_response[GAP_ADV_DATA_MAX];
+} gap_legacy_adv_set;
+
+static gap_legacy_adv_set gap_adv_sets[GAP_LEGACY_ADV_SET_COUNT];
+static uint8_t gap_adv_slot;
+static uint8_t gap_adv_next_set;
+#define gap_adv gap_adv_sets[gap_adv_slot]
+
 #endif
 
 // Filter policy is shared by legacy and extended advertising.
@@ -987,20 +1001,12 @@ static struct {
 
 static gap_address gap_own_address;
 
-// Legacy advertising payloads and the Central CONNECT_IND use this storage at
-// different times; the Central-only request member is absent in peripheral-only builds.
+// Central CONNECT_IND packet storage; absent in peripheral-only builds.
 static union {
-#if GAP_LEGACY_ADV_SUPPORT
-    struct {
-        uint8_t data[GAP_ADV_DATA_MAX];
-        uint8_t scan_response[GAP_ADV_DATA_MAX];
-    } advertising;
-#endif
-
 #if GAP_CENTRAL_SUPPORT
     uint8_t connect_request[36];
 #endif
-#if !GAP_CENTRAL_SUPPORT && !GAP_LEGACY_ADV_SUPPORT
+#if !GAP_CENTRAL_SUPPORT
     uint8_t unused;
 #endif
 
@@ -1061,7 +1067,8 @@ static inline void gap_bytes_reverse(
 // Return whether scanning, advertising, a connection, or initiation is active.
 static inline int gap_is_busy(void) {
 #if GAP_LEGACY_ADV_SUPPORT
-    if (gap_adv.enabled) return 1;
+    for (uint8_t i = 0; i < GAP_LEGACY_ADV_SET_COUNT; i++)
+        if (gap_adv_sets[i].enabled) return 1;
 #endif
 
 #if GAP_CENTRAL_SUPPORT
@@ -1842,9 +1849,6 @@ static int gap_conn_accept(
         gap_ext_adv[i].enabled = 0;
 #endif
 
-#if GAP_LEGACY_ADV_SUPPORT
-    gap_adv.enabled = 0;
-#endif
     gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(gap_conn_slot);
     return 1;
 }
@@ -1874,10 +1878,11 @@ int gap_adv_is_discoverable(void) {
 #endif
 
 #if GAP_LEGACY_ADV_SUPPORT
-    if (gap_adv.enabled) {
-        const uint8_t *data = adv_tx.advertising.data;
-        size_t len = gap_adv.data_len;
-
+    for (uint8_t i = 0; i < GAP_LEGACY_ADV_SET_COUNT; i++) {
+        if (!gap_adv_sets[i].enabled)
+            continue;
+        const uint8_t *data = gap_adv_sets[i].data;
+        size_t len = gap_adv_sets[i].data_len;
         for (size_t offset = 0; offset < len;) {
             if (gap_ad_parse_next(data, len, &offset, &type, &value, &value_len) <= 0)
                 break;

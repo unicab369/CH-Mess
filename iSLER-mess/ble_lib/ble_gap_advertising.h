@@ -468,26 +468,28 @@ static inline int gap_ad_data_valid(const uint8_t *data, size_t len) {
 
 #if GAP_LEGACY_ADV_SUPPORT
 static inline void gap_adv_enable(
-    uint8_t pdu_type, uint16_t interval_ms, int slot
+    gap_legacy_adv_set *advertiser,
+    uint8_t pdu_type, uint16_t interval_ms, int peer_slot
 ) {
-    gap_adv.pdu_type = pdu_type;
-    gap_adv.peer_slot = slot;
-    gap_adv.interval_ms = interval_ms;
-    gap_adv.next_event_ms = GET_MILLIS();
-    gap_local_addr_select(slot, gap_adv.local.address, &gap_adv.local.type);
-    gap_adv.enabled = 1;
+    advertiser->pdu_type = pdu_type;
+    advertiser->peer_slot = peer_slot;
+    advertiser->interval_ms = interval_ms;
+    advertiser->next_event_ms = GET_MILLIS();
+    gap_local_addr_select(peer_slot, advertiser->local.address, &advertiser->local.type);
+    advertiser->enabled = 1;
 }
 
-// Start legacy advertising by selecting its PDU type:
-//   gap_adv_start(ADV_NONCONN_IND, data, len, NULL, 0, interval_ms);
-//   gap_adv_start(ADV_SCAN_IND, data, len, scan_rsp, rsp_len, interval_ms);
-//   gap_adv_start(ADV_IND, data, len, scan_rsp, rsp_len, interval_ms);
+// Start one legacy advertising set by selecting its PDU type:
+//   gap_adv_start_set(id, ADV_NONCONN_IND, data, len, NULL, 0, interval_ms);
+//   gap_adv_start_set(id, ADV_SCAN_IND, data, len, scan_rsp, rsp_len, interval_ms);
+//   gap_adv_start_set(id, ADV_IND, data, len, scan_rsp, rsp_len, interval_ms);
 // ADV_NONCONN_IND is not connectable or scannable; ADV_SCAN_IND is scannable;
 // ADV_IND is connectable and scannable. ADV_SCAN_IND requires a scan response.
-static inline int gap_adv_start(
-    uint8_t pdu_type, const uint8_t *data, size_t data_len,
+int gap_adv_start_set(
+    uint8_t set_id, uint8_t pdu_type, const uint8_t *data, size_t data_len,
     const uint8_t *scan_response, size_t resp_len, uint16_t interval_ms
 ) {
+    if (set_id >= GAP_LEGACY_ADV_SET_COUNT) return 0;
 #if GAP_EXT_ADV_SUPPORT
     if (GAP_EXT_ADVERTISING_ENABLED) return 0;
 #endif
@@ -503,20 +505,24 @@ static inline int gap_adv_start(
         interval_ms > GAP_ADV_INTERVAL_MAX_MS
     ) return 0;
 
-    if (data_len) memcpy(adv_tx.advertising.data, data, data_len);
+    gap_legacy_adv_set *advertiser = &gap_adv_sets[set_id];
+    if (data_len) memcpy(advertiser->data, data, data_len);
     // Save the payload to send when this device receives a scan request.
-    if (resp_len) memcpy(adv_tx.advertising.scan_response, scan_response, resp_len);
-    gap_adv.target.type = 0;
-    gap_adv.data_len = (uint8_t)data_len;
-    gap_adv.scan_resp_len = (uint8_t)resp_len;
-    gap_adv_enable(pdu_type, interval_ms, -1);
+    if (resp_len) memcpy(advertiser->scan_response, scan_response, resp_len);
+    advertiser->target.type = 0;
+    advertiser->data_len = (uint8_t)data_len;
+    advertiser->scan_resp_len = (uint8_t)resp_len;
+    gap_adv_enable(advertiser, pdu_type, interval_ms, -1);
     return 1;
 }
 
 #if GAP_PERIPHERAL_SUPPORT
 // Application facing
-// Low duty cycle directed advertising to one peer; address bytes are PDU order.
-int gap_adv_start_directed(const gap_address *peer, uint16_t interval_ms) {
+// Start low duty cycle directed advertising on one set; address bytes are PDU order.
+int gap_adv_start_directed_set(
+    uint8_t set_id, const gap_address *peer, uint16_t interval_ms
+) {
+    if (set_id >= GAP_LEGACY_ADV_SET_COUNT || !peer) return 0;
 #if GAP_EXT_ADV_SUPPORT
     if (GAP_EXT_ADVERTISING_ENABLED) return 0;
 #endif
@@ -547,19 +553,24 @@ int gap_adv_start_directed(const gap_address *peer, uint16_t interval_ms) {
     }
 #endif
 
-    gap_adv.target.type = type;
-    memcpy(gap_adv.target.address, target, sizeof(target));
-    gap_adv.data_len = 0;
-    gap_adv.scan_resp_len = 0;
-    gap_adv_enable(ADV_DIRECT_IND, interval_ms, slot);
+    gap_legacy_adv_set *advertiser = &gap_adv_sets[set_id];
+    advertiser->target.type = type;
+    memcpy(advertiser->target.address, target, sizeof(target));
+    advertiser->data_len = 0;
+    advertiser->scan_resp_len = 0;
+    gap_adv_enable(advertiser, ADV_DIRECT_IND, interval_ms, slot);
     return 1;
 }
+
 #endif // GAP_PERIPHERAL_SUPPORT
 
 // Application facing
-void gap_adv_stop(void) {
-    gap_adv.enabled = 0;
+int gap_adv_stop_set(uint8_t set_id) {
+    if (set_id >= GAP_LEGACY_ADV_SET_COUNT) return 0;
+    gap_adv_sets[set_id].enabled = 0;
+    return 1;
 }
+
 #endif // GAP_LEGACY_ADV_SUPPORT
 
 // Application facing
@@ -644,7 +655,8 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     if (active_scan > 1) return 0;
 
 #if GAP_LEGACY_ADV_SUPPORT
-    if (gap_adv.enabled) return 0;
+    for (uint8_t i = 0; i < GAP_LEGACY_ADV_SET_COUNT; i++)
+        if (gap_adv_sets[i].enabled) return 0;
 #endif
 
     if (gap_conn_free_slot() < 0 || gap_scanner.scanning ||

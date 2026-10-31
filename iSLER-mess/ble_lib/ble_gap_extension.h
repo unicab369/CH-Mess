@@ -599,7 +599,8 @@ int gap_ext_adv_start_phy(
 #endif
 
 #if GAP_LEGACY_ADV_SUPPORT
-    if (gap_adv.enabled) return 0;
+    for (uint8_t i = 0; i < GAP_LEGACY_ADV_SET_COUNT; i++)
+        if (gap_adv_sets[i].enabled) return 0;
 #endif
 
     if (gap_conn_slot_mask != 0 || set->enabled ||

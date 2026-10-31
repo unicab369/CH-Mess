@@ -104,7 +104,7 @@ static struct {
     volatile uint8_t rx_event, scan_resp_started;
     volatile uint8_t conn_req_ready;
     volatile uint8_t phase;
-    uint8_t channel, send_gap;
+    uint8_t channel, send_gap, set_id;
     uint64_t deadline;
     uint8_t conn_req_frame[36];
     uint64_t conn_req_ticks;
@@ -595,16 +595,19 @@ static void gap_privacy_poll(uint32_t now) {
 #endif
 
 #if GAP_LEGACY_ADV_SUPPORT
-    if (gap_adv.enabled) {
-        gap_local_addr_select(gap_adv.peer_slot, gap_adv.local.address, &gap_adv.local.type);
+    for (uint8_t i = 0; i < GAP_LEGACY_ADV_SET_COUNT; i++) {
+        gap_legacy_adv_set *advertiser = &gap_adv_sets[i];
+        if (!advertiser->enabled)
+            continue;
+        int8_t slot = advertiser->peer_slot;
+        gap_local_addr_select(slot, advertiser->local.address, &advertiser->local.type);
 
 #if GAP_IDENTITY_COUNT > 0
-        if (gap_privacy.resolvable && gap_adv.peer_slot >= 0 &&
-            gap_identities[gap_adv.peer_slot].has_irk &&
-            gap_private_addr_generate(gap_identities[gap_adv.peer_slot].irk, address,
-                                          gap_adv.target.address)
+        if (gap_privacy.resolvable && slot >= 0 &&
+            gap_identities[slot].has_irk &&
+            gap_private_addr_generate(gap_identities[slot].irk, address, advertiser->target.address)
         ) {
-            memcpy(gap_adv.target.address, address, 6);
+            memcpy(advertiser->target.address, address, 6);
         }
 #endif
     }
