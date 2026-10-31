@@ -757,8 +757,9 @@ int gap_scan_poll(gap_scan_report *report) {
 
 // Keep the newest advertising observation when the application falls behind.
 static inline void gap_receive_report(
-    const uint8_t *frame, uint8_t payload_len, int8_t rssi
+    const uint8_t *frame, int8_t rssi
 ) {
+    uint8_t payload_len = frame[1];
     if (!gap_scanner.scanning || payload_len < 6 || payload_len > 37)
         return;
 
@@ -893,9 +894,7 @@ int gap_scan_take_ad(
     uint8_t *ad, size_t *len, int8_t *rssi
 ) {
     if (gap_scan.pending_adv.ready) {
-        gap_receive_report(gap_scan.pending_adv.frame,
-                            gap_scan.pending_adv.frame[1],
-                            gap_scan.pending_adv.rssi);
+        gap_receive_report(gap_scan.pending_adv.frame, gap_scan.pending_adv.rssi);
         gap_scan.pending_adv.ready = 0;
     }
 
@@ -909,7 +908,7 @@ int gap_scan_take_ad(
         gap_rx_armed = 0;
 
     gap_rx.ready = 0;
-    gap_receive_report(frame, payload_len, packet_rssi);
+    gap_receive_report(frame, packet_rssi);
 
     // ADV_NONCONN_IND contains AdvA (6 bytes) followed by AD structures.
     if ((frame[0] & 0x0f) != ADV_NONCONN_IND ||
