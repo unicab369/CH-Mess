@@ -551,10 +551,7 @@ typedef struct {
         uint8_t type;       // Address type used in the advertising PDU.
         uint8_t address[6]; // Device address in Bluetooth byte order.
     } local;                // Local advertiser address.
-    struct {
-        uint8_t type;       // Target address type for directed advertising.
-        uint8_t address[6]; // Target device address in Bluetooth byte order.
-    } target;
+    gap_address target; // Target address for directed advertising.
     int8_t peer_slot;          // Accepted peer's connection slot, or a negative value if none.
     uint16_t interval_ms;      // Time between advertising events, in milliseconds.
     uint32_t next_event_ms;    // Scheduled time of the next advertising event.

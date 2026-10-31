@@ -525,7 +525,7 @@ static void test_connect_request(void) {
 static void test_central_initiation_while_connectable_advertising(void) {
     static const uint8_t advertising_data[] = {2, 0x01, 0x06};
     static const uint8_t peer_address[6] = {0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6};
-    assert(gap_adv_start_set(0, ADV_IND, advertising_data,
+    assert(gap_adv_start(0, ADV_IND, advertising_data,
         sizeof(advertising_data), NULL, 0, 100));
     // The current GAP API serializes legacy advertising and direct initiation.
     assert(!gap_conn_start(test_address(peer_address, 0)));
@@ -630,7 +630,7 @@ static void test_private_rotation(void) {
     memcpy(first, gap_own_address.address, 6);
     assert((first[5] & 0xc0) == 0x40);
     assert(gap_resolve(test_address(first, 1), &identity));
-    assert(gap_adv_start_set(0, ADV_NONCONN_IND, NULL, 0, NULL, 0, 100));
+    assert(gap_adv_start(0, ADV_NONCONN_IND, NULL, 0, NULL, 0, 100));
     assert(!gap_privacy_configure(NULL, 0, 0));
     now_ms = 14999;
     random_seed++;
@@ -1050,7 +1050,7 @@ static void test_scanning_and_advertising_coexistence(void) {
     unsigned scan_before = scan_rx_count;
     unsigned tx_before = link_tx_count;
     assert(gap_scan_configure(20, 20, GAP_DISCOVERY_ALL, 0));
-    assert(gap_adv_start_set(0,
+    assert(gap_adv_start(0,
         ADV_NONCONN_IND, data, sizeof(data), NULL, 0, 100));
     gap_scan_start(0);
     gap_hw_scan_poll();
@@ -1085,7 +1085,7 @@ static void test_scanning_and_advertising_coexistence(void) {
     assert(gap_initiator.active && gap_scanner.scanning);
     gap_conn_cancel();
     static const uint8_t scan_response[] = {2, 0x0a, 0};
-    assert(gap_adv_start_set(0, ADV_IND, data, sizeof(data),
+    assert(gap_adv_start(0, ADV_IND, data, sizeof(data),
         scan_response, sizeof(scan_response), 100));
     assert(!gap_conn_start(test_address(peer, 0)));
     assert(gap_adv_sets[0].enabled && !gap_initiator.active &&
@@ -1113,7 +1113,7 @@ static void test_extended_advertising_transmit(void) {
     assert(gap_ext_adv_start_phy(
             0, data, sizeof(data), 4, 100, GAP_PHY_1M
         ));
-    assert(!gap_adv_start_set(0,
+    assert(!gap_adv_start(0,
         ADV_NONCONN_IND, data, sizeof(data), NULL, 0, 100));
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(captured_extended_count == 2);
@@ -2729,7 +2729,7 @@ static void test_peer_local_keys(void) {
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_identities[slot].local_address, 6) != 0);
 
-    assert(gap_adv_start_directed_set(0, test_address(test_identity, 0), 100));
+    assert(gap_adv_start_directed(0, test_address(test_identity, 0), 100));
     assert(gap_adv_sets[0].peer_slot == slot && gap_adv_sets[0].local.type == 1);
     gap_address_hash(local_irk, gap_adv_sets[0].local.address + 3, hash);
     assert(memcmp(hash, gap_adv_sets[0].local.address, 3) == 0);
@@ -2832,8 +2832,8 @@ static void test_nonresolvable_private_addresses(void) {
     assert((gap_own_address.address[5] & 0xc0) == 0);
     assert(aes_count == before);
     assert(!gap_resolve(test_address(gap_own_address.address, 1), &identity));
-    assert(!gap_adv_start_directed_set(0, test_address(test_identity, 0), 100));
-    assert(gap_adv_start_set(0, ADV_NONCONN_IND, NULL, 0, NULL, 0, 100));
+    assert(!gap_adv_start_directed(0, test_address(test_identity, 0), 100));
+    assert(gap_adv_start(0, ADV_NONCONN_IND, NULL, 0, NULL, 0, 100));
     memcpy(first, gap_own_address.address, 6);
     now_ms = gap_privacy_next_rotation_ms - 1;
     random_seed++;

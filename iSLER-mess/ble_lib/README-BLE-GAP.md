@@ -69,7 +69,7 @@ target hardware verification.
 | Feature | Status | Remaining work / notes |
 | --- | --- | --- |
 | Legacy advertising start/stop and interval configuration | [x] | Hardware TODO: Verify interval accuracy and channel rotation. |
-| Multiple legacy advertising sets | [x] (optional) | Configure `GAP_LEGACY_ADV_SET_COUNT` and use `gap_adv_start_set()`, `gap_adv_start_directed_set()`, and `gap_adv_stop_set()`. Due sets are transmitted round-robin. |
+| Multiple legacy advertising sets | [x] (optional) | Configure `GAP_LEGACY_ADV_SET_COUNT` and use `gap_adv_start()`, `gap_adv_start_directed()`, and `gap_adv_stop_set()`. Due sets are transmitted round-robin. |
 | Advertising data and scan response length/AD-structure validation | [x] | Hardware TODO: Verify payloads with independent scanners. |
 | Common AD structure builder/parser | [x] | `gap_ad_builder` builds flags, local names, 16/32/128-bit UUID lists, service data, and TX power; `gap_ad_parse_next()` validates and iterates structures. |
 | Single-set extended advertising with one auxiliary packet | [x] | Opt in with `GAP_EXT_ADV_SUPPORT=1`; `gap_ext_adv_start()` sends one primary `ADV_EXT_IND` and one `AUX_ADV_IND` carrying up to 243 bytes. Host tests inspect both PDUs and reassemble the report. Hardware TODO: verify AuxPtr timing and reception. |
