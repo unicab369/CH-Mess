@@ -1293,7 +1293,6 @@ void gap_hw_init(void) {
     adv_evt.rx_event = 0;
     adv_evt.scan_resp_started = 0;
     adv_evt.conn_req_ready = 0;
-    gap_adv_slot = 0;
     gap_adv_next_set = 0;
 #endif // GAP_LEGACY_ADV_SUPPORT
     gap_rx_armed = 0;
@@ -2153,7 +2152,7 @@ int gap_send_due(
 
 #if GAP_LEGACY_ADV_SUPPORT
     if (adv_evt.phase) {
-        gap_adv_slot = adv_evt.set_id;
+        gap_legacy_adv_set *advertiser = &gap_adv_sets[adv_evt.set_id];
 
 #if GAP_PERIPHERAL_SUPPORT
         // A connection request was received; stop advertising and set up the connection.
@@ -2167,7 +2166,7 @@ int gap_send_due(
             if (gap_conn_accept(adv_evt.conn_req_frame, adv_evt.conn_req_ticks,
                                 HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))) {
                 if (adv_evt.send_gap)
-                    gap_adv.enabled = 0;
+                    advertiser->enabled = 0;
 #if GAP_CENTRAL_SUPPORT
                 gap_initiator.active = 0;
                 gap_initiator.mode = GAP_CONN_MODE_DIRECT;
@@ -2253,7 +2252,7 @@ int gap_send_due(
         uint8_t event_jitter = GAP_RANDOM_BYTES((uint8_t *)&random, sizeof(random)) ?
                                random % 11 : 0;
         if (adv_evt.send_gap) {
-            gap_adv.next_event_ms = completed_at + gap_adv.interval_ms + event_jitter;
+            advertiser->next_event_ms = completed_at + advertiser->interval_ms + event_jitter;
             return 0;
         } else {
             if (sent_at) *sent_at = completed_at;
@@ -2297,8 +2296,10 @@ int gap_send_due(
     }
 
     int send_gap = selected_legacy_set >= 0;
+    gap_legacy_adv_set *advertiser = &gap_adv_sets[
+        send_gap ? (uint8_t)selected_legacy_set : 0
+    ];
     if (send_gap) {
-        gap_adv_slot = (uint8_t)selected_legacy_set;
         gap_adv_next_set = (uint8_t)((selected_legacy_set + 1) % GAP_LEGACY_ADV_SET_COUNT);
     }
     if (!send_gap && !fallback_ad)
@@ -2312,15 +2313,15 @@ int gap_send_due(
     uint8_t len = fallback_len;
 
     if (send_gap) {
-        data = gap_adv.data;
-        target_type = gap_adv.target.type;
-        pdu_type = gap_adv.pdu_type;
-        len = gap_adv.data_len;
+        data = advertiser->data;
+        target_type = advertiser->target.type;
+        pdu_type = advertiser->pdu_type;
+        len = advertiser->data_len;
     }
 
     if ((len && pdu_type == ADV_DIRECT_IND) ||
         (pdu_type > ADV_NONCONN_IND && pdu_type != ADV_SCAN_IND) ||
-        (pdu_type == ADV_SCAN_IND && !gap_adv.scan_resp_len) ||
+        (pdu_type == ADV_SCAN_IND && !advertiser->scan_resp_len) ||
         len > GAP_ADV_DATA_MAX
     ) return -1;
 
@@ -2333,16 +2334,16 @@ int gap_send_due(
     adv_evt.adv_frame[1] = 6 + len;
     RADIO_PUBLIC_ADDRESS(adv_evt.adv_frame + 2);
 
-    if (send_gap && gap_adv.local.type) {
+    if (send_gap && advertiser->local.type) {
         adv_evt.adv_frame[0] |= 0x40;
-        memcpy(adv_evt.adv_frame + 2, gap_adv.local.address, 6);
+        memcpy(adv_evt.adv_frame + 2, advertiser->local.address, 6);
     }
 
     if (pdu_type == ADV_DIRECT_IND) {
         if (target_type)
             adv_evt.adv_frame[0] |= 0x80;
         adv_evt.adv_frame[1] = 12;
-        memcpy(adv_evt.adv_frame + 8, gap_adv.target.address, 6);
+        memcpy(adv_evt.adv_frame + 8, advertiser->target.address, 6);
     }
     else if (len) {
         memcpy(adv_evt.adv_frame + 8, data, len);
@@ -2351,7 +2352,9 @@ int gap_send_due(
     uint8_t receive_after_tx = pdu_type != ADV_NONCONN_IND;
     adv_evt.channel = 37;
     adv_evt.send_gap = send_gap;
-    adv_evt.set_id = send_gap ? gap_adv_slot : 0;
+    adv_evt.set_id = 0;
+    if (send_gap)
+        adv_evt.set_id = (uint8_t)selected_legacy_set;
     adv_evt.rx_event = receive_after_tx;
     gap_rx.ready = 0;
     adv_evt.scan_resp_started = 0;

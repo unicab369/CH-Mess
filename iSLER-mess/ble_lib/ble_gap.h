@@ -567,9 +567,7 @@ typedef struct {
 } gap_legacy_adv_set;
 
 static gap_legacy_adv_set gap_adv_sets[GAP_LEGACY_ADV_SET_COUNT];
-static uint8_t gap_adv_slot;
 static uint8_t gap_adv_next_set;
-#define gap_adv gap_adv_sets[gap_adv_slot]
 
 #endif
 
