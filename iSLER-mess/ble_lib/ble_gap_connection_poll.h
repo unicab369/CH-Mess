@@ -337,7 +337,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             memcpy(gap_ext_scan.frame, frame, (size_t)frame[1] + 2);
             gap_ext_scan.rssi = RADIO_RSSI();
             gap_ext_scan.ticks = received_ticks;
-            gap_ext_scan.kind = GAP_EXT_ADV_AUXILIARY_PDU;
             gap_ext_scan.ready = 1;
             gap_ext_scan.request_phase = GAP_EXT_REQ_NONE;
         }
@@ -827,9 +826,8 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 
     if (periodic_scan && pdu_type == CONNECT_IND && frame[1] == 34 &&
         !gap_ext_scan.ready &&
-        gap_pawr_conn_req_start(gap_ext_scan.periodic_slot, frame, 36)
+        gap_pawr_conn_req_start(gap_ext_scan.slot, frame, 36)
     ) {
-        gap_ext_scan.kind = GAP_EXT_ADV_PERIODIC_PDU;
         gap_ext_scan.rssi = RADIO_RSSI();
         memcpy(gap_ext_scan.frame, frame, 36);
         gap_ext_scan.ticks = received_ticks;
@@ -900,8 +898,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         !gap_ext_scan.ready &&
         ((pdu_type == ADV_EXT_IND) || (pdu_type == CONNECT_IND && periodic_scan && frame[1] == 34))
     ) {
-        gap_ext_scan.kind = periodic_scan ? GAP_EXT_ADV_PERIODIC_PDU : aux_scan
-                                        ? GAP_EXT_ADV_AUXILIARY_PDU : GAP_EXT_ADV_PRIMARY_PDU;
 
         // Record this received AUX PDU's end time: an immediate AUX_SCAN_REQ
         // or AUX_CONNECT_REQ would need to start T_IFS after that on-air end.
@@ -1727,7 +1723,7 @@ void gap_hw_scan_poll(void) {
         if (phase == GAP_EXT_REQ_CONNECT_DONE) {
             gap_ext_scan.request_phase = GAP_EXT_REQ_NONE;
             RADIO_STOP();
-            gap_aux_request[gap_ext_scan.aux_slot].active = 0;
+            gap_aux_request[gap_ext_scan.slot].active = 0;
             gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
             uint8_t previous_slot = gap_conn_slot;
             if (gap_conn_accept(adv_tx.connect_request, gap_ext_scan.request_end_ticks,
@@ -1765,7 +1761,7 @@ void gap_hw_scan_poll(void) {
         else {
             gap_ext_scan.request_phase = GAP_EXT_REQ_NONE;
             RADIO_STOP();
-            gap_aux_request[gap_ext_scan.aux_slot].active = 0;
+            gap_aux_request[gap_ext_scan.slot].active = 0;
             gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
         }
     }
@@ -1795,7 +1791,7 @@ void gap_hw_scan_poll(void) {
         ) continue;
 
         if (gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC &&
-            gap_ext_scan.periodic_slot == i
+            gap_ext_scan.slot == i
         ) {
             RADIO_STOP();
             gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
@@ -1837,7 +1833,7 @@ void gap_hw_scan_poll(void) {
     uint64_t ticks = RADIO_TICKS();
 
     if (gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC) {
-        uint8_t slot = gap_ext_scan.periodic_slot;
+        uint8_t slot = gap_ext_scan.slot;
         if (ticks <= gap_syncs[slot].end_ticks)
             return;
 
@@ -1850,7 +1846,7 @@ void gap_hw_scan_poll(void) {
     }
 
     else if (gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX) {
-        uint8_t slot = gap_ext_scan.aux_slot;
+        uint8_t slot = gap_ext_scan.slot;
         gap_aux_request_context *request = &gap_aux_request[slot];
 
         if (ticks <= request->start_ticks + request->duration_ticks)
@@ -1923,8 +1919,7 @@ void gap_hw_scan_poll(void) {
                     gap_sync_context *sync = &gap_syncs[sync_slot];
 
                     if (gap_rx_armed) RADIO_STOP();
-                    gap_ext_scan.periodic_slot = (uint8_t)sync_slot;
-                    gap_ext_scan.kind = GAP_EXT_ADV_PERIODIC_PDU;
+                    gap_ext_scan.slot = (uint8_t)sync_slot;
                     uint8_t channel;
                     uint8_t phy = sync->phy;
 
@@ -1936,7 +1931,7 @@ void gap_hw_scan_poll(void) {
                         channel = gap_sync_channel(&sync->params, sync->event_counter ^
                                     (sync->pawr.timing.has_timing ? sync->pawr.subevent : 0));
                     }
-                    gap_ext_scan.periodic_rx_phy = phy;
+                    gap_ext_scan.rx_phy = phy;
 
                     // Set listener state before RX can trigger its interrupt.
                     gap_ext_scan.listen_state = GAP_EXT_SCAN_PERIODIC;
@@ -1955,11 +1950,11 @@ void gap_hw_scan_poll(void) {
             else if (ticks >= request->start_ticks) {
                 if (gap_rx_armed) RADIO_STOP();
 
-                gap_ext_scan.aux_slot = (uint8_t)slot;
-                gap_ext_scan.aux_rx_phy = request->phy;
+                gap_ext_scan.slot = (uint8_t)slot;
+                gap_ext_scan.rx_phy = request->phy;
                 gap_ext_scan.listen_state = GAP_EXT_SCAN_AUX;
 
-                RADIO_LINK_RX(BLE_ADV_ACCESS_ADDRESS, request->channel, gap_ext_scan.aux_rx_phy, 0x555555);
+                RADIO_LINK_RX(BLE_ADV_ACCESS_ADDRESS, request->channel, gap_ext_scan.rx_phy, 0x555555);
                 gap_rx_armed = 1;
                 return;
             }

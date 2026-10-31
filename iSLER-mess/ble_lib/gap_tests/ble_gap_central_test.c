@@ -720,18 +720,20 @@ static int test_ext_scan_receive(uint8_t kind, const uint8_t *pdu,
         return 0;
 
     memcpy(gap_ext_scan.frame, pdu, pdu_len);
-    gap_ext_scan.kind = kind;
+    gap_ext_scan.listen_state = kind == GAP_EXT_ADV_PERIODIC_PDU
+        ? GAP_EXT_SCAN_PERIODIC : kind == GAP_EXT_ADV_AUXILIARY_PDU
+        ? GAP_EXT_SCAN_AUX : GAP_EXT_SCAN_NONE;
     gap_ext_scan.rssi = rssi;
     gap_ext_scan.ticks = RADIO_TICKS();
     gap_ext_scan.ready = 1;
     gap_rx_armed = 1;
     if (kind == GAP_EXT_ADV_AUXILIARY_PDU) {
-        gap_ext_scan.aux_slot = gap_aux_request[0].active ? 0 : 1;
-        gap_ext_scan.aux_rx_phy = GAP_PHY_1M;
+        gap_ext_scan.slot = gap_aux_request[0].active ? 0 : 1;
+        gap_ext_scan.rx_phy = GAP_PHY_1M;
     }
     else if (kind == GAP_EXT_ADV_PERIODIC_PDU) {
-        gap_ext_scan.periodic_slot = 0;
-        gap_ext_scan.periodic_rx_phy = GAP_PHY_1M;
+        gap_ext_scan.slot = 0;
+        gap_ext_scan.rx_phy = GAP_PHY_1M;
     }
     uint8_t reports_before = gap_ext_idx.report_count;
     uint8_t had_context = 0;
@@ -765,8 +767,8 @@ static void test_extended_immediate_requests(void) {
     gap_ext_ctx[0].deadline_ms = GET_MILLIS() + 100;
     gap_aux_request[0].active = 1;
     gap_aux_request[0].channel = 5;
-    gap_ext_scan.aux_slot = 0;
-    gap_ext_scan.aux_rx_phy = GAP_PHY_1M;
+    gap_ext_scan.slot = 0;
+    gap_ext_scan.rx_phy = GAP_PHY_1M;
     gap_ext_scan.listen_state = GAP_EXT_SCAN_AUX;
     memcpy(rx_frame, aux, sizeof(aux));
     gap_hw_received();
@@ -792,8 +794,8 @@ static void test_extended_immediate_requests(void) {
     aux[2] = 0x49; // Connectable AUX_ADV_IND.
     gap_aux_request[0].active = 1;
     gap_aux_request[0].channel = 7;
-    gap_ext_scan.aux_slot = 0;
-    gap_ext_scan.aux_rx_phy = GAP_PHY_1M;
+    gap_ext_scan.slot = 0;
+    gap_ext_scan.rx_phy = GAP_PHY_1M;
     gap_ext_scan.listen_state = GAP_EXT_SCAN_AUX;
     memcpy(rx_frame, aux, sizeof(aux));
     gap_hw_received();
@@ -1763,7 +1765,7 @@ static void test_pawr_connection_accept(void) {
     fake_radio_tick_autoincrement = 1;
     memcpy(rx_frame, request, sizeof(request));
     gap_ext_scan.listen_state = GAP_EXT_SCAN_PERIODIC;
-    gap_ext_scan.periodic_slot = 0;
+    gap_ext_scan.slot = 0;
     gap_ext_scan.ready = 0;
     gap_rx_armed = 1;
     gap_hw_received();
@@ -1860,8 +1862,8 @@ static void test_pawr_observer_response(void) {
     fake_radio_tick_autoincrement = 1;
     uint64_t selected_subevent_start = sync->next_ticks;
     fake_radio_ticks = selected_subevent_start + 136;
-    gap_ext_scan.kind = GAP_EXT_ADV_PERIODIC_PDU;
-    gap_ext_scan.periodic_slot = 0;
+    gap_ext_scan.listen_state = GAP_EXT_SCAN_PERIODIC;
+    gap_ext_scan.slot = 0;
     gap_ext_scan.ticks = fake_radio_ticks;
     gap_ext_scan.rssi = -42;
     gap_ext_scan.ready = 1;
@@ -1895,8 +1897,8 @@ static void test_pawr_observer_response(void) {
     // Repeating mode sends the configured response at each selected subevent.
     memcpy(gap_ext_scan.frame, subevent_pdu, sizeof(subevent_pdu));
     fake_radio_ticks = sync->next_ticks + 136;
-    gap_ext_scan.kind = GAP_EXT_ADV_PERIODIC_PDU;
-    gap_ext_scan.periodic_slot = 0;
+    gap_ext_scan.listen_state = GAP_EXT_SCAN_PERIODIC;
+    gap_ext_scan.slot = 0;
     gap_ext_scan.ticks = fake_radio_ticks;
     gap_ext_scan.rssi = -42;
     gap_ext_scan.ready = 1;
@@ -1910,8 +1912,8 @@ static void test_pawr_observer_response(void) {
     assert(gap_sync_pawr_repeat(0, 0));
     memcpy(gap_ext_scan.frame, subevent_pdu, sizeof(subevent_pdu));
     fake_radio_ticks = sync->next_ticks + 136;
-    gap_ext_scan.kind = GAP_EXT_ADV_PERIODIC_PDU;
-    gap_ext_scan.periodic_slot = 0;
+    gap_ext_scan.listen_state = GAP_EXT_SCAN_PERIODIC;
+    gap_ext_scan.slot = 0;
     gap_ext_scan.ticks = fake_radio_ticks;
     gap_ext_scan.rssi = -42;
     gap_ext_scan.ready = 1;
@@ -1979,7 +1981,7 @@ static void test_periodic_advertising_sync(void) {
     sync_info_pdu[41] = 0x01;
     sync_info_pdu[42] = 0x06;
     memcpy(gap_ext_scan.frame, sync_info_pdu, sizeof(sync_info_pdu));
-    gap_ext_scan.kind = GAP_EXT_ADV_AUXILIARY_PDU;
+    gap_ext_scan.listen_state = GAP_EXT_SCAN_AUX;
     gap_ext_scan.ticks = fake_radio_ticks -
         HW_TICKS_FROM_US(160000); // SyncInfo is already more than six events old.
     gap_ext_scan.rssi = -35;
@@ -1996,7 +1998,7 @@ static void test_periodic_advertising_sync(void) {
                                &decoded_sync_info));
     sync_info_pdu[13] = 0;
     memcpy(gap_ext_scan.frame, sync_info_pdu, sizeof(sync_info_pdu));
-    gap_ext_scan.kind = GAP_EXT_ADV_AUXILIARY_PDU;
+    gap_ext_scan.listen_state = GAP_EXT_SCAN_AUX;
     gap_ext_scan.ticks = fake_radio_ticks;
     gap_ext_scan.rssi = -35;
     gap_ext_scan.ready = 1;
@@ -2068,7 +2070,7 @@ static void test_periodic_advertising_sync(void) {
     gap_hw_scan_poll();
     sync_info_pdu[11] = 0x70; // Same SyncInfo, now SID 7.
     memcpy(gap_ext_scan.frame, sync_info_pdu, sizeof(sync_info_pdu));
-    gap_ext_scan.kind = GAP_EXT_ADV_AUXILIARY_PDU;
+    gap_ext_scan.listen_state = GAP_EXT_SCAN_AUX;
     gap_ext_scan.ticks = fake_radio_ticks;
     gap_ext_scan.rssi = -35;
     gap_ext_scan.ready = 1;
@@ -3223,9 +3225,9 @@ static void test_periodic_sync_transfer_receive(void) {
 
     uint64_t first_event = gap_syncs[0].next_ticks;
     memcpy(gap_ext_scan.frame, first_periodic_event, sizeof(first_periodic_event));
-    gap_ext_scan.kind = GAP_EXT_ADV_PERIODIC_PDU;
-    gap_ext_scan.periodic_slot = 0;
-    gap_ext_scan.periodic_rx_phy = GAP_PHY_1M;
+    gap_ext_scan.listen_state = GAP_EXT_SCAN_PERIODIC;
+    gap_ext_scan.slot = 0;
+    gap_ext_scan.rx_phy = GAP_PHY_1M;
     gap_ext_scan.ticks = first_event + 152;
     gap_ext_scan.rssi = -40;
     gap_ext_scan.ready = 1;
