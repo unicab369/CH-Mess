@@ -39,10 +39,9 @@ enum {
 typedef struct {
     // Received advertising PDU and advertiser address.
     uint8_t pdu_type;
-    uint8_t has_target;
     gap_address address;          // On-air address; may also be the identity address.
     gap_address identity_address; // Resolved identity when known; otherwise on-air.
-    gap_address target_address;
+    gap_address target_address;   // Valid only for ADV_DIRECT_IND.
 
     // Received signal strength and AD payload.
     int8_t rssi;
@@ -871,13 +870,12 @@ static inline void gap_receive_report(
                            gap_scan.report_state.count) % GAP_SCAN_REPORT_COUNT;
     gap_scan_report *report = &gap_scan_reports[report_slot];
     report->pdu_type = pdu_type;
-    report->has_target = (pdu_type == ADV_DIRECT_IND);
     report->rssi = rssi;
     report->data_len = data_len;
     report->address = on_air_address;
     report->identity_address = identity;
 
-    if (report->has_target) {
+    if (pdu_type == ADV_DIRECT_IND) {
         report->target_address.type = (frame[0] >> 7) & 1;
         memcpy(report->target_address.address, frame + 8, 6);
     }
