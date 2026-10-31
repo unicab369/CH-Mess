@@ -1578,81 +1578,6 @@ static int gap_pawr_conn_req_finish(
 }
 #endif // GAP_PERIPHERAL_SUPPORT
 
-// Arm one PAwR AUX_CONNECT_REQ. Completion and response handling happen later
-// from polling so the caller can return while the radio exchange is active.
-#if GAP_CENTRAL_SUPPORT
-static int gap_pawr_exchange(
-    gap_extended_adv_set *set, uint8_t channel, uint64_t request_start_ticks
-) {
-    if (!set || !set->pawr_connect.pending ||
-        gap_ext_pawr.connect.phase != GAP_PAWR_CONNECT_IDLE ||
-        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        RADIO_DATA_MAX < 27
-    ) return 0;
-
-    uint8_t *request = adv_tx.connect_request;
-    uint8_t peer_type = set->pawr_connect.peer_type;
-    const uint8_t *peer_address = set->pawr_connect.peer_address;
-    uint8_t local_address[6], local_type, crc_init[3];
-
-    int peer_slot = gap_identity_find(peer_address, peer_type);
-    gap_local_addr_select(peer_slot, local_address, &local_type);
-
-    uint32_t access_address;
-    if (!gap_access_addr(&access_address)) {
-        set->pawr_connect.pending = 0;
-        return 0;
-    }
-
-    memset(request, 0, sizeof(adv_tx.connect_request));
-    request[0] = CONNECT_IND | (local_type << 6) | (peer_type << 7);
-    request[1] = 34;
-    memcpy(request + 2, local_address, 6);
-    memcpy(request + 8, peer_address, 6);
-    write_u32_le(request + 14, access_address);
-
-    if (!GAP_RANDOM_BYTES(crc_init, sizeof(crc_init))) {
-        set->pawr_connect.pending = 0;
-        return 0;
-    }
-    memcpy(request + 18, crc_init, sizeof(crc_init));
-
-    request[21] = 1;
-    write_u16_le(request + 24, gap_central_timing.interval);
-    write_u16_le(request + 26, gap_central_timing.latency);
-    write_u16_le(request + 28, gap_central_timing.supervision_timeout);
-    memset(request + 30, 0xff, 4);
-    request[34] = 0x1f;
-    request[35] = 5;
-
-    if (!gap_conn_request_valid(request)) {
-        set->pawr_connect.pending = 0;
-        return 0;
-    }
-
-    gap_ext_pawr.connect.response_ready = 0;
-    gap_ext_pawr.connect.request_end_ticks = 0;
-    gap_ext_pawr.connect.tx_end_valid = 0;
-    gap_ext_pawr.connect.set_id = (uint8_t)(set - gap_ext_adv);
-    gap_ext_pawr.connect.resp_deadline_ticks = request_start_ticks + HW_TICKS_FROM_US(1000);
-    gap_ext_pawr.connect.waiting = 1;
-    gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_TX_PENDING;
-    RADIO_TX_CLEAR_DONE();
-
-    if (!RADIO_LINK_TX_AT(request, request_start_ticks, set->periodic.params.access_address,
-                        channel, 1, set->aux_phy, set->aux_phy, set->periodic.params.crc_init)
-    ) {
-        gap_ext_pawr.connect.waiting = 0;
-        gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_IDLE;
-        set->pawr_connect.pending = 0;
-        RADIO_STOP();
-        return 0;
-    }
-    return 1;
-}
-
-#endif // GAP_CENTRAL_SUPPORT
-
 // -----------------------------------------------------------------------------
 // Extended and periodic advertising transmission
 // -----------------------------------------------------------------------------
@@ -1696,7 +1621,77 @@ static int gap_pawr_advertiser_poll(void) {
                 subevent == set->pawr_connect.subevent
             ) {
                 gap_ext_pawr.advertiser.phase = GAP_PAWR_ADV_IDLE;
-                if (gap_pawr_exchange(set, channel, tx_start_ticks)) return 1;
+                do {
+                    if (gap_ext_pawr.connect.phase != GAP_PAWR_CONNECT_IDLE ||
+                        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
+                        RADIO_DATA_MAX < 27
+                    ) break;
+
+                    uint8_t *request = adv_tx.connect_request;
+                    uint8_t peer_type = set->pawr_connect.peer_type;
+                    const uint8_t *peer_address = set->pawr_connect.peer_address;
+                    uint8_t local_address[6], local_type, crc_init[3];
+                    int peer_slot = gap_identity_find(peer_address, peer_type);
+                    gap_local_addr_select(peer_slot, local_address, &local_type);
+
+                    uint32_t access_address;
+                    if (!gap_access_addr(&access_address)) {
+                        set->pawr_connect.pending = 0;
+                        break;
+                    }
+
+                    memset(request, 0, sizeof(adv_tx.connect_request));
+                    request[0] = CONNECT_IND | (local_type << 6) | (peer_type << 7);
+                    request[1] = 34;
+                    memcpy(request + 2, local_address, 6);
+                    memcpy(request + 8, peer_address, 6);
+                    write_u32_le(request + 14, access_address);
+
+                    if (!GAP_RANDOM_BYTES(crc_init, sizeof(crc_init))) {
+                        set->pawr_connect.pending = 0;
+                        break;
+                    }
+                    memcpy(request + 18, crc_init, sizeof(crc_init));
+
+                    request[21] = 1;
+                    write_u16_le(request + 24, gap_central_timing.interval);
+                    write_u16_le(request + 26, gap_central_timing.latency);
+                    write_u16_le(request + 28, gap_central_timing.supervision_timeout);
+                    memset(request + 30, 0xff, 4);
+                    request[34] = 0x1f;
+                    request[35] = 5;
+
+                    if (!gap_conn_request_valid(request)) {
+                        set->pawr_connect.pending = 0;
+                        break;
+                    }
+
+                    gap_ext_pawr.connect.response_ready = 0;
+                    gap_ext_pawr.connect.request_end_ticks = 0;
+                    gap_ext_pawr.connect.tx_end_valid = 0;
+                    gap_ext_pawr.connect.set_id = (uint8_t)(set - gap_ext_adv);
+                    gap_ext_pawr.connect.resp_deadline_ticks =
+                        tx_start_ticks + HW_TICKS_FROM_US(1000);
+                    gap_ext_pawr.connect.waiting = 1;
+                    gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_TX_PENDING;
+                    RADIO_TX_CLEAR_DONE();
+
+                    if (!RADIO_LINK_TX_AT(request, tx_start_ticks,
+                                          set->periodic.params.access_address, channel,
+                                          1, set->aux_phy, set->aux_phy,
+                                          set->periodic.params.crc_init)
+                    ) {
+                        gap_ext_pawr.connect.waiting = 0;
+                        gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_IDLE;
+                        set->pawr_connect.pending = 0;
+                        RADIO_STOP();
+                        break;
+                    }
+                    // The connection request is armed; let its poll state own the radio.
+                    return 1;
+                } while (0);
+
+                // The connection request did not start; skip this subevent and resume advertising.
                 gap_ext_pawr.advertiser.subevent++;
                 gap_ext_pawr.advertiser.phase = GAP_PAWR_ADV_SEND;
                 continue;
