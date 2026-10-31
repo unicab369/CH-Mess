@@ -2043,23 +2043,20 @@ static void gap_ext_scan_process(void) {
     ) return;
 
     if (!sync->event_data_active) {
-        uint32_t airtime_us = gap_phy_airtime_us(pdu[1], packet_phy);
-        if (gap_ext_scan.ticks < HW_TICKS_FROM_US(airtime_us)) return;
+        uint64_t airtime_ticks = HW_TICKS_FROM_US(gap_phy_airtime_us(pdu[1], packet_phy));
+        if (gap_ext_scan.ticks < airtime_ticks) return;
+        uint64_t packet_start = gap_ext_scan.ticks - airtime_ticks;
 
-        uint64_t packet_start = gap_ext_scan.ticks - HW_TICKS_FROM_US(airtime_us);
-        uint32_t subevent_offset_us = (uint32_t)sync->pawr.subevent *
-                                      sync->pawr.timing.subevent_interval * 1250;
-        if (!sync->pawr.timing.has_timing)
-            subevent_offset_us = 0;
-
-        uint64_t offset_ticks = HW_TICKS_FROM_US(subevent_offset_us);
+        uint64_t offset_ticks = 0;
+        if (sync->pawr.timing.has_timing)
+            offset_ticks = HW_TICKS_FROM_US((uint32_t)sync->pawr.subevent *
+                                            sync->pawr.timing.subevent_interval * 1250);
         if (packet_start < offset_ticks) return;
 
         // Keep anchor_ticks at subevent zero so successive selected subevents
         // do not add the selection offset to the schedule a second time.
         sync->anchor_ticks = packet_start - offset_ticks;
-        sync->next_ticks = sync->anchor_ticks + HW_TICKS_FROM_US(
-                            (uint32_t)sync->params.interval * 1250 + subevent_offset_us);
+        sync->next_ticks = packet_start + HW_TICKS_FROM_US((uint32_t)sync->params.interval * 1250);
 
         sync->last_event_counter = sync->event_counter;
         sync->event_counter++;
@@ -2077,7 +2074,6 @@ static void gap_ext_scan_process(void) {
         }
     }
 
-    sync->rssi = gap_ext_scan.rssi;
     sync->phy = packet_phy;
 
     if (fields.payload.len) {
@@ -2136,6 +2132,7 @@ static void gap_ext_scan_process(void) {
         report->sid = sync->sid;
         report->event_counter = sync->last_event_counter;
         report->did = sync->did;
+        sync->rssi = gap_ext_scan.rssi;
         report->rssi = sync->rssi;
         report->data_len = sync->data_len;
 
