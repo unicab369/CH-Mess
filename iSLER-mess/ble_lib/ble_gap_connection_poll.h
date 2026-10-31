@@ -3,7 +3,7 @@
 #define GAP_CONNECTION_POLL_H
 
 #if GAP_EXT_ADV_SUPPORT
-#include "ble_gap_advertising_extended.h"
+#include "ble_gap_extended_advertising.h"
 #endif // GAP_EXT_ADV_SUPPORT
 
 // Stage the next queued LL control PDU for transmission, giving security priority.
