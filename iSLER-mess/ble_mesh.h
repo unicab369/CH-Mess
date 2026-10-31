@@ -353,7 +353,6 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
         return 1;
     }
 
-    if (connection_busy) return 0;
     uint32_t now = GET_MILLIS();
     const uint8_t mesh_ad_types[] = {
         MESH_PROV_AD_TYPE, MESH_BEACON_AD_TYPE, MESH_NETWORK_AD_TYPE
