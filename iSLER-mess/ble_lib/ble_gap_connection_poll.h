@@ -967,6 +967,8 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         // CONNECT_IND must start T_IFS after its on-air end, including CRC.
         // Directed advertising must target our current address or an RPA
         // generated with our IRK before we send CONNECT_IND.
+        uint8_t *request = adv_tx.connect_request;
+
         if (pdu_type == ADV_DIRECT_IND) {
             if (frame[1] != 12) {
                 gap_conn_slot = previous_slot;
@@ -976,8 +978,8 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             uint8_t target_type = (frame[0] >> 7) & 1;
             int target_matches = 0;
 
-            if (target_type == ((adv_tx.connect_request[0] >> 6) & 1))
-                target_matches = memcmp(frame + 8, adv_tx.connect_request + 2, 6) == 0;
+            if (target_type == ((request[0] >> 6) & 1))
+                target_matches = memcmp(frame + 8, request + 2, 6) == 0;
 
 #if GAP_PRIVACY_SUPPORT
             if ((frame[13] & 0xc0) == 0x40 &&
@@ -1007,14 +1009,13 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             }
         }
 
-        adv_tx.connect_request[0] = (adv_tx.connect_request[0] & 0x7f) | (frame[0] & 0x40) << 1;
-        memcpy(adv_tx.connect_request + 8, frame + 2, 6);
+        request[0] = (request[0] & 0x7f) | (frame[0] & 0x40) << 1;
+        memcpy(request + 8, frame + 2, 6);
         uint8_t channel = 37 + gap_scan.channel_index;
         RADIO_STOP();
         gap_rx_armed = 0;
 
-        if (RADIO_CONNECT_TX_TIMER_ARM(adv_tx.connect_request,
-                                        sizeof(adv_tx.connect_request), channel)) {
+        if (RADIO_CONNECT_TX_TIMER_ARM(request, sizeof(adv_tx.connect_request), channel)) {
             gap_connect_tx.peer_slot = peer_slot;
             gap_connect_tx.advertiser_type = advertiser_type;
             gap_connect_tx.deadline_ms = GET_MILLIS() + 5;
@@ -1720,6 +1721,7 @@ void gap_hw_scan_poll(void) {
 #if GAP_EXT_ADV_SUPPORT
     if (gap_ext_scan.request_phase != GAP_EXT_REQ_NONE) {
         uint8_t phase = gap_ext_scan.request_phase;
+
 #if GAP_CENTRAL_SUPPORT
         if (phase == GAP_EXT_REQ_CONNECT_DONE) {
             gap_ext_scan.request_phase = GAP_EXT_REQ_NONE;
@@ -1727,24 +1729,28 @@ void gap_hw_scan_poll(void) {
             gap_aux_request[gap_ext_scan.slot].active = 0;
             gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
             uint8_t previous_slot = gap_conn_slot;
-            if (gap_conn_accept(adv_tx.connect_request, gap_ext_scan.request_end_ticks,
+            const uint8_t *request = adv_tx.connect_request;
+
+            if (gap_conn_accept(request, gap_ext_scan.request_end_ticks,
                                 HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(2500))
             ) {
+                uint8_t peer_type = (request[0] >> 7) & 1;
                 gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
                 conn->is_central = 1;
                 conn->central.central_anchor_set = 0;
                 conn->link_layer.peer_sca_ppm = 500;
+
 #if GAP_IDENTITY_COUNT > 0
-                int peer_slot = gap_identity_find(adv_tx.connect_request + 8,
-                                                  (adv_tx.connect_request[0] >> 7) & 1);
+                int peer_slot = gap_identity_find(request + 8, peer_type);
                 if (peer_slot >= 0)
                     conn->peer = gap_identities[peer_slot].peer;
                 else
 #endif
                 {
-                    conn->peer.type = (adv_tx.connect_request[0] >> 7) & 1;
-                    memcpy(conn->peer.address, adv_tx.connect_request + 8, 6);
+                    conn->peer.type = peer_type;
+                    memcpy(conn->peer.address, request + 8, 6);
                 }
+
                 gap_initiator.active = 0;
                 gap_initiator.mode = GAP_CONN_MODE_DIRECT;
                 gap_scanner.scanning = 0;

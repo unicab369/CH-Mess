@@ -188,7 +188,9 @@ static struct {
 #if GAP_PERIPHERAL_SUPPORT
 static struct {
     volatile uint8_t waiting, response_started;
-    uint8_t address_type, phy, address[6], request[36];
+    uint8_t phy;
+    gap_address peer;
+    uint8_t request[36];
     uint64_t request_ticks;
 } gap_ext_adv_connect;
 #endif
@@ -3081,9 +3083,9 @@ static int gap_ext_send_due(uint32_t now) {
             memcpy(frame + 4, address, 6);
             write_u16_le(frame + 10, adi);
 
-            gap_ext_adv_connect.address_type = address_type;
+            gap_ext_adv_connect.peer.type = address_type;
+            memcpy(gap_ext_adv_connect.peer.address, address, sizeof(gap_ext_adv_connect.peer.address));
             gap_ext_adv_connect.phy = set->aux_phy;
-            memcpy(gap_ext_adv_connect.address, address, 6);
             gap_ext_adv_connect.response_started = 0;
             gap_ext_adv_connect.waiting = 1;
             gap_ext_aux_primary_start((uint8_t)send_extended, address, address_type, adi);
@@ -3104,6 +3106,7 @@ static int gap_ext_send_due(uint32_t now) {
 
         uint8_t ext_len = 9;
         uint8_t ext_flags = 0x09;
+
         if (set->periodic.enabled) {
             ext_len += 18;
             ext_flags |= 0x20;
