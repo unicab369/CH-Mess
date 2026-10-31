@@ -2,8 +2,6 @@
 #ifndef BLE_GAP_EXTENSION_H
 #define BLE_GAP_EXTENSION_H
 
-#if GAP_EXT_ADV_SUPPORT
-
 enum {
     GAP_EXT_ADV_PRIMARY_PDU = 0,
     GAP_EXT_ADV_AUXILIARY_PDU = 1,
@@ -154,6 +152,7 @@ static struct {
 static GAP_RADIO_BUFFER_ATTR uint8_t gap_ext_primary_frame[9];
 static GAP_RADIO_BUFFER_ATTR uint8_t gap_ext_adv_frame[255];
 static GAP_RADIO_BUFFER_ATTR uint8_t gap_ext_aux_frame[255];
+
 static volatile struct {
     uint8_t active, failed, set_id, channel;
     uint16_t offset, adi;
@@ -163,6 +162,7 @@ enum {
     GAP_EXT_AUX_IDLE, GAP_EXT_AUX_PRIMARY, GAP_EXT_AUX_PENDING,
     GAP_EXT_AUX_SCAN_WINDOW, GAP_EXT_AUX_CONNECT_WINDOW, GAP_EXT_AUX_FAILED
 };
+
 static struct {
     volatile uint8_t phase;
     uint8_t set_id, address_type, address[6];
@@ -177,11 +177,13 @@ static struct {
     uint8_t address_type, channel, set_id;
     uint64_t pdu_start;
 } gap_ext_chain;
+
 static struct {
     volatile uint8_t waiting, response_started;
     uint8_t address_type, address[6];
     uint64_t response_ticks;
 } gap_ext_adv_scan;
+
 #if GAP_PERIPHERAL_SUPPORT
 static struct {
     volatile uint8_t waiting, response_started;
@@ -2164,10 +2166,8 @@ static void gap_ext_scan_process(void) {
 
             uint8_t response_channel = gap_sync_channel(&sync->params,
                             (uint16_t)(sync->last_event_counter ^ sync->pawr.subevent));
-            if (RADIO_LINK_TX_AT(response, response_start,
-                                 sync->pawr.timing.resp_access_addr,
-                                 response_channel, 0, sync->phy, sync->phy,
-                                 sync->params.crc_init)
+            if (RADIO_LINK_TX_AT(response, response_start, sync->pawr.timing.resp_access_addr,
+                                 response_channel, 0, sync->phy, sync->phy, sync->params.crc_init)
             ) {
                 gap_ext_scan.pawr_response_deadline = response_start + HW_TICKS_FROM_US(1000);
                 gap_ext_scan.pawr_response_tx_pending = 1;
@@ -3100,6 +3100,4 @@ static int gap_ext_send_due(uint32_t now) {
     gap_ext_adv_event_reschedule((uint8_t)send_extended);
     return 1;
 }
-#endif // GAP_EXT_ADV_SUPPORT
-
 #endif // BLE_GAP_EXTENSION_H

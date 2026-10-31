@@ -2,7 +2,9 @@
 #ifndef GAP_CONNECTION_POLL_H
 #define GAP_CONNECTION_POLL_H
 
+#if GAP_EXT_ADV_SUPPORT
 #include "ble_gap_extension.h"
+#endif // GAP_EXT_ADV_SUPPORT
 
 // Stage the next queued LL control PDU for transmission, giving security priority.
 static void gap_conn_send_queued(void) {
