@@ -498,11 +498,6 @@ typedef struct {
     uint16_t instant;         // Event counter when this schedule becomes active.
 } gap_conn_schedule;
 
-typedef struct {
-    uint8_t slot;        // Index of the connection in the context table.
-    uint16_t generation; // Slot generation; rejects handles left over from a prior link.
-} gap_conn_ref;
-
 #if GAP_SECURITY_SUPPORT >= 1
 // Encryption procedure state; timed phases occupy the low nine bits.
 enum {
@@ -1135,30 +1130,6 @@ static inline uint8_t gap_conn_count(void) {
         count += (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)) != 0;
     return count;
 }
-
-// Application-facing
-// Select a live link for the existing connection-specific GAP operations.
-static inline int gap_conn_select(gap_conn_ref conn_ref) {
-    if (conn_ref.slot >= GAP_CONNECTION_COUNT || !conn_ref.generation ||
-        !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(conn_ref.slot)) ||
-        gap_conn_generations[conn_ref.slot] != conn_ref.generation
-    ) return 0;
-
-    gap_conn_slot = conn_ref.slot;
-    return 1;
-}
-
-// Application-facing
-// Capture the currently selected link's reference for later API calls.
-static inline int gap_conn_current(gap_conn_ref *conn_ref) {
-    if (!conn_ref || !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
-        return 0;
-
-    conn_ref->slot = gap_conn_slot;
-    conn_ref->generation = gap_conn_generations[gap_conn_slot];
-    return conn_ref->generation != 0;
-}
-
 
 // Connection request validation and byte/security helpers.
 // Validate a data-channel access address against the Bluetooth Core rules.
@@ -1886,6 +1857,11 @@ int gap_adv_is_discoverable(void) {
 // L2CAP adapter types and operations.
 
 typedef struct {
+    uint8_t slot;        // Index of the connection in the context table.
+    uint16_t generation; // Slot generation; rejects stale references after slot reuse.
+} gap_conn_ref;
+
+typedef struct {
     gap_conn_ref conn_ref;
     l2cap_connection *connection;
     l2cap_reassembler reassembler;
@@ -1895,6 +1871,45 @@ typedef struct {
 } gap_l2cap_peer;
 
 static gap_l2cap_peer gap_l2cap_peers[GAP_CONNECTION_COUNT];
+
+// Application-facing
+// Select a live link for the existing connection-specific GAP operations.
+static inline int gap_conn_select(gap_conn_ref conn_ref) {
+    if (conn_ref.slot >= GAP_CONNECTION_COUNT || !conn_ref.generation ||
+        !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(conn_ref.slot)) ||
+        gap_conn_generations[conn_ref.slot] != conn_ref.generation
+    ) return 0;
+
+    gap_conn_slot = conn_ref.slot;
+    return 1;
+}
+
+// Application-facing
+// Capture the currently selected link's reference for later API calls.
+static inline int gap_conn_current(gap_conn_ref *conn_ref) {
+    if (!conn_ref || !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
+        return 0;
+
+    conn_ref->slot = gap_conn_slot;
+    conn_ref->generation = gap_conn_generations[gap_conn_slot];
+    return conn_ref->generation != 0;
+}
+
+// Application-facing
+// Return a live connection's L2CAP instance to inspect channels/read SDUs,
+// accept/reject a pending peer parameter request, or configure per-link limits
+// and starting credits before opening credit-based channels.
+static inline l2cap_connection *ble_gap_l2cap(gap_conn_ref conn_ref) {
+    if (conn_ref.slot >= GAP_CONNECTION_COUNT)
+        return NULL;
+
+    if (!conn_ref.generation ||
+        !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(conn_ref.slot)) ||
+        gap_conn_generations[conn_ref.slot] != conn_ref.generation
+    ) return NULL;
+
+    return &gap_conn_ctx[conn_ref.slot].l2cap;
+}
 
 // Application-facing. Install shared accept/configure callbacks before polling;
 // pass NULL to use the default behavior. Each GAP link retains its own
@@ -2049,24 +2064,6 @@ static inline int ble_gap_l2cap_poll(void) {
     }
 
     return work;
-}
-
-// Application-facing
-// Return a live connection's L2CAP instance to inspect channels/read SDUs,
-// accept/reject a pending peer parameter request, or configure per-link limits
-// and starting credits before opening credit-based channels.
-static inline l2cap_connection *ble_gap_l2cap_for(
-    gap_conn_ref conn_ref
-) {
-    if (conn_ref.slot >= GAP_CONNECTION_COUNT)
-        return NULL;
-
-    if (!conn_ref.generation ||
-        !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(conn_ref.slot)) ||
-        gap_conn_generations[conn_ref.slot] != conn_ref.generation
-    ) return NULL;
-
-    return &gap_conn_ctx[conn_ref.slot].l2cap;
 }
 
 #endif // GAP_H

@@ -964,7 +964,8 @@ static inline void l2cap_conn_reset(l2cap_connection *conn, int reason) {
     conn->pending_count = 0;
     conn->pending_code = 0;
     conn->pending_deadline_ms = 0;
-    conn->periph_update_pending = conn->periph_update_id = 0;
+    conn->periph_update_pending = 0;
+    conn->periph_update_id = 0;
     conn->periph_update_due_ms = 0;
 }
 
