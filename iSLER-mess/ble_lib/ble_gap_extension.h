@@ -3015,17 +3015,20 @@ static int gap_ext_send_due(uint32_t now) {
     uint8_t *primary = gap_ext_primary_frame;
     uint8_t *frame = gap_ext_aux_frame;
 
+    if (!resume_aux) {
+        primary[0] = adv_header;
+        primary[1] = 7;
+        primary[2] = 6; // ExtHdrLen=6; mode bits are set below.
+        primary[3] = 0x18; // ADI and AuxPtr.
+        write_u16_le(primary + 4, adi);
+        gap_aux_ptr_write(primary + 6, 0, 480, set->aux_phy);
+    }
+
     if (set->scannable) {
         // Scannable extended events carry no AdvData in AUX_ADV_IND. The data
         // is sent in AUX_SCAN_RSP after a scanner requests it.
         if (!resume_aux) {
-            primary[0] = adv_header;
-            primary[1] = 7;
-            primary[2] = 0x86; // AdvMode=scannable, ExtHdrLen=6.
-            primary[3] = 0x18; // ADI and AuxPtr.
-            write_u16_le(primary + 4, adi);
-            gap_aux_ptr_write(primary + 6, 0, 480, set->aux_phy);
-
+            primary[2] |= 0x80; // AdvMode=scannable.
             frame[0] = adv_header;
             frame[1] = 10;
             frame[2] = 0x89; // AdvMode=scannable, ExtHdrLen=9.
@@ -3069,13 +3072,7 @@ static int gap_ext_send_due(uint32_t now) {
 #if GAP_PERIPHERAL_SUPPORT
     else if (set->connectable) {
         if (!resume_aux) {
-            primary[0] = adv_header;
-            primary[1] = 7;
-            primary[2] = 0x46; // Connectable, ADI and AuxPtr.
-            primary[3] = 0x18;
-            write_u16_le(primary + 4, adi);
-            gap_aux_ptr_write(primary + 6, 0, 480, set->aux_phy);
-
+            primary[2] |= 0x40; // AdvMode=connectable.
             frame[0] = adv_header;
             frame[1] = 10;
             frame[2] = 0x49; // Connectable AUX_ADV_IND, AdvA and ADI.
@@ -3096,14 +3093,7 @@ static int gap_ext_send_due(uint32_t now) {
     }
 #endif
     else {
-        // ADV_EXT_IND carries the ADI and points to AUX_ADV_IND at 480 us.
-        primary[0] = adv_header;
-        primary[1] = 7;
-        primary[2] = 6; // AdvMode=non-connectable, ExtHdrLen=6.
-        primary[3] = 0x18; // ADI and AuxPtr.
-        write_u16_le(primary + 4, adi);
-        gap_aux_ptr_write(primary + 6, 0, 480, set->aux_phy);
-
+        // ADV_EXT_IND points to AUX_ADV_IND at 480 us.
         uint8_t ext_len = 9;
         uint8_t ext_flags = 0x09;
 
