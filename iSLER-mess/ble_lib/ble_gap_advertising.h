@@ -78,7 +78,8 @@ static struct {
     gap_report_state report_state;
     gap_address response_peer; // Encoded type: 0=none, 1=public, 2=random.
 
-    // Advertisement held until its active-scan SCAN_REQ exchange is handled.
+    // Active-scanner copy of the advertisement received over the air
+    // kept while waiting for SCAN_RSP.
     struct {
         uint8_t frame[2 + 37];
         volatile uint8_t ready;
@@ -898,16 +899,16 @@ int gap_scan_take_ad(
         gap_scan.pending_adv.ready = 0;
     }
 
-    if (!gap_rx.ready) return 0;
+    if (!gap_rx_packet.ready) return 0;
 
-    const uint8_t *frame = gap_rx.frame;
+    const uint8_t *frame = gap_rx_packet.frame;
+    int8_t packet_rssi = gap_rx_packet.rssi;
     uint8_t payload_len = frame[1];
-    int8_t packet_rssi = gap_rx.rssi;
 
     if (!gap_scan.active_address.type)
         gap_rx_armed = 0;
 
-    gap_rx.ready = 0;
+    gap_rx_packet.ready = 0;
     gap_receive_report(frame, packet_rssi);
 
     // ADV_NONCONN_IND contains AdvA (6 bytes) followed by AD structures.

@@ -1049,7 +1049,8 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 
             // This received advertisement is the previous packet on air.
             // SCAN_REQ must start T_IFS after its on-air end, including CRC.
-            // Preserve the advertisement while sending SCAN_REQ promptly.
+            // Copy the received advertisement before sending SCAN_REQ; it must
+            // remain available while waiting for SCAN_RSP.
             memcpy(gap_scan.pending_adv.frame, frame, (size_t)frame[1] + 2);
             memcpy(gap_scan.active_address.address, frame + 2, 6);
 
@@ -1078,10 +1079,10 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             (((frame[0] >> 6) & 1) + 1) == gap_scan.active_address.type &&
             memcmp(frame + 2, gap_scan.active_address.address, 6) == 0
         ) {
-            memcpy(gap_rx.frame, frame, (size_t)frame[1] + 2);
-            gap_rx.rssi = RADIO_RSSI();
+            memcpy(gap_rx_packet.frame, frame, (size_t)frame[1] + 2);
+            gap_rx_packet.rssi = RADIO_RSSI();
             gap_scan.active_address.type = 0;
-            gap_rx.ready = 1;
+            gap_rx_packet.ready = 1;
             gap_conn_slot = previous_slot;
             return;
         }
@@ -1147,9 +1148,9 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     }
 #endif // GAP_LEGACY_ADV_SET_COUNT > 0
 
-    memcpy(gap_rx.frame, frame, (size_t)frame[1] + 2);
-    gap_rx.rssi = RADIO_RSSI();
-    gap_rx.ready = 1;
+    memcpy(gap_rx_packet.frame, frame, (size_t)frame[1] + 2);
+    gap_rx_packet.rssi = RADIO_RSSI();
+    gap_rx_packet.ready = 1;
     gap_conn_slot = previous_slot;
 }
 
@@ -1188,8 +1189,8 @@ void gap_hw_init(void) {
     gap_scanner.generation - 1;
     gap_scan.interval_start_ms = 0;
     gap_scan.active_address.type = 0;
-    gap_rx.ready = 0;
-    gap_rx.rssi = 127;
+    gap_rx_packet.ready = 0;
+    gap_rx_packet.rssi = 127;
     gap_scan.pending_adv.ready = 0;
 }
 
@@ -1702,7 +1703,7 @@ void gap_hw_scan_poll(void) {
             gap_scanner.scanning = 0;
             gap_scanner.active = 0;
             gap_scanner.generation++;
-            gap_rx.ready = 0;
+            gap_rx_packet.ready = 0;
             gap_conn_slot = previous_slot;
             return;
         }
@@ -2060,7 +2061,7 @@ int gap_send_due(
                 gap_initiator.active = 0;
                 gap_initiator.mode = GAP_CONN_MODE_DIRECT;
 #endif
-                gap_rx.ready = 0;
+                gap_rx_packet.ready = 0;
                 gap_scan.pending_adv.ready = 0;
                 gap_scan.active_address.type = 0;
                 gap_rx_armed = 0;
@@ -2100,7 +2101,7 @@ int gap_send_due(
                 adv_evt.phase = GAP_LEGACY_ADV_SCAN_RESPONSE_TX;
                 adv_evt.deadline = RADIO_TICKS() + HW_TICKS_FROM_US(1000);
             }
-            else if (gap_rx.ready)
+            else if (gap_rx_packet.ready)
                 adv_evt.channel = 39;
             else if (RADIO_TICKS() < adv_evt.deadline)
                 return 0;
@@ -2122,7 +2123,7 @@ int gap_send_due(
 
         if (adv_evt.channel < 39) {
             adv_evt.channel++;
-            gap_rx.ready = 0;
+            gap_rx_packet.ready = 0;
             adv_evt.scan_resp_started = 0;
             adv_evt.conn_req_ready = 0;
 
@@ -2245,7 +2246,7 @@ int gap_send_due(
     if (send_gap)
         adv_evt.set_id = (uint8_t)selected_legacy_set;
     adv_evt.rx_event = receive_after_tx;
-    gap_rx.ready = 0;
+    gap_rx_packet.ready = 0;
     adv_evt.scan_resp_started = 0;
     adv_evt.conn_req_ready = 0;
 

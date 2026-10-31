@@ -2420,7 +2420,7 @@ static void test_radio_privacy_filter(void) {
     assert(link_tx_count == before && !adv_evt.scan_resp_started);
 
     memcpy(rx_frame + 2, test_rpa, 6);
-    gap_rx.ready = 0;
+    gap_rx_packet.ready = 0;
     gap_hw_received();
     assert(link_tx_count == before + 1 && adv_evt.scan_resp_started);
     adv_evt.scan_resp_started = 0;

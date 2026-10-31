@@ -76,7 +76,7 @@ Array totals use the default counts shown in the configuration column.
 | `gap_scan_reports` | Queue of parsed legacy advertising reports. | 228 bytes | 4 reports × 57 bytes each |
 | `gap_scan_seen` | Cache for duplicate filtering and scan-response matching. | 7 bytes | 1 entry × 7 bytes |
 | `gap_scan` | Scan scheduling, request state, report queue, and deferred advertisement. | 84 bytes | One global state |
-| `gap_rx` | Shared received Link Layer packet and RSSI. | 41 bytes | One global buffer |
+| `gap_rx_packet` | Shared received Link Layer packet and RSSI. | 41 bytes | One global buffer |
 | `gap_identities` | Configured peer identities and privacy/filter policy. | 200 bytes | 4 identities |
 | `gap_accept_list` | Controller accept-list addresses and per-entry used flags. | 32 bytes | 4 entries × 8 bytes |
 
