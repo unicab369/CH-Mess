@@ -2672,12 +2672,10 @@ static int gap_ext_send_due(uint32_t now) {
         }
         return 1;
     }
-#if GAP_CENTRAL_SUPPORT || GAP_PERIPHERAL_SUPPORT
     if (gap_ext_pawr.advertiser.phase != GAP_PAWR_ADV_IDLE) {
         (void)gap_pawr_advertiser_poll();
         return 1;
     }
-#endif
     if (gap_ext_chain.phase != GAP_EXT_CHAIN_IDLE) {
         if (!RADIO_TX_DONE()) {
             if (RADIO_TICKS() < gap_ext_chain.pdu_start + HW_TICKS_FROM_US(1000))
