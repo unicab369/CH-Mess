@@ -2149,8 +2149,14 @@ static void test_periodic_sync_connection_arbitration(void) {
     gap_scan.applied_generation = gap_scanner.generation;
     gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(gap_conn_slot);
     conn->schedule.interval_125us = 240;
+    conn->schedule.timeout_10ms = 100;
     radio_data_max = 27;
     conn->link_layer.last_rx_ms = now_ms;
+    conn->link_layer.hop = 5;
+    conn->link_layer.used_count = 37;
+    memset(conn->link_layer.channel_map, 0xff, sizeof(conn->link_layer.channel_map));
+    conn->link_layer.channel_map[4] = 0x1f;
+    conn->phy_state.current.tx = conn->phy_state.current.rx = GAP_PHY_1M;
     conn->link_layer.next_ticks = fake_radio_ticks + HW_TICKS_FROM_US(20000);
 
     gap_sync_context *sync = &gap_syncs[0];
@@ -2174,11 +2180,16 @@ static void test_periodic_sync_connection_arbitration(void) {
     assert(gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC);
 
     // A connection event preempts that listener and records the missed event.
-    gap_connection_take_radio();
-    assert(gap_ext_scan.listen_state == GAP_EXT_SCAN_NONE && !gap_rx_armed &&
+    conn->link_layer.next_ticks = fake_radio_ticks;
+    gap_conn_poll();
+    assert(gap_ext_scan.listen_state == GAP_EXT_SCAN_NONE && gap_rx_armed &&
            sync->missed_events == 1 && sync->event_counter == 4);
 
     // A window intersecting the guarded connection event is skipped up front.
+    RADIO_STOP();
+    gap_rx_armed = 0;
+    conn->link_state.rx_armed = 0;
+    gap_poll.slot_valid = 0;
     sync->next_ticks = fake_radio_ticks + HW_TICKS_FROM_US(1000);
     sync->window_active = 0;
     conn->link_layer.next_ticks = fake_radio_ticks + HW_TICKS_FROM_US(2200);

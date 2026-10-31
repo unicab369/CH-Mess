@@ -1478,7 +1478,26 @@ static void gap_conn_poll(void) {
 #if GAP_EXT_ADV_SUPPORT
     // A connection event owns the single radio once its receive window opens.
     // Yield any periodic sync receive window before configuring the data channel.
-    gap_connection_take_radio();
+    if (gap_ext_scan.listen_state != GAP_EXT_SCAN_NONE) {
+        if (gap_rx_armed) RADIO_STOP();
+        gap_rx_armed = 0;
+
+        if (gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC) {
+            uint8_t slot = gap_ext_scan.slot;
+            gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
+
+            if (slot < GAP_PERIODIC_SYNC_COUNT && gap_syncs[slot].used &&
+                gap_syncs[slot].window_active
+            ) gap_sync_window_missed(slot);
+        }
+        else if (gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX) {
+            uint8_t slot = gap_ext_scan.slot;
+            gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
+
+            if (slot < GAP_EXT_ADV_CONTEXT_COUNT)
+                gap_aux_request[slot].active = 0;
+        }
+    }
 #endif // GAP_EXT_ADV_SUPPORT
 
     // Scanning and advertising share this radio with connection events.

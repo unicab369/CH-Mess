@@ -2539,32 +2539,6 @@ static void gap_sync_window_missed(uint8_t slot) {
     sync->window_chain = 0;
 }
 
-// -----------------------------------------------------------------------------
-// Connection-poll coordination for extended and periodic procedures
-// -----------------------------------------------------------------------------
-// Stop a lower-priority scan before the connection poll configures its channel.
-static void gap_connection_take_radio(void) {
-    if (gap_ext_scan.listen_state == GAP_EXT_SCAN_NONE) return;
-    if (gap_rx_armed) RADIO_STOP();
-    gap_rx_armed = 0;
-
-    if (gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC) {
-        uint8_t slot = gap_ext_scan.slot;
-        gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
-
-        if (slot < GAP_PERIODIC_SYNC_COUNT && gap_syncs[slot].used &&
-            gap_syncs[slot].window_active
-        ) gap_sync_window_missed(slot);
-    }
-    else if (gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX) {
-        uint8_t slot = gap_ext_scan.slot;
-        gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
-
-        if (slot < GAP_EXT_ADV_CONTEXT_COUNT)
-            gap_aux_request[slot].active = 0;
-    }
-}
-
 // Check whether a periodic receive window intersects a guarded connection event.
 static int gap_sync_conn_overlap(uint64_t start_ticks, uint64_t end_ticks) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
@@ -2577,14 +2551,14 @@ static int gap_sync_conn_overlap(uint64_t start_ticks, uint64_t end_ticks) {
                         (500 + conn->link_layer.peer_sca_ppm) + 999) / 1000;
     widen_us = MIN(widen_us, conn->schedule.interval_125us * 125 / 2);
     uint64_t widening_ticks = (uint64_t)widen_us * HW_TICKS_FROM_US(1);
-    uint64_t interval_ticks = HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
-    uint64_t event_ticks = conn->link_layer.next_ticks;
     uint32_t event_window_us = conn->link_layer.first_event ||
             conn->procedure_state.update_window_active ? conn->window_size * 1250 : 1000;
     uint32_t packet_guard_us = 400 + 16 * subtract_clamp0_32(
                                 MIN(RADIO_DATA_MAX, GAP_CONN_DATA_MAX), 27);
     uint64_t early_ticks = HW_TICKS_FROM_US(200) + widening_ticks;
     uint64_t late_ticks = widening_ticks + HW_TICKS_FROM_US(event_window_us + packet_guard_us);
+    uint64_t interval_ticks = HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
+    uint64_t event_ticks = conn->link_layer.next_ticks;
     uint64_t open_ticks, close_ticks;
 
     for (;;) {
@@ -2600,7 +2574,8 @@ static int gap_sync_conn_overlap(uint64_t start_ticks, uint64_t end_ticks) {
             break;
         event_ticks += intervals * interval_ticks;
     }
-    return open_ticks <= end_ticks && close_ticks >= start_ticks;
+    return open_ticks <= end_ticks &&
+            close_ticks >= start_ticks;
 }
 
 // Send periodic and extended advertisements before regular advertising.
