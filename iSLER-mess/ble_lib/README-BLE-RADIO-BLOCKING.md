@@ -35,7 +35,7 @@ arms `AUX_CONNECT_REQ` there, validates `AUX_CONNECT_RSP`, then creates the
 connection in polling. The 120 us timer target remains provisional until
 RX-end to TX-start timing is measured on CH582 hardware.
 Connectable extended advertising can be started with
-`gap_ext_adv_connect_start_phy()`; it sends `AUX_CONNECT_RSP` from the RX timer
+`gap_ext_adv_connect_start()`; it sends `AUX_CONNECT_RSP` from the RX timer
 path when a valid `AUX_CONNECT_REQ` arrives. This first implementation sends
 an empty connectable `AUX_ADV_IND` and supports one connection per set event.
 

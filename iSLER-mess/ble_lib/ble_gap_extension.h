@@ -634,7 +634,7 @@ int gap_ext_adv_start_phy(
 // Application facing
 // Start an extended scannable set; its advertising data is returned only in
 // AUX_SCAN_RSP, as required for scannable extended advertising.
-int gap_ext_adv_scan_start_phy(
+int gap_ext_adv_scan_start(
     uint8_t set_id, const uint8_t *scan_response,
     size_t scan_resp_len, uint8_t sid,
     uint16_t interval_ms, uint8_t aux_phy
@@ -653,7 +653,7 @@ int gap_ext_adv_scan_start_phy(
 
 #if GAP_PERIPHERAL_SUPPORT
 // Start a connectable extended set. Its AUX_ADV_IND carries no AdvData.
-int gap_ext_adv_connect_start_phy(
+int gap_ext_adv_connect_start(
     uint8_t set_id, uint8_t sid, uint16_t interval_ms, uint8_t aux_phy
 ) {
     if (RADIO_DATA_MAX < 27 ||
