@@ -806,8 +806,31 @@ void mesh_gatt_poll(void) {
         }
     }
     gatt_transport_set_connected(&mesh_gatt.transport, connected);
-    gatt_transport_set_security(&mesh_gatt.transport,
-        gap_encrypted(), gap_authenticated(), gap_key_size());
+    int encrypted = gap_encrypted();
+    int authenticated = 0;
+    uint8_t key_size = 0;
+#if GAP_SECURITY_SUPPORT >= 2
+    authenticated = gap_authenticated();
+    key_size = gap_key_size();
+#endif
+    mesh_gatt.transport.encrypted = (uint8_t)encrypted;
+    mesh_gatt.transport.authenticated = (uint8_t)authenticated;
+    mesh_gatt.transport.key_size = key_size;
+    if (mesh_gatt.transport.server) {
+        ble_gatt_server *server = mesh_gatt.transport.server;
+        server->encrypted = encrypted || authenticated;
+        server->authenticated = (uint8_t)authenticated;
+        server->encryption_key_size = key_size >= 7 && key_size <= 16 ?
+                                        key_size : 0;
+        if (!server->encrypted)
+            server->encryption_key_size = 0;
+    }
+#if BLE_GATT_ENABLE_EATT
+    if (mesh_gatt.transport.eatt_enabled &&
+        mesh_gatt.transport.eatt.encrypted != mesh_gatt.transport.encrypted
+    ) gatt_eatt_set_encrypted(&mesh_gatt.transport.eatt,
+                              mesh_gatt.transport.encrypted);
+#endif
     if (!connected) {
         if (mesh_gatt.connected) {
             mesh_gatt_provisioning_link_notify(0);
