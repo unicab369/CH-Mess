@@ -71,16 +71,17 @@ typedef struct {
 } gap_report_state;
 
 static struct {
-    // Scanner radio scheduling and active-scan request state.
+    // Keep aligned radio data after the 32-bit timers to avoid padding.
     uint32_t interval_start_ms;
-    uint32_t resp_deadline_ms; // Fallback timeout if SCAN_RSP never arrives; IFS only spaces the packets.
+    uint32_t resp_deadline_ms; // Fallback if SCAN_RSP never arrives; IFS handles packet spacing.
+    GAP_RADIO_BUFFER_ATTR uint8_t request[14];
+
+    // Active-scan and channel state.
     struct {
         volatile uint8_t type; // Encoded: 0=none, 1=public, 2=random.
         uint8_t address[6];
     } active_address;
-
     uint8_t channel_index, applied_generation;
-    GAP_RADIO_BUFFER_ATTR uint8_t request[14];
 
     // Scan report queue and duplicate cache indices.
     gap_report_state report_state;

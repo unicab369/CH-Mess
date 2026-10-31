@@ -1052,7 +1052,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             memcpy(gap_scan.pending_adv.frame, frame, (size_t)frame[1] + 2);
             memcpy(gap_scan.active_address.address, frame + 2, 6);
 
-            //! NOTE: Allow 2 ms for a SCAN_RSP; IFS handles the packet spacing.
+            // Allow 2 ms for the request/response exchange, including T_IFS.
             gap_scan.resp_deadline_ms = GET_MILLIS() + 2;
             // Store 1/2 for public/random; zero means no response is pending.
             gap_scan.active_address.type = advertiser_type + 1;
@@ -1185,7 +1185,8 @@ void gap_hw_init(void) {
     gap_poll.slot_valid = 0;
     gap_poll.poll_cursor = 0;
     gap_scan.channel_index = 0;
-    gap_scan.applied_generation = gap_scanner.generation - 1;
+    gap_scan.applied_generation = -1;
+    gap_scanner.generation - 1;
     gap_scan.interval_start_ms = 0;
     gap_scan.active_address.type = 0;
     gap_rx.ready = 0;
@@ -1822,6 +1823,7 @@ void gap_hw_scan_poll(void) {
         gap_scan.interval_start_ms = now;
         gap_scan.applied_generation = gap_scanner.generation;
     }
+
 #if GAP_EXT_ADV_SUPPORT
     if (reset_scan) {
         gap_ext_scan.ready = 0;
@@ -1963,6 +1965,7 @@ void gap_hw_scan_poll(void) {
 
 #endif // GAP_EXT_ADV_SUPPORT
 
+    // Keep after extended-scan processing so a buffered packet is handled first.
     if (gap_scan.active_address.type) {
         if ((int32_t)(now - gap_scan.resp_deadline_ms) < 0)
             return;
