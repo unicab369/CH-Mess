@@ -923,8 +923,7 @@ static inline void mesh_lpn_control_receive(
         else if (message->dst < primary ||
             (uint32_t)message->dst >=
                 (uint32_t)primary + transport_lpn.num_elements
-        }
-        else ) return;
+        ) return;
 
         uint8_t phase = mesh_subnet_phase(&mesh_network.state,
                                           transport_lpn.net_key_index);
@@ -936,9 +935,7 @@ static inline void mesh_lpn_control_receive(
             ) return;
         }
         else if (phase == 2 && !mesh_key_refresh_transition_apply(&next,
-                       transport_lpn.net_key_index, 3)
-        }
-        else ) return;
+                       transport_lpn.net_key_index, 3)) return;
 
         uint32_t friend_iv_index = ((uint32_t)message->params[1] << 24) |
             ((uint32_t)message->params[2] << 16) |

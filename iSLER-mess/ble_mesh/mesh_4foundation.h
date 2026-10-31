@@ -851,8 +851,8 @@ static int server_config_receive(const mesh_access_pdu *message) {
                 else if (phase == 2 ||
                          (phase == 1 &&
                           (!mesh_subnet_key(state, net_idx, staged_key, 1) ||
-                           memcmp(staged_key, p + 2, 16)))
-                else ) status = MESH_CONFIG_CANNOT_UPDATE;
+                           memcmp(staged_key, p + 2, 16))))
+                    status = MESH_CONFIG_CANNOT_UPDATE;
                 else if (!mesh_stage_net_key(net_idx, p + 2))
                     status = MESH_CONFIG_STORAGE_FAILURE;
             }
@@ -882,8 +882,8 @@ static int server_config_receive(const mesh_access_pdu *message) {
                 if (!mesh_key_refresh_transition_apply(&next, net_idx, p[2]))
                     status = MESH_CONFIG_STORAGE_FAILURE;
                 else if (memcmp(&next, &mesh_network.state, sizeof(next)) != 0 &&
-                         !mesh_commit(&next)
-                else ) status = MESH_CONFIG_STORAGE_FAILURE;
+                         !mesh_commit(&next))
+                    status = MESH_CONFIG_STORAGE_FAILURE;
             }
             phase = mesh_subnet_phase(&mesh_network.state, net_idx);
         }
@@ -978,8 +978,8 @@ static int server_config_receive(const mesh_access_pdu *message) {
             if (!next.address)
                 memset(&next, 0, sizeof(next));
             else if (!virtual && ((next.address >= 0x8000 && next.address < 0xc000) ||
-                                  (next.address >= 0xff00 && next.address < 0xfffc))
-            else ) status = MESH_CONFIG_INVALID_ADDRESS;
+                                  (next.address >= 0xff00 && next.address < 0xfffc)))
+                status = MESH_CONFIG_INVALID_ADDRESS;
             else if (next.ttl > 0x7f && next.ttl != 0xff)
                 status = MESH_CONFIG_INVALID_PUBLICATION;
             else if (flags & 0x1000)
@@ -1164,8 +1164,8 @@ static int server_config_receive(const mesh_access_pdu *message) {
                 status = MESH_CONFIG_INVALID_APPKEY;
             else if (mesh_subnet_phase(state, net_idx) != 1 ||
                 (app->has_new_key && memcmp(app->new_key, p + 3, 16)) ||
-                (!app->has_new_key && !memcmp(app->key, p + 3, 16))
-            else ) status = MESH_CONFIG_CANNOT_UPDATE;
+                (!app->has_new_key && !memcmp(app->key, p + 3, 16)))
+                status = MESH_CONFIG_CANNOT_UPDATE;
             else if (!mesh_stage_app_key_for(net_idx, app_idx, p + 3))
                 status = MESH_CONFIG_STORAGE_FAILURE;
         }

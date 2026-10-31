@@ -1,8 +1,8 @@
 #include "ch32fun.h"
-void gap_hw_received(void);
+void iSLER_Rx_Received_Cb(void);
 volatile uint32_t rx_ready;
 static void ble_mesh_rx_received(void) {
-    gap_hw_received();
+    iSLER_Rx_Received_Cb();
     rx_ready = 1;
 }
 #define ISLER_CALLBACK_RX ble_mesh_rx_received
