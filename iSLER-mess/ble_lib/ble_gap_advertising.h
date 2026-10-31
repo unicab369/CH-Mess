@@ -40,8 +40,8 @@ typedef struct {
     // Received advertising PDU and advertiser address.
     uint8_t pdu_type;
     uint8_t resolved, has_target;
-    gap_address address;
-    gap_address identity_address;
+    gap_address address;          // On-air advertiser address from the PDU.
+    gap_address identity_address; // Resolved identity, or the on-air address.
     gap_address target_address;
 
     // Received signal strength and AD payload.
@@ -870,16 +870,18 @@ static inline void gap_receive_report(
                            gap_scan.report_state.count) % GAP_SCAN_REPORT_COUNT;
     gap_scan_report *report = &gap_scan_reports[report_slot];
     report->pdu_type = pdu_type;
-    report->address.type = address_type;
     report->resolved = (slot >= 0);
     report->identity_address = identity;
     report->has_target = (pdu_type == ADV_DIRECT_IND);
-    report->target_address.type = (frame[0] >> 7) & 1;
     report->rssi = rssi;
     report->data_len = data_len;
+    report->address.type = address_type;
     memcpy(report->address.address, frame + 2, 6);
-    if (report->has_target)
+
+    if (report->has_target) {
+        report->target_address.type = (frame[0] >> 7) & 1;
         memcpy(report->target_address.address, frame + 8, 6);
+    }
     if (data_len)
         memcpy(report->data, frame + 8, data_len);
     // Publish the queue entry only after all of its fields are filled.
