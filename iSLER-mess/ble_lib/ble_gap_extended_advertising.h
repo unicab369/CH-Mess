@@ -1078,25 +1078,6 @@ int gap_ext_scan_poll(gap_ext_report *report) {
 // -----------------------------------------------------------------------------
 // Periodic synchronization management and reports
 // -----------------------------------------------------------------------------
-static void gap_sync_event_post(uint8_t slot, uint8_t type) {
-    gap_sync_context *sync = &gap_syncs[slot];
-    gap_sync_event event;
-    memset(&event, 0, sizeof(event));
-    event.type = type;
-    event.slot = (uint8_t)(sync - gap_syncs);
-    event.sid = sync->sid;
-    event.peer = sync->peer;
-
-    if (gap_sync_events.count == GAP_PERIODIC_SYNC_EVENT_COUNT) {
-        gap_sync_events.head = (gap_sync_events.head + 1) % GAP_PERIODIC_SYNC_EVENT_COUNT;
-        gap_sync_events.count--;
-    }
-
-    uint8_t tail = (gap_sync_events.head + gap_sync_events.count) %
-                    GAP_PERIODIC_SYNC_EVENT_COUNT;
-    gap_sync_events.items[tail] = event;
-    gap_sync_events.count++;
-}
 
 // Application facing
 // Request synchronization to one advertiser and SID. Scanning is started
@@ -1158,23 +1139,6 @@ static void gap_sync_scan_finish(void) {
 
     gap_sync_started_scan = 0;
     if (gap_scanner.scanning) gap_scan_stop();
-}
-
-// Application facing
-// Stop a sync: terminate=0 cancels acquisition; terminate=1 ends an
-// established synchronization.
-int gap_sync_stop(uint8_t slot, uint8_t terminate) {
-    if (slot >= GAP_PERIODIC_SYNC_COUNT) return 0;
-    // Validate before comparing against established; otherwise an invalid value could match it.
-    if (terminate > 1) return 0;
-    if (!gap_syncs[slot].used || gap_syncs[slot].established != terminate)
-        return 0;
-
-    gap_sync_event_post((uint8_t)slot, terminate ? GAP_PERIODIC_SYNC_TERMINATED
-                                                : GAP_PERIODIC_SYNC_CANCELLED);
-    memset(&gap_syncs[slot], 0, sizeof(gap_syncs[slot]));
-    gap_sync_scan_finish();
-    return 1;
 }
 
 // Application facing
@@ -1250,6 +1214,43 @@ int gap_sync_pawr_accept(uint8_t slot, uint8_t enabled) {
     ) return 0;
 
     gap_syncs[slot].pawr.connect_accept = enabled;
+    return 1;
+}
+
+static void gap_sync_event_post(uint8_t slot, uint8_t type) {
+    gap_sync_context *sync = &gap_syncs[slot];
+    gap_sync_event event;
+    memset(&event, 0, sizeof(event));
+    event.type = type;
+    event.slot = (uint8_t)(sync - gap_syncs);
+    event.sid = sync->sid;
+    event.peer = sync->peer;
+
+    if (gap_sync_events.count == GAP_PERIODIC_SYNC_EVENT_COUNT) {
+        gap_sync_events.head = (gap_sync_events.head + 1) % GAP_PERIODIC_SYNC_EVENT_COUNT;
+        gap_sync_events.count--;
+    }
+
+    uint8_t tail = (gap_sync_events.head + gap_sync_events.count) %
+                    GAP_PERIODIC_SYNC_EVENT_COUNT;
+    gap_sync_events.items[tail] = event;
+    gap_sync_events.count++;
+}
+
+// Application facing
+// Stop a sync: terminate=0 cancels acquisition; terminate=1 ends an
+// established synchronization.
+int gap_sync_stop(uint8_t slot, uint8_t terminate) {
+    if (slot >= GAP_PERIODIC_SYNC_COUNT) return 0;
+    // Validate before comparing against established; otherwise an invalid value could match it.
+    if (terminate > 1) return 0;
+    if (!gap_syncs[slot].used || gap_syncs[slot].established != terminate)
+        return 0;
+
+    gap_sync_event_post((uint8_t)slot, terminate ? GAP_PERIODIC_SYNC_TERMINATED
+                                                : GAP_PERIODIC_SYNC_CANCELLED);
+    memset(&gap_syncs[slot], 0, sizeof(gap_syncs[slot]));
+    gap_sync_scan_finish();
     return 1;
 }
 
