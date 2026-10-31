@@ -2924,7 +2924,7 @@ static void test_connection_context_slots(void) {
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
     smp = &conn->smp;
     start_test_central_link();
-    gap_conn_handle first_handle;
+    gap_conn_ref first_handle;
     assert(gap_conn_current(&first_handle));
     assert(gap_conn_count() == 1);
     conn->link_layer.tx_sn = 1;
@@ -2954,7 +2954,7 @@ static void test_connection_context_slots(void) {
     assert(gap_conn_slot == 1 && (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
            !conn->is_central && conn->link_layer.tx_sn == 0);
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    gap_conn_handle second_handle, current_handle;
+    gap_conn_ref second_handle, current_handle;
     assert(gap_conn_current(&second_handle));
     assert(second_handle.slot != first_handle.slot);
     assert(gap_conn_count() == 2);

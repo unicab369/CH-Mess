@@ -1557,7 +1557,7 @@ static inline int gatt_transport_poll(
 
 typedef struct {
     ble_gatt_transport *transport;
-    gap_conn_handle handle;
+    gap_conn_ref conn_ref;
     uint8_t bound, connected;
 } ble_gap_gatt_peer;
 
@@ -1591,26 +1591,26 @@ static inline int ble_gap_gatt_poll(
     uint8_t seen[GAP_CONNECTION_COUNT] = {0};
     uint8_t fragment[BLE_GATT_TRANSPORT_LL_MAX];
     int work = 0, failed = 0;
-    gap_conn_handle handle;
+    gap_conn_ref conn_ref;
 
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
         if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot))) continue;
         gap_conn_context *conn = &gap_conn_ctx[slot];
         ble_gap_gatt_peer *peer = &peers[slot];
-        handle.slot = slot;
-        handle.generation = gap_conn_generations[slot];
+        conn_ref.slot = slot;
+        conn_ref.generation = gap_conn_generations[slot];
         seen[slot] = 1;
         if (!peer->bound) continue;
 
-        if (peer->handle.generation &&
-            peer->handle.generation != handle.generation) {
+        if (peer->conn_ref.generation &&
+            peer->conn_ref.generation != conn_ref.generation) {
             if (peer->connected) {
                 gatt_transport_set_connected(peer->transport, 0);
                 peer->connected = 0;
             }
         }
-        peer->handle = handle;
-        if (!gap_conn_select(handle)) continue;
+        peer->conn_ref = conn_ref;
+        if (!gap_conn_select(conn_ref)) continue;
 
         if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)) ||
             (!conn->is_central && conn->link_layer.first_event))
@@ -1724,21 +1724,21 @@ static inline int ble_gap_gatt_poll(
         if (!peer->bound || !peer->connected || seen[slot]) continue;
         gatt_transport_set_connected(peer->transport, 0);
         peer->connected = 0;
-        memset(&peer->handle, 0, sizeof(peer->handle));
+        memset(&peer->conn_ref, 0, sizeof(peer->conn_ref));
     }
     gap_conn_slot = previous_slot;
     return failed ? -1 : work;
 }
 
-// Find the transport attached to a currently live connection handle.
+// Find the transport attached to a currently live connection reference.
 static ble_gatt_transport *ble_gap_gatt_transport_for(
-    ble_gap_gatt_peer peers[GAP_CONNECTION_COUNT], gap_conn_handle handle
+    ble_gap_gatt_peer peers[GAP_CONNECTION_COUNT], gap_conn_ref conn_ref
 ) {
-    if (!peers || handle.slot >= GAP_CONNECTION_COUNT) return NULL;
+    if (!peers || conn_ref.slot >= GAP_CONNECTION_COUNT) return NULL;
 
-    ble_gap_gatt_peer *peer = &peers[handle.slot];
+    ble_gap_gatt_peer *peer = &peers[conn_ref.slot];
     if (!peer->bound || !peer->connected ||
-        peer->handle.generation != handle.generation
+        peer->conn_ref.generation != conn_ref.generation
     ) return NULL;
 
     return peer->transport;

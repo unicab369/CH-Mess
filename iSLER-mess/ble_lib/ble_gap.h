@@ -501,7 +501,7 @@ typedef struct {
 typedef struct {
     uint8_t slot;        // Index of the connection in the context table.
     uint16_t generation; // Slot generation; rejects handles left over from a prior link.
-} gap_conn_handle;
+} gap_conn_ref;
 
 #if GAP_SECURITY_SUPPORT >= 1
 // Encryption procedure state; timed phases occupy the low nine bits.
@@ -1138,25 +1138,25 @@ static inline uint8_t gap_conn_count(void) {
 
 // Application-facing
 // Select a live link for the existing connection-specific GAP operations.
-static inline int gap_conn_select(gap_conn_handle handle) {
-    if (handle.slot >= GAP_CONNECTION_COUNT || !handle.generation ||
-        !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(handle.slot)) ||
-        gap_conn_generations[handle.slot] != handle.generation
+static inline int gap_conn_select(gap_conn_ref conn_ref) {
+    if (conn_ref.slot >= GAP_CONNECTION_COUNT || !conn_ref.generation ||
+        !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(conn_ref.slot)) ||
+        gap_conn_generations[conn_ref.slot] != conn_ref.generation
     ) return 0;
 
-    gap_conn_slot = handle.slot;
+    gap_conn_slot = conn_ref.slot;
     return 1;
 }
 
 // Application-facing
-// Capture the currently selected link's handle for later API calls.
-static inline int gap_conn_current(gap_conn_handle *handle) {
-    if (!handle || !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
+// Capture the currently selected link's reference for later API calls.
+static inline int gap_conn_current(gap_conn_ref *conn_ref) {
+    if (!conn_ref || !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
         return 0;
 
-    handle->slot = gap_conn_slot;
-    handle->generation = gap_conn_generations[gap_conn_slot];
-    return handle->generation != 0;
+    conn_ref->slot = gap_conn_slot;
+    conn_ref->generation = gap_conn_generations[gap_conn_slot];
+    return conn_ref->generation != 0;
 }
 
 
@@ -1871,6 +1871,7 @@ int gap_adv_is_discoverable(void) {
             continue;
         const uint8_t *data = gap_adv_sets[i].data;
         size_t len = gap_adv_sets[i].data_len;
+
         for (size_t offset = 0; offset < len;) {
             if (gap_ad_parse_next(data, len, &offset, &type, &value, &value_len) <= 0)
                 break;
@@ -1885,7 +1886,7 @@ int gap_adv_is_discoverable(void) {
 // L2CAP adapter types and operations.
 
 typedef struct {
-    gap_conn_handle handle;
+    gap_conn_ref conn_ref;
     l2cap_connection *connection;
     l2cap_reassembler reassembler;
     uint8_t initialized, connected;
@@ -1909,7 +1910,7 @@ static inline int ble_gap_l2cap_init(const l2cap_ops *upper) {
 // Poll each live connection using its context without changing the selected slot.
 static inline int ble_gap_l2cap_poll(void) {
     int work = 0;
-    gap_conn_handle handle;
+    gap_conn_ref conn_ref;
 
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
         gap_l2cap_peer *peer = &gap_l2cap_peers[slot];
@@ -1923,15 +1924,15 @@ static inline int ble_gap_l2cap_poll(void) {
         }
 
         gap_conn_context *conn = &gap_conn_ctx[slot];
-        handle.slot = slot;
-        handle.generation = gap_conn_generations[slot];
+        conn_ref.slot = slot;
+        conn_ref.generation = gap_conn_generations[slot];
 
-        if (!peer->initialized || peer->handle.generation != handle.generation) {
+        if (!peer->initialized || peer->conn_ref.generation != conn_ref.generation) {
             if (peer->initialized)
                 l2cap_conn_reset(peer->connection, 0x0013);
 
             memset(peer, 0, sizeof(*peer));
-            peer->handle = handle;
+            peer->conn_ref = conn_ref;
             peer->connection = &conn->l2cap;
             peer->tx_queue = &conn->l2cap_tx_queue;
             peer->initialized = 1;
@@ -2055,17 +2056,17 @@ static inline int ble_gap_l2cap_poll(void) {
 // accept/reject a pending peer parameter request, or configure per-link limits
 // and starting credits before opening credit-based channels.
 static inline l2cap_connection *ble_gap_l2cap_for(
-    gap_conn_handle handle
+    gap_conn_ref conn_ref
 ) {
-    if (handle.slot >= GAP_CONNECTION_COUNT)
+    if (conn_ref.slot >= GAP_CONNECTION_COUNT)
         return NULL;
 
-    if (!handle.generation ||
-        !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(handle.slot)) ||
-        gap_conn_generations[handle.slot] != handle.generation
+    if (!conn_ref.generation ||
+        !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(conn_ref.slot)) ||
+        gap_conn_generations[conn_ref.slot] != conn_ref.generation
     ) return NULL;
 
-    return &gap_conn_ctx[handle.slot].l2cap;
+    return &gap_conn_ctx[conn_ref.slot].l2cap;
 }
 
 #endif // GAP_H
