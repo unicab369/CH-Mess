@@ -4,7 +4,6 @@
 
 #define GAP_EAD_RANDOMIZER_LEN 5
 #define GAP_EAD_MIC_LEN 4
-#define GAP_EAD_KEY_LEN 16
 #define GAP_EAD_PLAINTEXT_MAX 245
 #define GAP_EAD_AD_STRUCTURE_MAX (GAP_EAD_PLAINTEXT_MAX + 11)
 
@@ -96,7 +95,7 @@ static struct {
 
 // Encrypted Advertising Data key state.
 static struct {
-    uint8_t session_key[GAP_EAD_KEY_LEN];
+    uint8_t session_key[16];
     uint8_t iv[8];
     uint8_t set;
 } gap_ead_key;
@@ -309,13 +308,14 @@ int gap_ad_parse_next(
 // from a secure application source; key and IV are consumed as byte strings in
 // CCM key and nonce order, respectively.
 int gap_ead_key_set(const uint8_t session_key[16], const uint8_t iv[8]) {
+    size_t key_len = sizeof(gap_ead_key.session_key);
     uint8_t key_bits = 0;
-    for (size_t i = 0; i < GAP_EAD_KEY_LEN; i++)
+    for (size_t i = 0; i < key_len; i++)
         key_bits |= session_key[i];
 
     if (!key_bits) return 0;
 
-    memcpy(gap_ead_key.session_key, session_key, GAP_EAD_KEY_LEN);
+    memcpy(gap_ead_key.session_key, session_key, key_len);
     memcpy(gap_ead_key.iv, iv, sizeof(gap_ead_key.iv));
     gap_ead_key.set = 1;
     return 1;
@@ -325,8 +325,9 @@ int gap_ead_key_set(const uint8_t session_key[16], const uint8_t iv[8]) {
 // Copy the current EAD session key and IV for application key distribution.
 int gap_ead_key_get(uint8_t out[24]) {
     if (!gap_ead_key.set) return 0;
-    memcpy(out, gap_ead_key.session_key, GAP_EAD_KEY_LEN);
-    memcpy(out + GAP_EAD_KEY_LEN, gap_ead_key.iv, sizeof(gap_ead_key.iv));
+    size_t key_len = sizeof(gap_ead_key.session_key);
+    memcpy(out, gap_ead_key.session_key, key_len);
+    memcpy(out + key_len, gap_ead_key.iv, sizeof(gap_ead_key.iv));
     return 1;
 }
 
