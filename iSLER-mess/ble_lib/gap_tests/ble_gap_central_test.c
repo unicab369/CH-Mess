@@ -735,13 +735,13 @@ static int test_ext_scan_receive(uint8_t kind, const uint8_t *pdu,
         gap_ext_scan.slot = 0;
         gap_ext_scan.rx_phy = GAP_PHY_1M;
     }
-    uint8_t reports_before = gap_ext_idx.report_count;
+    uint8_t reports_before = gap_ext_report_state.report_count;
     uint8_t had_context = 0;
     for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
         had_context |= gap_ext_ctx[i].active &&
             (int32_t)(gap_ext_ctx[i].deadline_ms - GET_MILLIS()) > 0;
     gap_ext_scan_process();
-    if (had_context || gap_ext_idx.report_count != reports_before) return 1;
+    if (had_context || gap_ext_report_state.report_count != reports_before) return 1;
     for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
         if (gap_ext_ctx[i].active) return 1;
     return kind == GAP_EXT_ADV_PRIMARY_PDU && fields.has_aux_ptr;
@@ -2311,7 +2311,7 @@ static void test_extended_scannable_advertising(void) {
         assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
             captured_extended_pdus[i], captured_extended_pdu_lengths[i], -40));
     }
-    assert(gap_ext_idx.report_count == 1);
+    assert(gap_ext_report_state.report_count == 1);
     assert(gap_ext_scan_poll(&report));
     assert(report.sid == 6 && report.data_len == sizeof(data) &&
            !memcmp(report.data, data, sizeof(data)));
