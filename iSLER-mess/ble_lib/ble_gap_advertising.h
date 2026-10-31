@@ -61,8 +61,8 @@ typedef struct {
 static gap_scan_report gap_scan_reports[GAP_SCAN_REPORT_COUNT];
 
 static struct {
-    gap_address peer;
-    uint8_t scan_response;
+    uint8_t kind; // 0=public adv, 1=random adv, 2=public scan rsp, 3=random scan rsp; 4 unused.
+    uint8_t address[6];
 } gap_scan_seen[GAP_SCAN_SEEN_COUNT];
 
 typedef struct {
@@ -854,12 +854,13 @@ static inline void gap_receive_report(
     if (gap_scanner.filter_duplicates) {
         // Legacy duplicates use advertiser identity and report class, not payload contents.
         uint8_t scan_response = (pdu_type == SCAN_RSP);
+        // Bit 0 stores address type; bit 1 distinguishes scan responses.
+        uint8_t seen_kind = identity_type | (scan_response << 1);
         uint8_t seen_slot = gap_scan.report_state.seen_count;
 
         for (uint8_t i = 0; i < gap_scan.report_state.seen_count; i++) {
-            if (gap_scan_seen[i].peer.type == identity_type &&
-                gap_scan_seen[i].scan_response == scan_response &&
-                memcmp(gap_scan_seen[i].peer.address, identity_address, 6) == 0
+            if (gap_scan_seen[i].kind == seen_kind &&
+                memcmp(gap_scan_seen[i].address, identity_address, 6) == 0
             ) return;
         }
 
@@ -872,9 +873,8 @@ static inline void gap_receive_report(
             gap_scan.report_state.seen_count++;
         }
 
-        gap_scan_seen[seen_slot].peer.type = identity_type;
-        gap_scan_seen[seen_slot].scan_response = scan_response;
-        memcpy(gap_scan_seen[seen_slot].peer.address, identity_address, 6);
+        gap_scan_seen[seen_slot].kind = seen_kind;
+        memcpy(gap_scan_seen[seen_slot].address, identity_address, 6);
     }
 
     if (gap_scan.report_state.report_count == GAP_SCAN_REPORT_COUNT) {
