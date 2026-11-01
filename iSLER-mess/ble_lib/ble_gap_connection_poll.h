@@ -2143,6 +2143,7 @@ int gap_send_due(
         adv_evt.phase = 0;
         adv_evt.rx_event = 0;
 
+        // Legacy advertising sends on channels 37, 38, and 39 in sequence.
         if (adv_evt.channel < 39) {
             adv_evt.channel++;
             gap_rx_packet.ready = 0;

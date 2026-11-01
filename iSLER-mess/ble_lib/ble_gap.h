@@ -373,31 +373,6 @@ typedef struct {
      memcmp((a).address, (b).address, 6) == 0)
 
 #if GAP_SECURITY_SUPPORT >= 2
-typedef struct {
-    uint8_t ltk[16], rand[8], ediv[2];
-} gap_bond_key;
-
-typedef struct {
-    uint8_t key[16];
-    uint8_t present;
-} bond_opt_key;
-
-typedef int (*ble_smp_user_request_fn)(void *context, uint8_t action,
-                                       uint32_t value);
-
-// One peer's persistent LE bond. Addresses and key identifiers use Bluetooth
-// little-endian byte order; unused keys and reserved bytes are zero.
-typedef struct {
-    uint8_t version, valid;
-    gap_address peer;
-    // Keep Central- and Peripheral-distributed key sets separate.
-    gap_bond_key central, peripheral;
-    bond_opt_key peer_irk, local_irk, peer_csrk, local_csrk;
-    uint8_t key_size, authenticated;
-    uint8_t has_peripheral_ltk;
-} gap_bond;
-#endif
-#if GAP_SECURITY_SUPPORT >= 2
 // SMP transaction state is owned by the connection that carries it.
 // Pairing phases are needed by connection procedures before ble_gap_smp.h
 // is included, so define them with the connection-facing types.
@@ -423,6 +398,30 @@ enum {
 #ifndef SMP_PDU_MAX
 #define SMP_PDU_MAX 65
 #endif
+
+typedef struct {
+    uint8_t ltk[16], rand[8], ediv[2];
+} gap_bond_key;
+
+typedef struct {
+    uint8_t key[16];
+    uint8_t present;
+} bond_opt_key;
+
+typedef int (*ble_smp_user_request_fn)(void *context, uint8_t action,
+                                       uint32_t value);
+
+// One peer's persistent LE bond. Addresses and key identifiers use Bluetooth
+// little-endian byte order; unused keys and reserved bytes are zero.
+typedef struct {
+    uint8_t version, valid;
+    gap_address peer;
+    // Keep Central- and Peripheral-distributed key sets separate.
+    gap_bond_key central, peripheral;
+    bond_opt_key peer_irk, local_irk, peer_csrk, local_csrk;
+    uint8_t key_size, authenticated;
+    uint8_t has_peripheral_ltk;
+} gap_bond;
 typedef struct {
     uint8_t random[16], confirm[16];
 } gap_oob_data;
@@ -1781,6 +1780,7 @@ static int gap_conn_accept(
                                             .rx_time = 328, .tx_time = 328 };
     conn->remote_data_length = conn->data_length;
 
+    // CONNECT_IND supplies the access address and CRC used on the new data-channel link.
     conn->link_layer.access_address = read_u32_le(frame + 14);
     conn->link_layer.crc_init = (uint32_t)frame[18] |
                             (uint32_t)frame[19] << 8 |

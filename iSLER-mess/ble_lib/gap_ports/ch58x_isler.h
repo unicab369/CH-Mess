@@ -287,6 +287,29 @@ static void gap_link_configure(
 #endif
 }
 
+void RADIO_LINK_TX(
+    const uint8_t *frame, uint32_t access_address, uint8_t channel,
+    uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy, uint32_t crc_init
+) {
+    gap_link_configure(access_address, channel, receive_after_tx, tx_phy, rx_phy, crc_init, 1);
+    gap_radio_tx_buffer(frame);
+    iSLERLinkTX();
+}
+
+void RADIO_LINK_RX(
+    uint32_t access_address, uint8_t channel,
+    uint8_t phy, uint32_t crc_init
+) {
+    gap_link_configure(access_address, channel, 0, phy, phy, crc_init, 0);
+    iSLERLinkRX();
+}
+
+void RADIO_SCAN_RX(uint8_t channel) {
+    gap_link.receive_after_tx = 0;
+    iSLERLinkConfig(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M, NULL, 0);
+    iSLERLinkRX();
+}
+
 int RADIO_IFS_TX_TIMER_ARM(
     const uint8_t *frame, uint32_t access_address, uint8_t channel,
     uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy, uint32_t crc_init
@@ -387,29 +410,6 @@ uint8_t RADIO_PHY_MASK(void) {
     phy_mask |= GAP_PHY_CODED;
 #endif
     return phy_mask;
-}
-
-void RADIO_LINK_TX(
-    const uint8_t *frame, uint32_t access_address, uint8_t channel,
-    uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy, uint32_t crc_init
-) {
-    gap_link_configure(access_address, channel, receive_after_tx, tx_phy, rx_phy, crc_init, 1);
-    gap_radio_tx_buffer(frame);
-    iSLERLinkTX();
-}
-
-void RADIO_LINK_RX(
-    uint32_t access_address, uint8_t channel,
-    uint8_t phy, uint32_t crc_init
-) {
-    gap_link_configure(access_address, channel, 0, phy, phy, crc_init, 0);
-    iSLERLinkRX();
-}
-
-void RADIO_SCAN_RX(uint8_t channel) {
-    gap_link.receive_after_tx = 0;
-    iSLERLinkConfig(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M, NULL, 0);
-    iSLERLinkRX();
 }
 
 int RADIO_TX_DONE(void) {
