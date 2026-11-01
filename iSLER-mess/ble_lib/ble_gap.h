@@ -369,6 +369,11 @@ typedef struct {
     ((a).type == (b).type && \
      memcmp((a).address, (b).address, 6) == 0)
 
+// Compare a PDU address using its header type-bit and byte offset.
+#define GAP_ADDR_CMP(frame, type_shift, offset, addr) \
+    ((((frame)[0] >> (type_shift)) & 1) == (addr).type && \
+     memcmp((frame) + (offset), (addr).address, sizeof((addr).address)) == 0)
+
 #if GAP_SECURITY_SUPPORT >= 2
 // SMP transaction state is owned by the connection that carries it.
 // Pairing phases are needed by connection procedures before ble_gap_smp.h

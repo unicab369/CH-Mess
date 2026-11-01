@@ -1546,29 +1546,24 @@ static int gap_pawr_conn_req_start(
 
     gap_sync_context *sync = &gap_syncs[slot];
 
-    if (initiator_type != sync->peer.type ||
-        memcmp(request + 2, sync->peer.address, 6) != 0
-    ) return 0;
+    if (!GAP_ADDR_CMP(request, 6, 2, sync->peer)) return 0;
 
     if (!gap_peer_allowed(peer_slot, request + 2, initiator_type))
         return 0;
 
-    uint8_t local_address[6];
-    uint8_t local_type;
-    gap_local_addr_select(peer_slot, local_address, &local_type);
+    gap_address local_address;
+    gap_local_addr_select(peer_slot, local_address.address, &local_address.type);
 
-    uint8_t responder_type = (request[0] >> 7) & 1;
-    if (responder_type != local_type ||
-        memcmp(request + 8, local_address, 6) != 0
-    ) return 0;
+    if (!GAP_ADDR_CMP(request, 7, 8, local_address)) return 0;
 
     // AUX_CONNECT_RSP carries the synchronized device's AdvA and the
     // advertiser's TargetA. Both PDUs use the periodic train's access address.
-    gap_ext_adv_frame[0] = ADV_EXT_IND | (local_type << 6) | (initiator_type << 7);
+    gap_ext_adv_frame[0] = ADV_EXT_IND | (local_address.type << 6) |
+                           (initiator_type << 7);
     gap_ext_adv_frame[1] = 14;
     gap_ext_adv_frame[2] = 13; // AdvMode=non-connectable, ExtHdrLen=13.
     gap_ext_adv_frame[3] = 0x03; // AdvA and TargetA.
-    memcpy(gap_ext_adv_frame + 4, local_address, 6);
+    memcpy(gap_ext_adv_frame + 4, local_address.address, 6);
     memcpy(gap_ext_adv_frame + 10, request + 2, 6);
 
     uint8_t channel = gap_sync_channel(&sync->params,

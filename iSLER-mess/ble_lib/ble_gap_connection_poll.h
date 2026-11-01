@@ -320,11 +320,9 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 
         const uint8_t *request = gap_scan.request;
         uint8_t peer_matches = response.identity.peer.type == GAP_ADDR_NONE ||
-                            (response.identity.peer.type == ((request[0] >> 7) & 1) &&
-                            memcmp(response.identity.peer.address, request + 8, 6) == 0);
+                            GAP_ADDR_CMP(request, 7, 8, response.identity.peer);
         uint8_t target_matches = response.target.type == GAP_ADDR_NONE ||
-                            (response.target.type == ((request[0] >> 6) & 1) &&
-                            memcmp(response.target.address, request + 2, 6) == 0);
+                            GAP_ADDR_CMP(request, 6, 2, response.target);
 
         if (peer_matches && target_matches) {
             memcpy(gap_ext_scan.frame, frame, (size_t)frame[1] + 2);
@@ -763,8 +761,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 #if GAP_PERIPHERAL_SUPPORT
     if (pdu_type == CONNECT_IND && gap_aux_exchange.waiting &&
         !gap_aux_exchange.response_started && frame[1] == 34 &&
-        ((frame[0] >> 7) & 1) == gap_ext_aux.advertiser.type &&
-        memcmp(frame + 8, gap_ext_aux.advertiser.address, 6) == 0 &&
+        GAP_ADDR_CMP(frame, 7, 8, gap_ext_aux.advertiser) &&
         gap_conn_request_valid(frame) && gap_conn_free_slot() >= 0
     ) {
         uint8_t initiator_type = (frame[0] >> 6) & 1;
@@ -816,9 +813,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 
     if (pdu_type == SCAN_REQ && gap_aux_exchange.waiting) {
         if (frame[1] != 12 ||
-            ((frame[0] >> 7) & 1) != gap_ext_aux.advertiser.type ||
-            memcmp(frame + 8, gap_ext_aux.advertiser.address, 6) != 0
-        ) {
+            !GAP_ADDR_CMP(frame, 7, 8, gap_ext_aux.advertiser)) {
             return;
         }
 
@@ -921,8 +916,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         }
         else {
             int target_slot = gap_identity_find(gap_initiator.peer.address, gap_initiator.peer.type);
-            peer_matches = (advertiser_type == gap_initiator.peer.type &&
-                            memcmp(frame + 2, gap_initiator.peer.address, 6) == 0) ||
+            peer_matches = GAP_ADDR_CMP(frame, 6, 2, gap_initiator.peer) ||
                             (peer_slot >= 0 && peer_slot == target_slot);
         }
     }
@@ -1040,8 +1034,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 
         //! Accept a scan response only from the advertiser we just scanned.
         if (pdu_type == SCAN_RSP &&
-            ((frame[0] >> 6) & 1) == gap_scan.active_address.type &&
-            memcmp(frame + 2, gap_scan.active_address.address, 6) == 0
+            GAP_ADDR_CMP(frame, 6, 2, gap_scan.active_address)
         ) {
             memcpy(gap_rx_packet.frame, frame, (size_t)frame[1] + 2);
             gap_rx_packet.rssi = RADIO_RSSI();
