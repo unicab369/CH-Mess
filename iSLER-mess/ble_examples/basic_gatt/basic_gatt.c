@@ -37,12 +37,10 @@ int main(void) {
     gap_hw_init();
 
     if (!gatt_start() ||
-        !gap_ad_builder_init(&builder, advertising_data,
-                             sizeof(advertising_data)) ||
+        !gap_ad_builder_init(&builder, advertising_data, sizeof(advertising_data)) ||
         !gap_ad_flags(&builder, 0x06) ||
         !gap_ad_uuid16_list(&builder, &service_uuid, 1, 1) ||
-        !gap_ad_local_name(&builder, local_name,
-                           sizeof(local_name) - 1, 1) ||
+        !gap_ad_local_name(&builder, local_name, sizeof(local_name) - 1, 1) ||
         !gap_adv_start(0, ADV_IND, advertising_data, builder.len, NULL, 0, 100)
     ) {
         for (;;) {}

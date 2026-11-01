@@ -338,25 +338,7 @@ int gap_ead_key_get(uint8_t out[24]) {
     return 1;
 }
 
-static int gap_ead_plaintext_valid(const uint8_t *data, size_t len) {
-    if (!data || !len || len > GAP_EAD_PLAINTEXT_MAX)
-        return 0;
-
-    size_t offset = 0;
-    size_t structures = 0;
-
-    while (offset < len) {
-        uint8_t type;
-        size_t value_len;
-        const uint8_t *value;
-
-        int parse_result = gap_ad_parse_next(data, len, &offset, &type, &value, &value_len);
-        if (parse_result < 0) return 0;
-        if (parse_result == 0) break;
-        structures++;
-    }
-    return structures != 0;
-}
+static int gap_ead_plaintext_valid(const uint8_t *data, size_t len);
 
 // Application facing
 // Encrypt concatenated AD structures into one Encrypted Data AD structure.
@@ -429,6 +411,26 @@ int gap_ead_decrypt(
 
     *out_len = plaintext_len;
     return 1;
+}
+
+static int gap_ead_plaintext_valid(const uint8_t *data, size_t len) {
+    if (!data || !len || len > GAP_EAD_PLAINTEXT_MAX)
+        return 0;
+
+    size_t offset = 0;
+    size_t structures = 0;
+
+    while (offset < len) {
+        uint8_t type;
+        size_t value_len;
+        const uint8_t *value;
+
+        int parse_result = gap_ad_parse_next(data, len, &offset, &type, &value, &value_len);
+        if (parse_result < 0) return 0;
+        if (parse_result == 0) break;
+        structures++;
+    }
+    return structures != 0;
 }
 
 static inline int gap_access_addr(uint32_t *address) {
