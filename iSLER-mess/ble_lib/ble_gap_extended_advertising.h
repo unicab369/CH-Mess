@@ -265,6 +265,11 @@ enum {
     GAP_AUX_OFFSET_300_US = 1u << 1
 };
 
+enum {
+    GAP_SYNC_OFFSET_300_US = 1u << 0,
+    GAP_SYNC_OFFSET_ADJUST = 1u << 1
+};
+
 typedef struct {
     // Common extended header and advertiser identity.
     uint8_t mode, flags;
@@ -278,7 +283,7 @@ typedef struct {
 
     // Periodic SyncInfo.
     struct {
-        uint8_t has_info, offset_unit, offset_adjust;
+        uint8_t has_info, offset_flags;
         gap_periodic_params params;
         uint16_t event_counter;
         uint32_t offset_us;
@@ -789,12 +794,16 @@ static int gap_ext_adv_decode(
         if (offset_flags & 0x80) return 0;
 
         uint16_t offset = read_u16_le(pdu + cursor) & 0x1fff;
-        fields->sync.offset_unit = (offset_flags >> 5) & 1;
-        fields->sync.offset_adjust = (offset_flags >> 6) & 1;
-        fields->sync.offset_us = (uint32_t)offset * (fields->sync.offset_unit ? 300 : 30) +
-                                                    (fields->sync.offset_adjust ? 2457600 : 0);
-        if ((!fields->sync.offset_unit && fields->sync.offset_adjust) ||
-            (fields->sync.offset_unit && fields->sync.offset_us < 245700)
+        fields->sync.offset_flags =
+                ((offset_flags >> 5) & 1 ? GAP_SYNC_OFFSET_300_US : 0) |
+                ((offset_flags >> 6) & 1 ? GAP_SYNC_OFFSET_ADJUST : 0);
+        fields->sync.offset_us = (uint32_t)offset *
+                ((fields->sync.offset_flags & GAP_SYNC_OFFSET_300_US) ? 300 : 30) +
+                ((fields->sync.offset_flags & GAP_SYNC_OFFSET_ADJUST) ? 2457600 : 0);
+        if ((!(fields->sync.offset_flags & GAP_SYNC_OFFSET_300_US) &&
+                (fields->sync.offset_flags & GAP_SYNC_OFFSET_ADJUST)) ||
+            ((fields->sync.offset_flags & GAP_SYNC_OFFSET_300_US) &&
+                fields->sync.offset_us < 245700)
         ) return 0;
 
         memcpy(fields->sync.params.channel_map, pdu + cursor + 4, 5);
@@ -1345,7 +1354,8 @@ static int gap_sync_info_accept(
 
     uint32_t packet_start_us = packet_end_us - airtime_us;
     uint32_t target_us = packet_end_us + fields->sync.offset_us - airtime_us;
-    uint32_t unit_us = fields->sync.offset_unit ? 300 : 30;
+    uint32_t unit_us =
+            (fields->sync.offset_flags & GAP_SYNC_OFFSET_300_US) ? 300 : 30;
     uint32_t widen_us = (uint32_t)(((uint64_t)(gap_sca_ppm[fields->sync.params.sca] + 500) *
                         (fields->sync.offset_us + unit_us) + 999999) / 1000000) + 2;
 
@@ -2319,12 +2329,11 @@ static int gap_past_receive(
     if (event_delta <= -16384 || event_delta >= 16384)
         return 0;
 
-    uint32_t conn_interval_us = (uint32_t)conn->schedule.interval_125us * 125;
-    int64_t target_delta_us = (int64_t)event_delta * conn_interval_us +
+    int64_t target_delta_us = (int64_t)event_delta * conn->schedule.interval_125us * 125 +
                               fields.sync.offset_us;
-    if (target_delta_us <= -2147483648ll || target_delta_us > 2147483647ll)
+    if (target_delta_us <= INT32_MIN || target_delta_us > INT32_MAX)
         return 0;
-    uint32_t target_us = connection_anchor_us + (uint32_t)target_delta_us;
+
     uint16_t conn_delta = (uint16_t)(conn_counter - read_u16_le(frame + 35));
     uint32_t conn_distance = conn_delta < 0x8000 ? conn_delta : 0x10000 - conn_delta;
     uint32_t pa_widening_ppm = gap_sca_ppm[fields.sync.params.sca] + 500;
@@ -2336,15 +2345,14 @@ static int gap_past_receive(
     widen_us = (widen_us * (1000000 + clock_sum_ppm) + 999999) / 1000000 + 16;
     if (widen_us > UINT32_MAX) return 0;
 
-    uint32_t unit_us = fields.sync.offset_unit ? 300 : 30;
+    uint32_t unit_us = (fields.sync.offset_flags & GAP_SYNC_OFFSET_300_US) ? 300 : 30;
+    uint32_t target_us = connection_anchor_us + (uint32_t)target_delta_us;
     uint32_t window_end_us = target_us + unit_us + (uint32_t)widen_us;
     uint32_t now_us = GET_MICROS();
-    uint16_t event_counter = fields.sync.event_counter;
     uint8_t skipped = 0;
 
     while (skipped < 6 && (int32_t)(window_end_us - now_us) < 0) {
         target_us += interval_us;
-        event_counter++;
         skipped++;
         window_end_us = target_us + unit_us + (uint32_t)widen_us;
     }
@@ -2352,7 +2360,6 @@ static int gap_past_receive(
     if ((int32_t)(window_end_us - now_us) < 0 || skipped >= 6)
         return 0;
 
-    uint32_t window_start_us = target_us - (uint32_t)widen_us;
     int free_slot = -1;
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
         if (gap_syncs[i].used &&
@@ -2377,10 +2384,10 @@ static int gap_past_receive(
     sync->phy = phy;
     sync->missed_events = skipped;
     sync->widening_ppm = (uint16_t)clock_sum_ppm;
-    sync->event_counter = event_counter;
+    sync->event_counter = (uint16_t)(fields.sync.event_counter + skipped);
     sync->anchor_us = (uint32_t)connection_anchor_us;
     sync->next_us = (uint32_t)target_us;
-    sync->start_us = (uint32_t)window_start_us;
+    sync->start_us = (uint32_t)(target_us - (uint32_t)widen_us);
     sync->end_us = (uint32_t)window_end_us;
     sync->timing_valid = 1;
     sync->window_active = 1;
