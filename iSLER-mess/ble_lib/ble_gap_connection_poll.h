@@ -313,7 +313,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         // Accept only a decodable, non-connectable AUX scan response.
         if (pdu_type != ADV_EXT_IND ||
             !gap_ext_adv_decode(frame, (size_t)frame[1] + 2, &response) ||
-            response.mode != 0
+            response.adv_mode != GAP_ADV_MODE_NONCONNECTABLE
         ) {
             return;
         }

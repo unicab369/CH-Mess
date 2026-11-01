@@ -255,6 +255,29 @@ static struct {
 // Extended advertising decode and scan report assembly
 // -----------------------------------------------------------------------------
 enum {
+    GAP_ADV_MODE_NONCONNECTABLE = 0,
+    GAP_ADV_MODE_CONNECTABLE = 2,
+    GAP_ADV_MODE_SCANNABLE = 4,
+    GAP_ADV_MODE_RESERVED = 8
+};
+
+enum {
+    GAP_ADV_MODE_REQUEST_MASK = GAP_ADV_MODE_CONNECTABLE |
+                                GAP_ADV_MODE_SCANNABLE
+};
+
+enum {
+    GAP_EXT_HEADER_ADVA = 1u << 0,
+    GAP_EXT_HEADER_TARGETA = 1u << 1,
+    GAP_EXT_HEADER_CTE_INFO = 1u << 2,
+    GAP_EXT_HEADER_ADI = 1u << 3,
+    GAP_EXT_HEADER_AUX_PTR = 1u << 4,
+    GAP_EXT_HEADER_SYNC_INFO = 1u << 5,
+    GAP_EXT_HEADER_TX_POWER = 1u << 6,
+    GAP_EXT_HEADER_RESERVED = 1u << 7
+};
+
+enum {
     GAP_AUX_PTR_ABSENT,
     GAP_AUX_PTR_VALID,
     GAP_AUX_PTR_ZERO_OFFSET
@@ -271,32 +294,26 @@ enum {
 };
 
 typedef struct {
-    // Common extended header and advertiser identity.
-    uint8_t mode, flags;
-    gap_ext_identity identity;
-    gap_address target;
-
-    // AuxPtr scheduling information.
-    uint8_t aux_ptr_state;
-    uint8_t aux_channel, aux_timing_flags, aux_phy;
+    // Place aligned timing fields first to reduce padding.
     uint32_t aux_offset_us;
-
-    // Periodic SyncInfo.
     struct {
-        uint8_t has_info, offset_flags;
         gap_periodic_params params;
-        uint16_t event_counter;
         uint32_t offset_us;
+        uint16_t event_counter;
+        uint8_t has_info, offset_flags;
     } sync;
 
-    // PAwR timing extension.
     gap_pawr_timing pawr;
-
-    // Advertising data follows the extended header.
     struct {
         const uint8_t *data;
         uint16_t len;
     } payload;
+
+    // Compact decoded header fields and advertiser addresses.
+    gap_ext_identity identity;
+    gap_address target;
+    uint8_t adv_mode, header_flags, aux_ptr_state, aux_timing_flags;
+    uint8_t aux_channel, aux_phy;
 } gap_ext_fields;
 
 static uint8_t ext_adv_next_set;
@@ -721,10 +738,13 @@ static int gap_ext_adv_decode(
     memset(fields, 0, sizeof(*fields));
     fields->identity.peer.type = GAP_ADDR_NONE;
     fields->target.type = GAP_ADDR_NONE;
-    fields->mode = pdu[2] >> 6;
+    uint8_t raw_adv_mode = pdu[2] >> 6;
+    fields->adv_mode = raw_adv_mode ? (uint8_t)(1u << raw_adv_mode) :
+                                      GAP_ADV_MODE_NONCONNECTABLE;
     uint8_t ext_len = pdu[2] & 0x3f;
 
-    if (fields->mode == 3 || (uint16_t)ext_len + 1 > payload_len)
+    if (fields->adv_mode == GAP_ADV_MODE_RESERVED ||
+        (uint16_t)ext_len + 1 > payload_len)
         return 0;
 
     size_t cursor = 3, header_end = 3 + ext_len;
@@ -735,11 +755,11 @@ static int gap_ext_adv_decode(
         return fields->payload.len <= GAP_EXT_ADV_DATA_MAX;
     }
 
-    fields->flags = pdu[cursor++];
-    if (fields->flags & 0x80) return 0;
+    fields->header_flags = pdu[cursor++];
+    if (fields->header_flags & GAP_EXT_HEADER_RESERVED) return 0;
 
     // Optional-field flags can coexist; consume each present field in order.
-    if (fields->flags & 0x01) {
+    if (fields->header_flags & GAP_EXT_HEADER_ADVA) {
         if (header_end - cursor < 6) return 0;
 
         fields->identity.peer.type = (pdu[0] >> 6) & 1;
@@ -747,19 +767,19 @@ static int gap_ext_adv_decode(
         cursor += 6;
     }
 
-    if (fields->flags & 0x02) {
+    if (fields->header_flags & GAP_EXT_HEADER_TARGETA) {
         if (header_end - cursor < 6) return 0;
         fields->target.type = (pdu[0] >> 7) & 1;
         memcpy(fields->target.address, pdu + cursor, 6);
         cursor += 6;
     }
 
-    if (fields->flags & 0x04) {
+    if (fields->header_flags & GAP_EXT_HEADER_CTE_INFO) {
         if (header_end - cursor < 1) return 0;
         cursor += 1;
     }
 
-    if (fields->flags & 0x08) {
+    if (fields->header_flags & GAP_EXT_HEADER_ADI) {
         if (header_end - cursor < 2) return 0;
 
         fields->identity.has_adi = 1;
@@ -768,7 +788,7 @@ static int gap_ext_adv_decode(
         cursor += 2;
     }
 
-    if (fields->flags & 0x10) {
+    if (fields->header_flags & GAP_EXT_HEADER_AUX_PTR) {
         if (header_end - cursor < 3) return 0;
 
         uint8_t channel = pdu[cursor] & 0x3f;
@@ -786,7 +806,7 @@ static int gap_ext_adv_decode(
         cursor += 3;
     }
 
-    if (fields->flags & 0x20) {
+    if (fields->header_flags & GAP_EXT_HEADER_SYNC_INFO) {
         if (header_end - cursor < 18) return 0;
 
         fields->sync.has_info = 1;
@@ -817,7 +837,7 @@ static int gap_ext_adv_decode(
         cursor += 18;
     }
 
-    if (fields->flags & 0x40) {
+    if (fields->header_flags & GAP_EXT_HEADER_TX_POWER) {
         if (header_end - cursor < 1) return 0;
         cursor += 1;
     }
@@ -877,7 +897,7 @@ static int gap_aux_request_start(const uint8_t *frame, uint32_t now_ms) {
 
     gap_ext_fields fields;
     if (!gap_ext_adv_decode(frame, (size_t)frame[1] + 2, &fields) ||
-        (fields.mode != 1 && fields.mode != 2)
+        !(GAP_ADV_MODE_REQUEST_MASK & fields.adv_mode)
     ) return 0;
 
     gap_address peer;
@@ -914,7 +934,7 @@ static int gap_aux_request_start(const uint8_t *frame, uint32_t now_ms) {
     uint8_t *request;
     uint8_t phase;
 
-    if (fields.mode == 2 && gap_scanner.active) {
+    if (fields.adv_mode == GAP_ADV_MODE_SCANNABLE && gap_scanner.active) {
 #if GAP_PRIVACY_SUPPORT
         if (gap_privacy.scan_filter && peer_slot < 0)
             return 0;
@@ -929,7 +949,7 @@ static int gap_aux_request_start(const uint8_t *frame, uint32_t now_ms) {
         phase = GAP_EXT_REQ_SCAN_TX;
     }
 #if GAP_CENTRAL_SUPPORT
-    else if (fields.mode == 1 && gap_initiator.active &&
+    else if (fields.adv_mode == GAP_ADV_MODE_CONNECTABLE && gap_initiator.active &&
              gap_conn_free_slot() >= 0
     ) {
         if (gap_initiator.mode == GAP_CONN_MODE_GENERAL) {
@@ -1303,7 +1323,7 @@ static int gap_sync_info_accept(
     const gap_ext_fields *fields,
     uint8_t packet_len, uint8_t packet_phy, uint32_t packet_end_us
 ) {
-    if (!fields || fields->mode != 0 ||
+    if (!fields || fields->adv_mode != GAP_ADV_MODE_NONCONNECTABLE ||
         fields->identity.peer.type == GAP_ADDR_NONE ||
         !fields->identity.has_adi ||
         !fields->sync.has_info ||
@@ -1468,7 +1488,7 @@ static void gap_pawr_report_push(
             if (set_id < GAP_EXT_ADV_SET_COUNT &&
                 gap_ext_adv_decode(pdu, gap_ext_pawr.response.len, &fields) &&
                 gap_ext_data_valid(fields.payload.data, fields.payload.len) &&
-                fields.mode == 0 &&
+                fields.adv_mode == GAP_ADV_MODE_NONCONNECTABLE &&
                 fields.aux_ptr_state == GAP_AUX_PTR_ABSENT &&
                 !fields.sync.has_info &&
                 fields.payload.len <= GAP_PAWR_RESPONSE_DATA_MAX
@@ -1930,7 +1950,7 @@ static void gap_ext_report_process(
         gap_wipe(context, sizeof(*context));
         context->active = 1;
         context->identity = fields->identity;
-        context->await_scan_response = (fields->mode == 2);
+        context->await_scan_response = (fields->adv_mode == GAP_ADV_MODE_SCANNABLE);
     }
     else {
         for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
@@ -1988,11 +2008,11 @@ static void gap_ext_report_process(
         return;
     }
 
-    if (context->await_scan_response && fields->mode == 2) {
+    if (context->await_scan_response && fields->adv_mode == GAP_ADV_MODE_SCANNABLE) {
         context->deadline_ms = now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
         return;
     }
-    else if (fields->mode == 0)
+    else if (fields->adv_mode == GAP_ADV_MODE_NONCONNECTABLE)
         context->await_scan_response = 0;
 
     if (!gap_ext_data_valid(context->data, context->data_len)) {
@@ -2133,7 +2153,7 @@ static void gap_ext_scan_process(uint32_t now_ms) {
         return;
     }
 
-    if (!sync->used || fields.mode != 0 ||
+    if (!sync->used || fields.adv_mode != GAP_ADV_MODE_NONCONNECTABLE ||
         (fields.identity.has_adi && fields.identity.sid != sync->sid)
     ) return;
 

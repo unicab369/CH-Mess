@@ -722,7 +722,8 @@ static int test_ext_scan_receive(uint8_t kind, const uint8_t *pdu,
                                  size_t pdu_len, int8_t rssi) {
     gap_ext_fields fields;
     if (!gap_ext_adv_decode(pdu, pdu_len, &fields) ||
-        (!fields.has_aux_ptr && fields.payload.len && !fields.payload.data[0]))
+        (fields.aux_ptr_state == GAP_AUX_PTR_ABSENT &&
+         fields.payload.len && !fields.payload.data[0]))
         return 0;
 
     memcpy(gap_ext_scan.frame, pdu, pdu_len);
@@ -750,7 +751,8 @@ static int test_ext_scan_receive(uint8_t kind, const uint8_t *pdu,
     if (had_context || gap_ext_report_state.count != reports_before) return 1;
     for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
         if (gap_ext_ctx[i].active) return 1;
-    return kind == GAP_EXT_PDU_PRIMARY && fields.has_aux_ptr;
+    return kind == GAP_EXT_PDU_PRIMARY &&
+           fields.aux_ptr_state != GAP_AUX_PTR_ABSENT;
 }
 
 #define gap_ext_scan_receive test_ext_scan_receive
