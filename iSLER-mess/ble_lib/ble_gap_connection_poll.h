@@ -309,10 +309,8 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     uint32_t conn_anchor_us = 0;
 
     uint8_t previous_slot = gap_conn_slot;
-    if (gap_poll.slot_valid)
-        gap_conn_slot = gap_poll.slot;
-
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    uint8_t radio_slot = gap_poll.slot_valid ? gap_poll.slot : gap_conn_slot;
+    gap_conn_context *conn = &gap_conn_ctx[radio_slot];
 
 #if GAP_EXT_ADV_SUPPORT
     if (gap_ext_scan.request_phase == GAP_EXT_REQ_SCAN_RX) {
@@ -322,7 +320,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             !gap_ext_adv_decode(frame, (size_t)frame[1] + 2, &response) ||
             response.mode != 0
         ) {
-            gap_conn_slot = previous_slot;
             return;
         }
 
@@ -343,7 +340,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             gap_ext_scan.request_phase = GAP_EXT_REQ_NONE;
         }
 
-        gap_conn_slot = previous_slot;
         return;
     }
 #if GAP_CENTRAL_SUPPORT
@@ -359,7 +355,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             gap_ext_scan.request_phase = GAP_EXT_REQ_CONNECT_DONE;
         }
 
-        gap_conn_slot = previous_slot;
         return;
     }
 #endif // GAP_CENTRAL_SUPPORT
@@ -374,15 +369,15 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         gap_ext_pawr.response.rssi = RADIO_RSSI();
         gap_ext_pawr.response.received_us = receive_us;
         gap_ext_pawr.response.ready = 1;
-        gap_conn_slot = previous_slot;
         return;
     }
 #endif // GAP_EXT_ADV_SUPPORT
 
-    // gap_conn_slot still selects conn here; earlier slot restorations return.
-    if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
+    if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(radio_slot)) &&
         conn->link_state.rx_armed
     ) {
+        // Select the radio event's connection only while handling its packet.
+        gap_conn_slot = radio_slot;
         // Anchor Central timing to its scheduled event and Peripheral timing
         // to the received packet's on-air start.
         if (conn->is_central) {
@@ -757,12 +752,11 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         // reply TX must start T_IFS after its on-air end, including CRC.
         // Set the buffer before arming the timed TX start. If processing took
         // too long, skip this reply rather than transmitting late.
-        if (RADIO_IFS_TX_TIMER_ARM(transmit,
-                                   conn->link_layer.access_address,
-                                   conn->link_state.channel, 1,
-                                   conn->phy_state.current.tx,
-                                   conn->phy_state.current.rx,
-                                   conn->link_layer.crc_init)
+        if (RADIO_IFS_TX_TIMER_ARM(transmit, conn->link_layer.access_address,
+                                            conn->link_state.channel, 1,
+                                            conn->phy_state.current.tx,
+                                            conn->phy_state.current.rx,
+                                            conn->link_layer.crc_init)
         ) conn->link_state.event_replied = 1;
 
         gap_conn_slot = previous_slot;
@@ -778,7 +772,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     ) {
         memcpy(gap_ext_pawr.connect.response, frame, 16);
         gap_ext_pawr.connect.response_ready = 1;
-        gap_conn_slot = previous_slot;
         return;
     }
 
@@ -818,7 +811,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
                 gap_ext_aux_exchange.waiting = 0;
             } else gap_ext_aux.window_deadline_us = receive_us + 1150;
         }
-        gap_conn_slot = previous_slot;
         return;
     }
 
@@ -832,7 +824,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         gap_ext_pawr.connect.reply_received_us = receive_us;
         gap_ext_scan.ready = 1;
         gap_rx_armed = 0;
-        gap_conn_slot = previous_slot;
         return;
     }
 #endif
@@ -842,7 +833,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             ((frame[0] >> 7) & 1) != gap_ext_aux_exchange.peer.type ||
             memcmp(frame + 8, gap_ext_aux_exchange.peer.address, 6) != 0
         ) {
-            gap_conn_slot = previous_slot;
             return;
         }
 
@@ -859,7 +849,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             // A request addressed to this advertiser but excluded by its
             // filter policy closes this scannable advertising event.
             gap_ext_aux_exchange.waiting = 0;
-            gap_conn_slot = previous_slot;
             return;
         }
 
@@ -876,7 +865,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             gap_ext_aux_exchange.response_started = 0;
             gap_ext_aux_exchange.waiting = 0;
         }
-        gap_conn_slot = previous_slot;
         return;
     }
 
@@ -888,7 +876,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         ) &&
         gap_aux_request_start(frame, now_ms)
     ) {
-        gap_conn_slot = previous_slot;
         return;
     }
 
@@ -904,18 +891,15 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         memcpy(gap_ext_scan.frame, frame, (size_t)frame[1] + 2);
         gap_ext_scan.received_us = receive_us;
         gap_ext_scan.ready = 1;
-        gap_conn_slot = previous_slot;
         return;
     }
 
     if (aux_scan) {
-        gap_conn_slot = previous_slot;
         return;
     }
 #endif // GAP_EXT_ADV_SUPPORT
 
     if (frame[1] > 37) {
-        gap_conn_slot = previous_slot;
         return;
     }
 
@@ -929,7 +913,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         // Enforce each peer's privacy mode before responding or connecting,
         // even when the optional known-peer filters are disabled.
         if (!gap_peer_allowed(peer_slot, frame + 2, advertiser_type)) {
-            gap_conn_slot = previous_slot;
             return;
         }
     }
@@ -970,7 +953,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 
         if (pdu_type == ADV_DIRECT_IND) {
             if (frame[1] != 12) {
-                gap_conn_slot = previous_slot;
                 return;
             }
 
@@ -1003,7 +985,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 #endif // GAP_PRIVACY_SUPPORT
 
             if (!target_matches) {
-                gap_conn_slot = previous_slot;
                 return;
             }
         }
@@ -1021,7 +1002,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             gap_connect_tx.phase = GAP_CONNECT_TX_ARMED;
         }
 
-        gap_conn_slot = previous_slot;
         return;
     }
 #endif // GAP_CENTRAL_SUPPORT
@@ -1041,7 +1021,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 
 #if GAP_PRIVACY_SUPPORT
             if (gap_privacy.scan_filter && peer_slot < 0) {
-                gap_conn_slot = previous_slot;
                 return;
             }
 #endif // GAP_PRIVACY_SUPPORT
@@ -1070,7 +1049,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
                             37 + gap_scan.channel_index, 1, GAP_PHY_1M, GAP_PHY_1M, 0x555555)
             ) gap_scan.active_address.type = GAP_ADDR_NONE;
 
-            gap_conn_slot = previous_slot;
             return;
         }
 
@@ -1084,7 +1062,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             // Zero marks that no scan response is pending.
             gap_scan.active_address.type = GAP_ADDR_NONE;
             gap_rx_packet.ready = 1;
-            gap_conn_slot = previous_slot;
             return;
         }
     }
@@ -1121,7 +1098,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
                                         adv_evt.channel, 0, GAP_PHY_1M, GAP_PHY_1M, 0x555555)
             ) adv_evt.scan_resp_started = 0;
 
-            gap_conn_slot = previous_slot;
             return;
         }
 
@@ -1141,7 +1117,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             memcpy(adv_evt.conn_req_frame, frame, 36);
             adv_evt.conn_req_us = receive_us;
             adv_evt.conn_req_ready = 1;
-            gap_conn_slot = previous_slot;
             return;
         }
 #endif // GAP_PERIPHERAL_SUPPORT
@@ -1152,7 +1127,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     memcpy(gap_rx_packet.frame, frame, (size_t)frame[1] + 2);
     gap_rx_packet.rssi = RADIO_RSSI();
     gap_rx_packet.ready = 1;
-    gap_conn_slot = previous_slot;
 }
 
 
@@ -1695,8 +1669,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
         gap_connect_tx.phase = GAP_CONNECT_TX_IDLE;
         uint8_t previous_slot = gap_conn_slot;
 
-        if (gap_conn_accept(adv_tx.connect_request, gap_connect_tx.end_us,
-                            1250, 1250)) {
+        if (gap_conn_accept(adv_tx.connect_request, gap_connect_tx.end_us, 1250, 1250)) {
             gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
             conn->central.central_anchor_set = 0;
             conn->link_layer.peer_sca_ppm = 500;
@@ -1748,9 +1721,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
             uint8_t previous_slot = gap_conn_slot;
             const uint8_t *request = adv_tx.connect_request;
 
-            if (gap_conn_accept(request, gap_ext_scan.request_end_us,
-                                1250, 2500)
-            ) {
+            if (gap_conn_accept(request, gap_ext_scan.request_end_us, 1250, 2500)) {
                 uint8_t peer_type = (request[0] >> 7) & 1;
                 gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
                 conn->is_central = 1;
