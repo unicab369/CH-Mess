@@ -1257,8 +1257,9 @@ static inline uint8_t gap_conn_can_skip_event(
 
 static void gap_conn_poll(uint32_t now_us) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    uint8_t slot_bit = GAP_CONN_SLOT_BIT(gap_conn_slot);
 
-    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
+    if (!(gap_conn_slot_mask & slot_bit))
         return;
 
     if (conn->load_pending) {
@@ -1390,7 +1391,6 @@ static void gap_conn_poll(uint32_t now_us) {
 
         conn->link_state.rx_armed = 0;
         uint32_t skipped = 0;
-        uint8_t slot_bit = GAP_CONN_SLOT_BIT(gap_conn_slot);
 
         // Re-read the interval each event; an Instant may update the schedule.
         do {
