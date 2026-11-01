@@ -983,9 +983,10 @@ int gap_secure_connections_set(uint8_t enabled) {
 int gap_sc_oob_get(gap_oob_data *out) {
     if (!out) return 0;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    uint8_t slot_bit = GAP_CONN_SLOT_BIT(gap_conn_slot);
 
     if (!gap_pair_cfg.enabled || !gap_pair_cfg.secure_connections ||
-        !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
+        !(gap_conn_slot_mask & slot_bit) ||
         (!conn->is_central && conn->link_layer.first_event) ||
         gap_encrypted() || conn->smp.pairing.phase ||
         conn->security.phase
@@ -996,7 +997,7 @@ int gap_sc_oob_get(gap_oob_data *out) {
 
     int generated = gap_sc_generate_key(&conn->smp) &&
             smp_random_bytes(local->oob.data.random, sizeof(local->oob.data.random)) &&
-            (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot));
+            (gap_conn_slot_mask & slot_bit);
 
     if (generated) {
         gap_sc_confirm_value(&conn->smp, conn->smp.secure.public_key, conn->smp.secure.public_key,
@@ -1463,6 +1464,7 @@ static void smp_bond_peripheral_start(gap_conn_context *conn) {
 // Route only SMP (L2CAP CID 0x0006); leave ATT and other application data queued.
 // Called from connection polling and before an application takes an RX fragment.
 static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
+    uint8_t slot_bit = GAP_CONN_SLOT_BIT((uint8_t)(conn - gap_conn_ctx));
     typeof(conn->smp.pairing) *pairing = &conn->smp.pairing;
 
     if (conn->smp.l2cap_ready) {
@@ -1760,7 +1762,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
                     conn->smp.encryption_started = 1;
             }
             else if (!conn->is_central &&
-                (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
+                (gap_conn_slot_mask & slot_bit) &&
                 conn->security.phase == GAP_ENC_KEY_REQUEST
             ) {
                 uint8_t identifiers = (uint8_t)conn->security.ediv |
@@ -1819,7 +1821,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
                         return;
                     }
 
-                    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))) {
+                    if (!(gap_conn_slot_mask & slot_bit)) {
                         gap_wipe(&bond_data, sizeof(bond_data));
                         return;
                     }
@@ -1874,7 +1876,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
                 conn->smp.encryption_started = 1;
             }
         }
-        else if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
+        else if ((gap_conn_slot_mask & slot_bit) &&
                  conn->security.phase == GAP_ENC_KEY_REQUEST
         ) {
             uint8_t zero = conn->security.ediv != 0;
@@ -2367,7 +2369,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
         uint8_t pairing_random[16];
         int entropy_ready = smp_random_bytes(pairing_random, sizeof(pairing_random));
 
-        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))) {
+        if (!(gap_conn_slot_mask & slot_bit)) {
             gap_wipe(pairing_random, sizeof(pairing_random));
             return;
         }
@@ -2396,7 +2398,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
             }
 
             if (!use_oob_key && !gap_sc_generate_key(&conn->smp)) {
-                if (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))
+                if (gap_conn_slot_mask & slot_bit)
                     gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                 return;
             }
@@ -2424,7 +2426,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
                     return;
                 }
 
-                if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))) {
+                if (!(gap_conn_slot_mask & slot_bit)) {
                     gap_wipe(bytes, sizeof(bytes));
                     return;
                 }
@@ -2511,7 +2513,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
         pairing->phase == SMP_PHASE_SC_PUBLIC_KEY
     ) {
         if (!gap_sc_accept_key(&conn->smp, pdu + 1)) {
-            if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
+            if (!(gap_conn_slot_mask & slot_bit))
                 return;
 
             // Invalid P-256 point or reflected key.
@@ -2641,7 +2643,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
                 uint8_t next_nonce[16];
                 int entropy_ready = smp_random_bytes(next_nonce, sizeof(next_nonce));
 
-                if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))) {
+                if (!(gap_conn_slot_mask & slot_bit)) {
                     gap_wipe(next_nonce, sizeof(next_nonce));
                     return;
                 }

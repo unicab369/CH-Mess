@@ -135,8 +135,9 @@ static int gap_past_receive(
 
 static void gap_conn_end(gap_conn_context *conn) {
     uint8_t slot = (uint8_t)(conn - gap_conn_ctx);
+    uint8_t slot_bit = GAP_CONN_SLOT_BIT(slot);
 
-    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)))
+    if (!(gap_conn_slot_mask & slot_bit))
         return;
 
     if (gap_poll.slot_valid && gap_poll.slot == slot) {
@@ -183,7 +184,7 @@ static void gap_conn_end(gap_conn_context *conn) {
 
     // Clear link and queued procedure state after stopping radio use.
     memset(&conn->link_state, 0, sizeof(conn->link_state));
-    gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(slot);
+    gap_conn_slot_mask &= (uint8_t)~slot_bit;
     conn->is_central = 0;
     memset(&conn->procedure_state, 0, sizeof(conn->procedure_state));
     memset(&conn->c_features, 0, sizeof(conn->c_features));
