@@ -104,19 +104,17 @@ static struct {
 
 #if GAP_EXT_ADV_SUPPORT
 typedef struct {
-    uint8_t has_address;
-    gap_address peer;
-    uint8_t has_adi, sid;
     uint16_t adi;
+    uint8_t has_address, has_adi, sid;
+    gap_address peer;
 } gap_ext_identity;
 
 typedef struct {
-    uint8_t active;
+    uint32_t deadline_ms;
     gap_ext_identity identity;
-    uint8_t await_scan_response;
     uint16_t data_len;
     int8_t rssi;
-    uint32_t deadline_ms;
+    uint8_t active, await_scan_response;
     uint8_t data[GAP_EXT_ADV_DATA_MAX];
 } gap_ext_scan_context;
 
