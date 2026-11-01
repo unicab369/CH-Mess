@@ -118,7 +118,7 @@ static int mesh_adv_queue_add(
     return -1;
 }
 
-static int mesh_adv_queue_next(uint32_t now) {
+static int mesh_adv_queue_next(uint32_t now_ms) {
     int first = -1, next = -1;
     for (uint8_t i = 0; i < RADIO_QUEUE_SIZE; i++) {
         if (!radio_queue[i].remaining)
@@ -126,12 +126,12 @@ static int mesh_adv_queue_next(uint32_t now) {
         if (!radio_queue[i].started && (first < 0 ||
             (int32_t)(radio_queue[i].order - radio_queue[first].order) < 0)
         ) first = i;
-        if (radio_queue[i].started && (int32_t)(now - radio_queue[i].send_at_ms) >= 0 &&
+        if (radio_queue[i].started && (int32_t)(now_ms - radio_queue[i].send_at_ms) >= 0 &&
             (next < 0 || (int32_t)(radio_queue[i].order - radio_queue[next].order) < 0)
         ) next = i;
     }
     // Keep initial packets in order; a waiting retry does not block new packets.
-    if (first >= 0 && (int32_t)(now - radio_queue[first].send_at_ms) >= 0 &&
+    if (first >= 0 && (int32_t)(now_ms - radio_queue[first].send_at_ms) >= 0 &&
         (next < 0 || (int32_t)(radio_queue[first].order - radio_queue[next].order) < 0)
     ) next = first;
     return next;
@@ -331,13 +331,14 @@ static int mesh_state_save_record(mesh_state_record *record) {
 int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
     if (!adv_data || !len) return -1;
     if (rssi) *rssi = 127;
-    mesh_gatt_poll();
-    int connection_busy = gap_conn_count() != 0;
-    if (connection_busy)
-        gap_conn_poll_all();
-    gap_hw_scan_poll(GET_MICROS());
+    uint32_t now_ms = GET_MILLIS();
+    uint32_t now_us = GET_MICROS();
+    mesh_gatt_poll(now_ms);
 
-    uint32_t now = GET_MILLIS();
+    if (gap_conn_count())
+        gap_conn_poll_all(now_us, now_ms);
+    gap_hw_scan_poll(now_us, now_ms);
+
     int received = 0;
     int receive_error = 0;
     if (mesh_gatt_rx_count) {
@@ -365,13 +366,13 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
         }
     }
 
-    int slot = mesh_adv_queue_next(now);
+    int slot = mesh_adv_queue_next(now_ms);
     uint32_t sent_at;
     uint8_t jitter;
     int send_result = gap_send_due(
         slot >= 0 ? radio_queue[slot].data : NULL,
         slot >= 0 ? radio_queue[slot].len : 0,
-        now, &sent_at, &jitter);
+        now_ms, &sent_at, &jitter);
     if (send_result < 0) return -1;
     if (send_result == 2) return 0;
 

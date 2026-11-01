@@ -1583,7 +1583,7 @@ static inline int ble_gap_gatt_bind(
 // A negative result means at least one GATT bearer failed and its link was
 // asked to disconnect; positive values count processed fragments/work.
 static inline int ble_gap_gatt_poll(
-    ble_gap_gatt_peer peers[GAP_CONNECTION_COUNT]
+    ble_gap_gatt_peer peers[GAP_CONNECTION_COUNT], uint32_t now_ms
 ) {
     if (!peers) return -1;
 
@@ -1700,7 +1700,7 @@ static inline int ble_gap_gatt_poll(
         }
         work += received > 0;
 
-        int result = gatt_transport_poll(transport, GET_MILLIS());
+        int result = gatt_transport_poll(transport, now_ms);
         if (result < 0) {
             (void)gap_disconnect(0x13);
             failed = 1;
@@ -1714,7 +1714,7 @@ static inline int ble_gap_gatt_poll(
         if (gatt_transport_tx_peek(transport, max_payload, &llid, &tx_fragment, &tx_len) > 0 &&
             gap_send_data(conn, llid, tx_fragment, tx_len)
         ) {
-            (void)gatt_transport_tx_sent(transport, tx_len, GET_MILLIS());
+            (void)gatt_transport_tx_sent(transport, tx_len, now_ms);
             work++;
         }
     }

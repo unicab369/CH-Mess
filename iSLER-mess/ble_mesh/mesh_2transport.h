@@ -1422,7 +1422,7 @@ static inline int mesh_transport_queue(
 // registered.
 static inline int mesh_transport_receive(
     const mesh_net_message *net,
-                                              mesh_access_message *out
+    mesh_access_message *out, uint32_t now_ms
 ) {
     if (!net || !out) return -1;
     if (!net->transport_len || net->transport_len > sizeof(net->transport))
@@ -1556,9 +1556,8 @@ static inline int mesh_transport_receive(
         seq_auth -= 0x2000;
     }
 
-    uint32_t now = GET_MILLIS();
     struct transport_rx *free_rx = NULL;
-    uint32_t context_updated_ms = now;
+    uint32_t context_updated_ms = now_ms;
     uint32_t mask;
     struct transport_rx *matched_rx = NULL;
     uint32_t segment_mask = seg_n == 31 ? UINT32_MAX :
@@ -1567,7 +1566,7 @@ static inline int mesh_transport_receive(
     for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
         struct transport_rx *rx = &transport_rx[i];
         if (rx->active && !rx->friend_queued &&
-            (uint32_t)(now - rx->updated_ms) >=
+            (uint32_t)(now_ms - rx->updated_ms) >=
             ((uint32_t)transport_sar_rx.discard_timeout + 1) * 5000
         ) rx->active = rx->ack_pending = 0;
         if (!rx->active) {
@@ -1596,7 +1595,7 @@ static inline int mesh_transport_receive(
 
     if (duplicate) {
         uint8_t ack_pending = mesh_local_element(net->dst);
-        uint32_t ack_at_ms = now;
+        uint32_t ack_at_ms = now_ms;
         if (mask == segment_mask) {
             if (matched_rx && matched_rx->friend_queued) {
                 uint16_t seq_zero = (uint16_t)(((pdu[1] & 0x7f) << 6) |
@@ -1615,7 +1614,7 @@ static inline int mesh_transport_receive(
                     ((uint32_t)transport_sar_rx.segment_interval_step + 1) * 10;
                 uint32_t next_ack = matched_rx->ack_sent_ms +
                     ack_delay_half_steps * segment_interval_ms / 2;
-                if ((int32_t)(next_ack - now) > 0)
+                if ((int32_t)(next_ack - now_ms) > 0)
                     ack_at_ms = next_ack;
             }
         }
@@ -1642,8 +1641,8 @@ static inline int mesh_transport_receive(
                         candidate->dst, candidate->seq_auth, candidate->iv_index) !=
                             candidate_mask
                 ) continue;
-                if (!oldest || (uint32_t)(now - candidate->updated_ms) >
-                    (uint32_t)(now - oldest->updated_ms)
+                if (!oldest || (uint32_t)(now_ms - candidate->updated_ms) >
+                    (uint32_t)(now_ms - oldest->updated_ms)
                 ) oldest = candidate;
             }
 
@@ -1688,14 +1687,14 @@ static inline int mesh_transport_receive(
         memcpy(free_rx->transport, pdu, net->transport_len);
         transport_rx_ack(net->ctl, net->net_key_index, net->src, net->dst, seq_auth,
             net->iv_index, mesh_local_element(net->dst),
-            now + transport_sar_rx_ack_delay_ms(seg_n), now,
+            now_ms + transport_sar_rx_ack_delay_ms(seg_n), now_ms,
             transport_sar_rx.ack_retrans_count);
         mask = transport_rx_received(net->ctl, net->net_key_index, net->src, net->dst,
                                       seq_auth, net->iv_index);
         if (mask == segment_mask) {
             // Last Segment completes reassembly and is acknowledged immediately.
             transport_rx_ack(net->ctl, net->net_key_index, net->src, net->dst,
-                seq_auth, net->iv_index, mesh_local_element(net->dst), now, now,
+                seq_auth, net->iv_index, mesh_local_element(net->dst), now_ms, now_ms,
                 transport_sar_rx.ack_retrans_count);
         }
     }
@@ -1828,20 +1827,19 @@ static inline int mesh_transport_receive(
 
 // Poll the network, reassemble Access/Control messages, and service SAR.
 // Returns 1 with an Access message, 0 if none, or -1 for a send/radio error.
-static inline int mesh_transport_poll(mesh_access_message *out) {
+static inline int mesh_transport_poll(mesh_access_message *out, uint32_t now_ms) {
     if (!out) return -1;
     mesh_net_message net;
-    int received = mesh_net_poll(&net);
+    int received = mesh_net_poll(&net, now_ms);
     if (received < 0) return -1;
-    int result = received ? mesh_transport_receive(&net, out) : 0;
+    int result = received ? mesh_transport_receive(&net, out, now_ms) : 0;
     if (result < 0) return -1;
     // Send delayed Friend Offers and expire LPNs that did not establish or
     // maintain their friendship before the negotiated Poll Timeout.
     for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++) {
         if (!transport_friend_offers[i].used)
             continue;
-        uint32_t now = GET_MILLIS();
-        if ((int32_t)(GET_MILLIS() -
+        if ((int32_t)(now_ms -
                 transport_friend_offers[i].expires_at_ms) >= 0) {
             mesh_friendship_clear(transport_friend_offers[i].net_key_index,
                 transport_friend_offers[i].lpn_address,
@@ -1853,7 +1851,7 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
         }
 
         if (transport_friend_offers[i].subscription_confirm_pending &&
-            (int32_t)(now -
+            (int32_t)(now_ms -
                 transport_friend_offers[i].subscription_confirm_at_ms) >= 0) {
             uint8_t confirm[2] = {
                 MESH_CONTROL_FRIEND_SUBSCRIPTION_CONFIRM,
@@ -1866,7 +1864,7 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
                     confirm, sizeof(confirm))) {
                 transport_friend_offers[i].subscription_confirm_pending = 0;
             }
-            else if ((int32_t)(now -
+            else if ((int32_t)(now_ms -
                     transport_friend_offers[i].subscription_confirm_deadline_ms) >= 0) {
                 transport_friend_offers[i].subscription_confirm_pending = 0;
             }
@@ -1874,12 +1872,12 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
 
         mesh_friend_offer *friend_offer = &transport_friend_offers[i];
         if (friend_offer->clear_pending) {
-            if ((uint32_t)(now - friend_offer->clear_started_ms) >=
+            if ((uint32_t)(now_ms - friend_offer->clear_started_ms) >=
                     friend_offer->poll_timeout_ms * 2u) {
                 friend_offer->clear_pending = 0;
                 friend_offer->clear_done = 1;
             }
-            else if ((int32_t)(now - friend_offer->clear_next_ms) >= 0) {
+            else if ((int32_t)(now_ms - friend_offer->clear_next_ms) >= 0) {
                 uint8_t clear[5] = {MESH_CONTROL_FRIEND_CLEAR,
                     (uint8_t)(friend_offer->lpn_address >> 8),
                     (uint8_t)friend_offer->lpn_address,
@@ -1890,14 +1888,14 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
                         friend_offer->previous_friend, 1, 0x7f,
                         clear, sizeof(clear))) {
                     friend_offer->clear_interval_ms *= 2u;
-                    friend_offer->clear_next_ms = now +
+                    friend_offer->clear_next_ms = now_ms +
                                                   friend_offer->clear_interval_ms;
                 }
             }
         }
 
         if (!transport_friend.enabled || transport_friend_offers[i].offered ||
-            (int32_t)(GET_MILLIS() -
+            (int32_t)(now_ms -
                 transport_friend_offers[i].offer_at_ms) < 0
         ) continue;
         uint8_t offer[7] = {
@@ -1918,11 +1916,11 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
     // Retry discovery every 1.1 seconds and resend Friend Poll while awaiting
     // the initial Friend Update; discard a friendship after six unanswered polls.
     if (transport_lpn.state == MESH_LPN_REQUESTING &&
-        (uint32_t)(GET_MILLIS() - transport_lpn.last_tx_ms) >= 1100u) {
+        (uint32_t)(now_ms - transport_lpn.last_tx_ms) >= 1100u) {
         mesh_lpn_send_request();
     }
     else if (transport_lpn.state == MESH_LPN_WAITING_FOR_UPDATE &&
-        (uint32_t)(GET_MILLIS() - transport_lpn.last_tx_ms) >= 1000u) {
+        (uint32_t)(now_ms - transport_lpn.last_tx_ms) >= 1000u) {
         if (transport_lpn.poll_attempts >= 6) {
             mesh_friendship_clear(transport_lpn.net_key_index,
                 mesh_network.state.unicast_address, transport_lpn.friend_address);
@@ -1935,13 +1933,12 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
                     mesh_network.state.unicast_address,
                     transport_lpn.friend_address, 1, 0, poll, sizeof(poll))) {
                 transport_lpn.poll_attempts++;
-                transport_lpn.last_tx_ms = GET_MILLIS();
+                transport_lpn.last_tx_ms = now_ms;
             }
         }
     }
     else if (transport_lpn.state == MESH_LPN_CLEARING) {
-        uint32_t now = GET_MILLIS();
-        if ((uint32_t)(now - transport_lpn.clear_started_ms) >=
+        if ((uint32_t)(now_ms - transport_lpn.clear_started_ms) >=
                 transport_lpn.poll_timeout_ms) {
             mesh_friendship_clear(transport_lpn.net_key_index,
                 mesh_network.state.unicast_address,
@@ -1951,7 +1948,7 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
             transport_lpn.poll_attempts = 0;
             transport_lpn.subscription_pending = 0;
         }
-        else if ((uint32_t)(now - transport_lpn.last_tx_ms) >= 1000u) {
+        else if ((uint32_t)(now_ms - transport_lpn.last_tx_ms) >= 1000u) {
             uint8_t clear[5] = {
                 MESH_CONTROL_FRIEND_CLEAR,
                 (uint8_t)(mesh_network.state.unicast_address >> 8),
@@ -1963,12 +1960,11 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
                     mesh_network.state.unicast_address,
                     transport_lpn.friend_address, 0, 0,
                     clear, sizeof(clear))
-            ) transport_lpn.last_tx_ms = now;
+            ) transport_lpn.last_tx_ms = now_ms;
         }
     }
     else if (transport_lpn.state == MESH_LPN_ESTABLISHED) {
-        uint32_t now = GET_MILLIS();
-        if ((uint32_t)(now - transport_lpn.last_rx_ms) >=
+        if ((uint32_t)(now_ms - transport_lpn.last_rx_ms) >=
                 transport_lpn.poll_timeout_ms) {
             mesh_friendship_clear(transport_lpn.net_key_index,
                 mesh_network.state.unicast_address,
@@ -1981,7 +1977,7 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
             // Poll every third of the negotiated timeout, leaving time for
             // retries before expiring an unresponsive friendship.
             uint32_t poll_interval_ms = transport_lpn.poll_timeout_ms / 3u;
-            if ((uint32_t)(now - transport_lpn.last_tx_ms) >= poll_interval_ms) {
+            if ((uint32_t)(now_ms - transport_lpn.last_tx_ms) >= poll_interval_ms) {
                 if (transport_lpn.subscription_pending) {
                     uint8_t subscription[2 +
                         MESH_FRIEND_SUBSCRIPTION_MESSAGE_MAX * 2];
@@ -2005,7 +2001,7 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
                         mesh_network.state.unicast_address,
                         transport_lpn.friend_address, 1, 0,
                         poll, sizeof(poll))
-                ) transport_lpn.last_tx_ms = now;
+                ) transport_lpn.last_tx_ms = now_ms;
             }
         }
     }
@@ -2061,18 +2057,17 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
         }
     }
 
-    uint32_t now = GET_MILLIS();
     // Expire stored segments and send one due Segment Acknowledgment.
     for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
         struct transport_rx *rx = &transport_rx[i];
         if (rx->active && !rx->friend_queued &&
-            (uint32_t)(now - rx->updated_ms) >=
+            (uint32_t)(now_ms - rx->updated_ms) >=
                 ((uint32_t)transport_sar_rx.discard_timeout + 1) * 5000) {
             rx->active = rx->ack_pending = 0;
         }
 
         if (!rx->active || !rx->ack_pending || !mesh_local_element(rx->dst) ||
-            (int32_t)(now - rx->ack_at_ms) < 0
+            (int32_t)(now_ms - rx->ack_at_ms) < 0
         ) continue;
         uint16_t seq_zero = (uint16_t)(((rx->transport[1] & 0x7f) << 6) |
                                         ((rx->transport[2] >> 2) & 0x3f));
@@ -2095,7 +2090,7 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
                     rx->dst, rx->seq_auth, rx->iv_index)
             ) continue;
             sent_rx->ack_sent = 1;
-            sent_rx->ack_sent_ms = now;
+            sent_rx->ack_sent_ms = now_ms;
         }
         uint8_t seg_n = rx->transport[3] & 0x1f;
         uint8_t retrans_left = rx->ack_retrans_left;
@@ -2104,7 +2099,7 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
         if (retransmit) retrans_left--;
         transport_rx_ack(rx->ctl, rx->net_idx, rx->src, rx->dst, rx->seq_auth,
             rx->iv_index, retransmit,
-            retransmit ? now + ((uint32_t)transport_sar_rx.segment_interval_step + 1) * 10 : 0,
+            retransmit ? now_ms + ((uint32_t)transport_sar_rx.segment_interval_step + 1) * 10 : 0,
             rx->updated_ms, retrans_left);
         break;
     }
@@ -2137,12 +2132,12 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
         if (transport_tx.next_seg <= transport_tx.seg_n) {
             uint32_t segment_interval_ms =
                 ((uint32_t)transport_sar_tx.segment_interval_step + 1) * 10;
-            if ((uint32_t)(now - transport_tx.last_tx_ms) >= segment_interval_ms &&
+            if ((uint32_t)(now_ms - transport_tx.last_tx_ms) >= segment_interval_ms &&
                 transport_segment_queue() < 0
             ) return -1;
         }
         else if (transport_tx.dst >= 0x8000 &&
-                 (uint32_t)(now - transport_tx.last_tx_ms) >=
+                 (uint32_t)(now_ms - transport_tx.last_tx_ms) >=
                      ((uint32_t)transport_sar_tx.multicast_retrans_interval_step + 1) * 25) {
             // Multicast has no Segment ACK, so repeat the full segment set.
             if (transport_tx.retries >= transport_sar_tx.multicast_retrans_count)
@@ -2152,7 +2147,7 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
                 transport_tx.next_seg = 0;
             }
         }
-        else if ((uint32_t)(now - transport_tx.last_tx_ms) >=
+        else if ((uint32_t)(now_ms - transport_tx.last_tx_ms) >=
                  (((uint32_t)transport_sar_tx.unicast_retrans_interval_step + 1) * 25) +
                  (((uint32_t)transport_sar_tx.unicast_retrans_interval_increment + 1) * 25) *
                      (transport_tx.ttl ? transport_tx.ttl - 1 : 0)) {

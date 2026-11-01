@@ -100,7 +100,7 @@ static int receive_frame(int index, mesh_access_message *access) {
     mesh_net_message network;
     assert(mesh_net_receive(sent[index] + 2, sent_len[index] - 2,
                                 &network) == 1);
-    return mesh_transport_receive(&network, access);
+    return mesh_transport_receive(&network, access, now_ms);
 }
 
 static void test_relay(void) {
@@ -172,7 +172,7 @@ int main(void) {
     assert(memcmp(received.data, long_access, sizeof(long_access)) == 0);
     assert(received.app_key_index == APP_KEY_INDEX_NONE);
     assert(received.device_key_owner == b.unicast_address);
-    assert(mesh_transport_poll(&received) == 0);
+    assert(mesh_transport_poll(&received, now_ms) == 0);
     assert(sent_count == 5);
 
     assert(mesh_network_init(&a) == 1);
@@ -254,13 +254,13 @@ int main(void) {
     assert(receive_frame(4, &received) == 1 &&
            received.len == sizeof(long_access) &&
            memcmp(received.data, long_access, sizeof(long_access)) == 0);
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 6);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 6);
     b = mesh_network.state;
 
     assert(mesh_network_init(&a) == 1);
     assert(receive_frame(5, &received) == 0 && !transport_tx.active);
     assert(segmented_tx_queue_count == 1);
-    assert(mesh_transport_poll(&received) == 0);
+    assert(mesh_transport_poll(&received, now_ms) == 0);
     assert(transport_tx.active && segmented_tx_queue_count == 0 &&
            sent_count == 7);
     transport_tx.active = 0;
@@ -284,14 +284,14 @@ int main(void) {
     assert(mesh_net_receive(sent[3] + 2, sent_len[3] - 2,
                                 &reordered) == 1);
     uint32_t final_segment_seq = reordered.seq;
-    assert(mesh_transport_receive(&reordered, &received) == 0);
+    assert(mesh_transport_receive(&reordered, &received, now_ms) == 0);
     assert(mesh_network.replay_count == 0);
     assert(receive_frame(2, &received) == 1);
     assert(received.len == sizeof(long_access));
     assert(memcmp(received.data, long_access, sizeof(long_access)) == 0);
     assert(mesh_network.replay_count == 1 &&
            mesh_network.replay[0].seq == final_segment_seq);
-    assert(mesh_transport_poll(&received) == 0);
+    assert(mesh_transport_poll(&received, now_ms) == 0);
     assert(sent_count == 5);
     b = mesh_network.state;
 
@@ -314,7 +314,7 @@ int main(void) {
     assert(receive_frame(1, &received) == 0);
     assert(receive_frame(3, &received) == 0);
     current_ms += 200;
-    assert(mesh_transport_poll(&received) == 0);
+    assert(mesh_transport_poll(&received, now_ms) == 0);
     assert(sent_count == 5);
     b = mesh_network.state;
 
@@ -329,7 +329,7 @@ int main(void) {
     assert(receive_frame(5, &received) == 1);
     assert(memcmp(received.data, long_access, sizeof(long_access)) == 0);
     current_ms += 150;
-    assert(mesh_transport_poll(&received) == 0);
+    assert(mesh_transport_poll(&received, now_ms) == 0);
     assert(sent_count == 7);
 
     assert(mesh_network_init(&a) == 1);
@@ -375,7 +375,7 @@ int main(void) {
         .transport_len = 2,
         .transport = {0x01, 0x01}
     };
-    assert(mesh_transport_receive(&friend_poll, &received) == 0);
+    assert(mesh_transport_receive(&friend_poll, &received, now_ms) == 0);
     assert(control_event_count == 1 && control_event.opcode == 0x01 &&
            control_event.len == 1 && control_event.params[0] == 1 &&
            control_event.friendship &&
@@ -385,7 +385,7 @@ int main(void) {
     assert(receive_frame(1, &received) == 0);
     assert(receive_frame(0, &received) == 0);
     assert(receive_frame(2, &received) == 0);
-    assert(mesh_transport_poll(&received) == 0);
+    assert(mesh_transport_poll(&received, now_ms) == 0);
     assert(control_event_count == 1);
     assert(control_event.opcode == 0x02 &&
            control_event.len == sizeof(control_params));
@@ -394,13 +394,13 @@ int main(void) {
     assert(memcmp(control_event.params, control_params,
                   sizeof(control_params)) == 0);
     mesh_transport_set_control_handler(NULL);
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 4);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 4);
     current_ms += 9;
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 4);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 4);
     current_ms++;
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 5);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 5);
     current_ms += 10;
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 5);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 5);
     transport_sar_rx = MESH_SAR_RX_DEFAULT;
     assert(sent_count == 5); // Initial Segment ACK plus one configured repeat.
     uint8_t saved_control_ack[31];
@@ -432,7 +432,7 @@ int main(void) {
         .transport_len = 7,
         .transport = {MESH_CONTROL_FRIEND_OFFER, 20, 2, 4, 0, 0, 7}
     };
-    assert(mesh_transport_receive(&offer, &received) == 0);
+    assert(mesh_transport_receive(&offer, &received, now_ms) == 0);
     assert(transport_lpn.state == MESH_LPN_WAITING_FOR_UPDATE &&
            transport_lpn.friend_address == a.unicast_address && sent_count == 2);
     mesh_net_message update = {
@@ -445,7 +445,7 @@ int main(void) {
         .transport_len = 7,
         .transport = {MESH_CONTROL_FRIEND_UPDATE, 0, 0, 0, 0, 0, 0}
     };
-    assert(mesh_transport_receive(&update, &received) == 0);
+    assert(mesh_transport_receive(&update, &received, now_ms) == 0);
     assert(mesh_lpn_friend_address() == a.unicast_address &&
            transport_lpn.fsn == 1 &&
            transport_lpn.last_rx_ms == current_ms);
@@ -455,9 +455,9 @@ int main(void) {
     mesh_net_state lpn_state = mesh_network.state;
     uint32_t first_poll_at = transport_lpn.last_tx_ms;
     current_ms = first_poll_at + transport_lpn.poll_timeout_ms / 3 - 1;
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 2);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 2);
     current_ms++;
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 3);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 3);
     assert(mesh_network_init(&a) == 1);
     assert(mesh_friendship_add(lpn_state.net_key_index,
         lpn_state.unicast_address, a.unicast_address, 0, 7));
@@ -474,7 +474,7 @@ int main(void) {
     // Without a response, the next Poll repeats the current FSN.
     current_ms = transport_lpn.last_tx_ms +
         transport_lpn.poll_timeout_ms / 3;
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 4);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 4);
     assert(mesh_network_init(&a) == 1);
     assert(mesh_friendship_add(lpn_state.net_key_index,
         lpn_state.unicast_address, a.unicast_address, 0, 7));
@@ -486,12 +486,12 @@ int main(void) {
     assert(mesh_network_init(&lpn_state) == 1);
     assert(mesh_friendship_add(lpn_state.net_key_index,
         lpn_state.unicast_address, a.unicast_address, 0, 7));
-    assert(mesh_transport_receive(&update, &received) == 0);
+    assert(mesh_transport_receive(&update, &received, now_ms) == 0);
     assert(transport_lpn.fsn == 0 &&
            transport_lpn.last_rx_ms == current_ms);
     current_ms = transport_lpn.last_tx_ms +
         transport_lpn.poll_timeout_ms / 3;
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 5);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 5);
     assert(mesh_network_init(&a) == 1);
     assert(mesh_friendship_add(lpn_state.net_key_index,
         lpn_state.unicast_address, a.unicast_address, 0, 7));
@@ -529,7 +529,7 @@ int main(void) {
         lpn_state.unicast_address, a.unicast_address, 0, 7));
     current_ms = transport_lpn.last_tx_ms +
         transport_lpn.poll_timeout_ms / 3;
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 8);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 8);
     assert(mesh_network_init(&a) == 1);
     assert(mesh_friendship_add(lpn_state.net_key_index,
         lpn_state.unicast_address, a.unicast_address, 0, 7));
@@ -548,18 +548,18 @@ int main(void) {
         .transport_len = 2,
         .transport = {MESH_CONTROL_FRIEND_SUBSCRIPTION_CONFIRM, 0}
     };
-    assert(mesh_transport_receive(&subscription_confirm, &received) == 0 &&
+    assert(mesh_transport_receive(&subscription_confirm, &received, now_ms) == 0 &&
            !transport_lpn.subscription_pending && transport_lpn.fsn == 1);
     assert(mesh_lpn_subscription_update(
         MESH_CONTROL_FRIEND_SUBSCRIPTION_REMOVE, subscription_addresses, 1));
     assert(transport_lpn.subscription_pending_transaction == 1 &&
            sent_count == 9);
     subscription_confirm.transport[1] = 1;
-    assert(mesh_transport_receive(&subscription_confirm, &received) == 0 &&
+    assert(mesh_transport_receive(&subscription_confirm, &received, now_ms) == 0 &&
            !transport_lpn.subscription_pending && transport_lpn.fsn == 0);
 
     current_ms = transport_lpn.last_rx_ms + transport_lpn.poll_timeout_ms;
-    assert(mesh_transport_poll(&received) == 0 &&
+    assert(mesh_transport_poll(&received, now_ms) == 0 &&
            transport_lpn.state == MESH_LPN_IDLE &&
            mesh_lpn_friend_address() == 0 && mesh_lpn_next_counter() == 1);
 
@@ -619,7 +619,7 @@ int main(void) {
     assert(receive_frame(3, &received) == 1);
     assert(received.has_label && received.len == sizeof(long_access) &&
            memcmp(received.data, long_access, sizeof(long_access)) == 0);
-    assert(mesh_transport_poll(&received) == 0);
+    assert(mesh_transport_poll(&received, now_ms) == 0);
     assert(transport_tx.active && sent_count == 4);
     transport_tx.active = 0; // The separate group-retry test covers retransmission.
 
@@ -676,17 +676,17 @@ int main(void) {
     mesh_net_message net;
     assert(mesh_net_receive(sent[0] + 2, sent_len[0] - 2, &net) == 1);
     assert((net.transport[0] & 0x80) && (net.transport[1] & 0x80));
-    assert(mesh_transport_receive(&net, &received) == 1);
+    assert(mesh_transport_receive(&net, &received, now_ms) == 1);
     assert(received.len == sizeof(short_access) &&
            memcmp(received.data, short_access, sizeof(short_access)) == 0);
-    assert(mesh_transport_poll(&received) == 0);
+    assert(mesh_transport_poll(&received, now_ms) == 0);
     assert(sent_count == 2);
-    assert(mesh_transport_receive(&net, &received) == 0); // Completed duplicate.
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 2);
+    assert(mesh_transport_receive(&net, &received, now_ms) == 0); // Completed duplicate.
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 2);
     current_ms += 149;
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 2);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 2);
     current_ms++;
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 3);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 3);
     assert(mesh_network_init(&a) == 1);
     assert(receive_frame(1, &received) == 0 && !transport_tx.active);
 
@@ -826,26 +826,26 @@ int main(void) {
     assert(sent_count == 4 && transport_tx.active);
 
     current_ms += 249;
-    assert(mesh_transport_poll(&received) == 0);
+    assert(mesh_transport_poll(&received, now_ms) == 0);
     assert(sent_count == 4);
     current_ms++;
-    assert(mesh_transport_poll(&received) == 0);
+    assert(mesh_transport_poll(&received, now_ms) == 0);
     for (int i = 0; i < 4; i++) {
         current_ms += 60;
-        assert(mesh_transport_poll(&received) == 0);
+        assert(mesh_transport_poll(&received, now_ms) == 0);
     }
     assert(sent_count == 8 && transport_tx.retries == 1);
 
     current_ms += 250;
-    assert(mesh_transport_poll(&received) == 0);
+    assert(mesh_transport_poll(&received, now_ms) == 0);
     for (int i = 0; i < 4; i++) {
         current_ms += 60;
-        assert(mesh_transport_poll(&received) == 0);
+        assert(mesh_transport_poll(&received, now_ms) == 0);
     }
     assert(sent_count == 12 && transport_tx.retries == 2);
 
     current_ms += 250;
-    assert(mesh_transport_poll(&received) == 0);
+    assert(mesh_transport_poll(&received, now_ms) == 0);
     assert(!transport_tx.active && sent_count == 12);
 
     // Segments are paced by the configurable SAR interval (default 60 ms).
@@ -862,14 +862,14 @@ int main(void) {
     assert(mesh_transport_queue(0x1201, 0xc001, 5, 0, NULL,
         long_access, sizeof(long_access), 0) == 1);
     assert(sent_count == 1 && transport_tx.next_seg == 1);
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 1);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 1);
     current_ms += 59;
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 1);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 1);
     current_ms++;
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 2);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 2);
     while (transport_tx.next_seg <= transport_tx.seg_n) {
         current_ms += 60;
-        assert(mesh_transport_poll(&received) == 0);
+        assert(mesh_transport_poll(&received, now_ms) == 0);
     }
     assert(sent_count == 4);
     transport_tx.active = 0;
@@ -887,15 +887,15 @@ int main(void) {
     memset(transport_rx, 0, sizeof(transport_rx));
     transport_sar_rx = (mesh_sar_rx_state){31, 1, 0, 5, 0};
     assert(receive_frame(0, &received) == 0 && transport_rx[0].active);
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 0);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 0);
     current_ms += 149;
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 0);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 0);
     current_ms++;
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 1);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 1);
     current_ms += 4849;
-    assert(mesh_transport_poll(&received) == 0 && transport_rx[0].active);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && transport_rx[0].active);
     current_ms++;
-    assert(mesh_transport_poll(&received) == 0 && !transport_rx[0].active);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && !transport_rx[0].active);
 
     // A full pool of incomplete reassemblies rejects a new unicast transfer
     // with an empty Segment ACK instead of overwriting stored segments.
@@ -919,7 +919,7 @@ int main(void) {
         uint16_t seq_zero = (uint16_t)(seq & 0x1fff);
         net.transport[1] = (uint8_t)(seq_zero >> 6);
         net.transport[2] = (uint8_t)((seq_zero & 0x3f) << 2);
-        assert(mesh_transport_receive(&net, &received) == 0);
+        assert(mesh_transport_receive(&net, &received, now_ms) == 0);
     }
     active_rx = 0;
     for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++)
@@ -941,7 +941,7 @@ int main(void) {
         (uint16_t)(overflow.seq & 0x1fff);
     overflow.transport[1] = (uint8_t)(overflow_seq_zero >> 6);
     overflow.transport[2] = (uint8_t)((overflow_seq_zero & 0x3f) << 2);
-    assert(mesh_transport_receive(&overflow, &received) == 0);
+    assert(mesh_transport_receive(&overflow, &received, now_ms) == 0);
     active_rx = 0;
     for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++)
         active_rx += transport_rx[i].active != 0;
@@ -980,7 +980,7 @@ int main(void) {
     uint16_t offered_counter = transport_friend_offers[0].friend_counter;
     mesh_net_state friend_state = mesh_network.state;
     current_ms += 125;
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 1);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 1);
     assert(mesh_network_init(&b) == 1);
     mesh_net_message friend_offer;
     assert(mesh_net_receive(sent[0] + 2, sent_len[0] - 2,
@@ -1012,7 +1012,7 @@ int main(void) {
         .net_key_index = friend_request.net_key_index,
         .transport_len = 3, .transport = {0x00, 0xaa, 0x55}
     };
-    assert(mesh_transport_receive(&queued_for_lpn, &received) == 0);
+    assert(mesh_transport_receive(&queued_for_lpn, &received, now_ms) == 0);
     assert(transport_friend_offers[0].queue_count == 1 &&
            transport_friend_offers[0].queue[0].message.ttl == 4);
     mesh_friend_poll_receive(&friend_poll_control);
@@ -1101,7 +1101,7 @@ int main(void) {
         .net_key_index = friend_request.net_key_index,
         .transport_len = 3, .transport = {0x00, 0xbb, 0x66}
     };
-    assert(mesh_transport_receive(&queued_group, &received) == 0 &&
+    assert(mesh_transport_receive(&queued_group, &received, now_ms) == 0 &&
            transport_friend_offers[0].queue_count == 1 &&
            transport_friend_offers[0].queue[0].message.ttl == 4);
     mesh_friend_poll_receive(&friend_poll_control);
@@ -1119,7 +1119,7 @@ int main(void) {
     assert(mesh_friendship_add(friend_request.net_key_index, b.unicast_address,
         friend_state.unicast_address, 7, offered_counter));
     current_ms += 10;
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 5 &&
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 5 &&
            !transport_friend_offers[0].subscription_confirm_pending);
     assert(mesh_network_init(&friend_state) == 1);
     assert(mesh_friendship_add(friend_request.net_key_index, b.unicast_address,
@@ -1136,7 +1136,7 @@ int main(void) {
            sent_count == 5 &&
            transport_friend_offers[0].subscription_confirm_pending);
     current_ms += 10;
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 6);
+    assert(mesh_transport_poll(&received, now_ms) == 0 && sent_count == 6);
     assert(mesh_network_init(&b) == 1);
     assert(mesh_friendship_add(friend_request.net_key_index, b.unicast_address,
         friend_state.unicast_address, 7, offered_counter));
@@ -1175,7 +1175,7 @@ int main(void) {
                       0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
                       0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b}
     };
-    assert(mesh_transport_receive(&friend_segment, &received) == 0 &&
+    assert(mesh_transport_receive(&friend_segment, &received, now_ms) == 0 &&
            friend_offer_state->queue_count == 0 && sent_count == 0);
     friend_segment.seq = 0x2346;
     friend_segment.transport_len = 9;
@@ -1187,7 +1187,7 @@ int main(void) {
     friend_segment.transport[6] = 0x22;
     friend_segment.transport[7] = 0x23;
     friend_segment.transport[8] = 0x24;
-    assert(mesh_transport_receive(&friend_segment, &received) == 0 &&
+    assert(mesh_transport_receive(&friend_segment, &received, now_ms) == 0 &&
            friend_offer_state->queue_count == 1 && sent_count == 1);
     assert(mesh_network_init(&source_state) == 1);
     mesh_net_message friend_obo_ack;
@@ -1248,7 +1248,7 @@ int main(void) {
     transport_tx.seg_n = 1;
     assert(mesh_net_receive(sent[0] + 2, sent_len[0] - 2,
                             &friend_obo_ack) == 1);
-    assert(mesh_transport_receive(&friend_obo_ack, &received) == 0 &&
+    assert(mesh_transport_receive(&friend_obo_ack, &received, now_ms) == 0 &&
            !transport_tx.active);
 
     // Friend Updates advance and complete IV Update using the same timing
@@ -1360,7 +1360,7 @@ int main(void) {
     assert(sent_count == previous_clear_index + 2);
     assert(transport_friend_offers[0].clear_pending);
     current_ms += 1000;
-    assert(mesh_transport_poll(&received) == 0 &&
+    assert(mesh_transport_poll(&received, now_ms) == 0 &&
            sent_count == previous_clear_index + 3 &&
            clear_offer->clear_interval_ms == 2000);
     mesh_transport_control_message previous_clear_confirm = {

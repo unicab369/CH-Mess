@@ -727,7 +727,7 @@ int provisioner_start(void) {
 }
 
 /* Poll the radio and handle one received advertisement. */
-void provisioner_poll(void) {
+void provisioner_poll(uint32_t now_ms) {
     // Only the active provisioner handles this poll.
     if (bearer.role != PB_ROLE_PROVISIONER)
         return;
@@ -735,10 +735,8 @@ void provisioner_poll(void) {
     uint8_t adv_data[31];
     size_t len = sizeof(adv_data);
     int received = BLE_MESH_ADV_POLL(adv_data, &len, NULL);
-    uint32_t now = GET_MILLIS();
-
     // Close the link if a cached transmission times out or fails.
-    if (pb_tx_poll(now) != 0) {
+    if (pb_tx_poll(now_ms) != 0) {
         uint8_t reason = provisioner.state == WAITING_FOR_FAILED_ACK
                             ? PB_CLOSE_FAIL
                             : PB_CLOSE_TIMEOUT;
@@ -758,7 +756,7 @@ void provisioner_poll(void) {
 
     // Close an established link that has been inactive too long.
     if (provisioner.state != WAITING_FOR_BEACON &&
-        (uint32_t)(now - bearer.last_activity_ms) >= PROV_PROTOCOL_MS
+        (uint32_t)(now_ms - bearer.last_activity_ms) >= PROV_PROTOCOL_MS
     ) {
         pb_send_link_close(PB_CLOSE_TIMEOUT);
         provisioner.state = PROVISIONER_FAILED;
@@ -781,7 +779,7 @@ void provisioner_poll(void) {
             return;
         }
 
-        bearer.last_activity_ms = now;
+        bearer.last_activity_ms = now_ms;
     }
 
     // Stop retransmitting when the peer acknowledges our transaction.
@@ -864,7 +862,7 @@ void provisioner_poll(void) {
         int success = pb_tx_send_once(link_open, sizeof(link_open),
                                         PB_LINK_OPEN_MS, 1) == 0;
         if (success)
-            bearer.last_activity_ms = GET_MILLIS();
+            bearer.last_activity_ms = now_ms;
         provisioner.state = success ? WAITING_FOR_LINK_ACK
                                     : PROVISIONER_FAILED;
     }
@@ -1366,7 +1364,9 @@ int provisionee_start(void) {
     return 0;
 }
 
-void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
+void provisionee_poll(
+    const uint8_t oob_info[2], const prov_caps *caps, uint32_t now_ms
+) {
     if (bearer.role != PB_ROLE_PROVISIONEE)
         return;
 
@@ -1388,9 +1388,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
     uint8_t adv_data[31];
     size_t len = sizeof(adv_data);
     int received = BLE_MESH_ADV_POLL(adv_data, &len, NULL);
-    uint32_t now = GET_MILLIS();
-
-    if (pb_tx_poll(now) != 0) {
+    if (pb_tx_poll(now_ms) != 0) {
         uint8_t reason = provisionee.state == WAITING_FOR_FAILED_CLOSE
                             ? PB_CLOSE_FAIL
                             : PB_CLOSE_TIMEOUT;
@@ -1408,7 +1406,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
     if (provisionee.state != WAITING_FOR_LINK_OPEN &&
         provisionee.state != PROVISIONEE_FAILED &&
         provisionee.state != PROVISIONEE_COMPLETE &&
-        (uint32_t)(now - bearer.last_activity_ms) >= PROV_PROTOCOL_MS
+        (uint32_t)(now_ms - bearer.last_activity_ms) >= PROV_PROTOCOL_MS
     ) {
         pb_send_link_close(PB_CLOSE_TIMEOUT);
         provisionee.state = PROVISIONEE_FAILED;
@@ -1429,7 +1427,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                              sizeof(bearer.link_id)) == 0))
     ) {
         if (provisionee.state != WAITING_FOR_LINK_OPEN) {
-            bearer.last_activity_ms = now;
+            bearer.last_activity_ms = now_ms;
         }
 
         if (pb_ack_matches(adv_data, len, bearer.tx_num)) {
@@ -1498,7 +1496,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             int success = pb_tx_send_once(link_ack, sizeof(link_ack),
                                             PB_LINK_OPEN_MS, 1) == 0;
             if (success)
-                bearer.last_activity_ms = GET_MILLIS();
+                bearer.last_activity_ms = now_ms;
             provisionee.state = success ? WAITING_FOR_INVITE
                                         : PROVISIONEE_FAILED;
         }

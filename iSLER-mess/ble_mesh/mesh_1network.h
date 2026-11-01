@@ -1306,7 +1306,7 @@ static inline int mesh_net_receive(
 
 
 // Poll the shared advertising bearer and accept only Mesh Message AD data.
-static inline int mesh_net_poll(mesh_net_message *message) {
+static inline int mesh_net_poll(mesh_net_message *message, uint32_t now_ms) {
     int tick_result = 0;
     uint64_t now;
 
@@ -1358,26 +1358,24 @@ static inline int mesh_net_poll(mesh_net_message *message) {
     }
 
     if (mesh_network.ready && mesh_network.state.beacon) {
-        uint32_t millis = GET_MILLIS();
-        mesh_beacon_observations(millis);
+        mesh_beacon_observations(now_ms);
         // (20 s observation period / 2 expected beacons) * (observed + 1).
         uint32_t count = mesh_network.beacon.observed[0] + mesh_network.beacon.observed[1];
         uint32_t interval = (count + 1u) * 10000u;
         if (interval > 600000u)
             interval = 600000u;
-        if ((uint32_t)(millis - mesh_network.beacon.last_sent_ms) >= interval &&
+        if ((uint32_t)(now_ms - mesh_network.beacon.last_sent_ms) >= interval &&
             mesh_net_beacon_queue()
-        ) mesh_network.beacon.last_sent_ms = millis;
+        ) mesh_network.beacon.last_sent_ms = now_ms;
     }
     // Expire subscriptions and send due Heartbeats as unsegmented Control PDUs.
     const mesh_heartbeat_publication *pub = &mesh_network.state.heartbeat;
-    uint32_t millis = GET_MILLIS();
     if (mesh_network.heartbeat.subscribed &&
-        (int32_t)(mesh_network.heartbeat.expires_at_ms - millis) <= 0
+        (int32_t)(mesh_network.heartbeat.expires_at_ms - now_ms) <= 0
     ) mesh_network.heartbeat.subscribed = 0;
     if (mesh_network.ready && pub->dst && pub->period_log &&
         mesh_network.heartbeat.remaining &&
-        (int32_t)(millis - mesh_network.heartbeat.publish_at_ms) >= 0) {
+        (int32_t)(now_ms - mesh_network.heartbeat.publish_at_ms) >= 0) {
         uint8_t control[] = {0x0a, pub->ttl, 0, 0}; // No optional features are enabled.
         if (mesh_net_queue(pub->net_idx, mesh_network.state.unicast_address, pub->dst, 1,
                                pub->ttl, control, sizeof(control))) {

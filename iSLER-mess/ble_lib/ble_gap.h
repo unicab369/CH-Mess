@@ -1595,7 +1595,8 @@ static int gap_privacy_timeout_pick(
 // null IRK select the public address. uint16_t arguments reject out-of-range
 // values before they can be narrowed to the stored uint8_t units.
 int gap_privacy_configure(
-    const uint8_t irk[16], uint16_t min_timeout_15s, uint16_t max_timeout_15s
+    const uint8_t irk[16], uint16_t min_timeout_15s, uint16_t max_timeout_15s,
+    uint32_t now_ms
 ) {
     if (gap_is_busy() ||
         !IN_RANGE_INCLUSIVE(max_timeout_15s, min_timeout_15s, 240) ||
@@ -1626,7 +1627,7 @@ int gap_privacy_configure(
     memcpy(gap_own_address.address, address, sizeof(gap_own_address.address));
     gap_privacy_timeout_min_15s = (uint8_t)min_timeout_15s;
     gap_privacy_timeout_max_15s = (uint8_t)max_timeout_15s;
-    gap_privacy_next_rotation_ms = GET_MILLIS() + (uint32_t)timeout_15s * 15000;
+    gap_privacy_next_rotation_ms = now_ms + (uint32_t)timeout_15s * 15000;
     gap_privacy.resolvable = irk != NULL;
     gap_own_address.type = 1;
     gap_privacy_timeout_15s = timeout_15s;
@@ -1929,7 +1930,7 @@ static inline int ble_gap_l2cap_init(const l2cap_ops *upper) {
 
 // Application-facing
 // Poll each live connection using its context without changing the selected slot.
-static inline int ble_gap_l2cap_poll(void) {
+static inline int ble_gap_l2cap_poll(uint32_t now_ms) {
     int work = 0;
     gap_conn_ref conn_ref;
 
@@ -1972,7 +1973,7 @@ static inline int ble_gap_l2cap_poll(void) {
 
         if (!connected) {
             if (!peer->gap_update_queued)
-                l2cap_conn_tick(l2cap, GET_MILLIS());
+                l2cap_conn_tick(l2cap, now_ms);
             continue;
         }
 
@@ -2029,7 +2030,7 @@ static inline int ble_gap_l2cap_poll(void) {
         }
         else if (peer->gap_update_queued ||
             !l2cap->periph_update_due_ms ||
-            (int32_t)(GET_MILLIS() - l2cap->periph_update_due_ms) < 0
+            (int32_t)(now_ms - l2cap->periph_update_due_ms) < 0
         ) {
             if (!conn->is_central) {
                 if (l2cap_update_reply(l2cap, 0))
@@ -2063,7 +2064,7 @@ static inline int ble_gap_l2cap_poll(void) {
         // Once GAP queued the update, keep retrying the L2CAP response rather
         // than timing out and rejecting a change that GAP has already queued.
         if (!peer->gap_update_queued)
-            l2cap_conn_tick(l2cap, GET_MILLIS());
+            l2cap_conn_tick(l2cap, now_ms);
 
         work += result;
     }

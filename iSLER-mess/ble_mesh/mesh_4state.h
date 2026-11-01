@@ -367,9 +367,8 @@ static int app_key_allowed(uint8_t element, uint16_t model, uint16_t app_idx) {
 
 // Start a publication; another publication cancels the old retransmissions.
 static int mesh_publication_begin(
-    uint8_t element, uint16_t model,
-                                   uint32_t opcode, const uint8_t *params,
-                                   size_t len
+    uint8_t element, uint16_t model, uint32_t opcode,
+    const uint8_t *params, size_t len
 ) {
     int slot = mesh_publication_slot(model);
     if (!mesh_models.ready || element >= mesh_network.state.element_count ||
@@ -394,6 +393,7 @@ static int mesh_publication_send(uint8_t element, uint8_t slot) {
     uint32_t opcode = mesh_models.publications[element][slot].opcode;
     const uint8_t *params = mesh_models.publications[element][slot].params;
     size_t len = mesh_models.publications[element][slot].len;
+
     // TTL 1 publications stay on this node and use the same model dispatcher.
     if (ttl == 1) {
         if (mesh_models.local.pending)

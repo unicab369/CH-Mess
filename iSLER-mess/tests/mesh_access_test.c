@@ -60,7 +60,7 @@ static uint16_t mesh_virtual_address(const uint8_t label[16]) {
     return 0x8001;
 }
 
-static int mesh_transport_poll(mesh_access_message *out) {
+static int mesh_transport_poll(mesh_access_message *out, uint32_t now_ms) {
     if (!incoming_ready) return 0;
     *out = incoming;
     incoming_ready = 0;
@@ -122,7 +122,7 @@ int main(void) {
     mesh_access_pdu access;
     incoming = message;
     incoming_ready = 1;
-    assert(mesh_access_poll(&raw, &access) == 1);
+    assert(mesh_access_poll(&raw, &access, now_ms) == 1);
     assert(access.opcode == 0xe33601 && access.src == 0x1201 &&
            access.dst == 0x1202 && access.app_key_index == 0x0123 &&
            access.ttl == 4 && access.params_len == 2 &&
@@ -134,25 +134,25 @@ int main(void) {
     message.has_label = 0;
     incoming = message;
     incoming_ready = 1;
-    assert(mesh_access_poll(&raw, &access) == 1);
+    assert(mesh_access_poll(&raw, &access, now_ms) == 1);
     assert(access.device_key_owner == message.src);
 
     message.len = 1;
     incoming = message;
     incoming_ready = 1;
-    assert(mesh_access_poll(&raw, &access) == 0); // truncated vendor opcode
+    assert(mesh_access_poll(&raw, &access, now_ms) == 0); // truncated vendor opcode
     message.data[0] = 0x7f;
     incoming = message;
     incoming_ready = 1;
-    assert(mesh_access_poll(&raw, &access) == 0); // reserved opcode
+    assert(mesh_access_poll(&raw, &access, now_ms) == 0); // reserved opcode
 
     incoming = message;
     incoming.data[0] = 0x01;
     incoming_ready = 1;
-    assert(mesh_access_poll(&raw, &access) == 1);
+    assert(mesh_access_poll(&raw, &access, now_ms) == 1);
     assert(access.opcode == 0x01 && access.params_len == 0);
-    assert(mesh_access_poll(&raw, &access) == 0);
-    assert(mesh_access_poll(NULL, &access) == -1);
+    assert(mesh_access_poll(&raw, &access, now_ms) == 0);
+    assert(mesh_access_poll(NULL, &access, now_ms) == -1);
 
     // Acknowledged requests retain their TID-bearing payload, retry on timeout,
     // and stop retrying when the expected response matches the peer and key.
@@ -164,11 +164,11 @@ int main(void) {
     assert(mesh_access_ack_status() == MESH_ACCESS_ACK_PENDING &&
            send_count == 1 && sent[0] == 0x82 && sent[1] == 0x02);
     now_ms += 100;
-    assert(mesh_access_poll(&raw, &access) == 0 && send_count == 2);
+    assert(mesh_access_poll(&raw, &access, now_ms) == 0 && send_count == 2);
     now_ms += 100;
-    assert(mesh_access_poll(&raw, &access) == 0 && send_count == 3);
+    assert(mesh_access_poll(&raw, &access, now_ms) == 0 && send_count == 3);
     now_ms += 100;
-    assert(mesh_access_poll(&raw, &access) == 0 &&
+    assert(mesh_access_poll(&raw, &access, now_ms) == 0 &&
            mesh_access_ack_status() == MESH_ACCESS_ACK_TIMED_OUT &&
            send_count == 3);
 
@@ -180,16 +180,16 @@ int main(void) {
         .data = {0x82, 0x04, 1}
     };
     incoming_ready = 1;
-    assert(mesh_access_poll(&raw, &access) == 1 &&
+    assert(mesh_access_poll(&raw, &access, now_ms) == 1 &&
            mesh_access_ack_status() == MESH_ACCESS_ACK_PENDING);
     incoming.src = 0x1201;
     incoming.app_key_index = 0x0124;
     incoming_ready = 1;
-    assert(mesh_access_poll(&raw, &access) == 1 &&
+    assert(mesh_access_poll(&raw, &access, now_ms) == 1 &&
            mesh_access_ack_status() == MESH_ACCESS_ACK_PENDING);
     incoming.app_key_index = 0x0123;
     incoming_ready = 1;
-    assert(mesh_access_poll(&raw, &access) == 1 &&
+    assert(mesh_access_poll(&raw, &access, now_ms) == 1 &&
            access.opcode == 0x8204 &&
            mesh_access_ack_status() == MESH_ACCESS_ACK_COMPLETE);
     return 0;

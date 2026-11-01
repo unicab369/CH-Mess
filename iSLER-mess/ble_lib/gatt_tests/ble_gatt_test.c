@@ -116,7 +116,7 @@ static void test_gap_service_characteristics(void) {
     assert(mesh_gatt_ensure_initialized());
     const uint8_t flags[] = {2, 0x01, 0x06};
     assert(gap_adv_start(0, ADV_IND, flags, sizeof(flags), NULL, 0, 100));
-    mesh_gatt_poll();
+    mesh_gatt_poll(fake_now_ms);
     assert(mesh_gatt.server.attrs[
            MESH_GATT_HANDLE_GAP_DEVICE_NAME - 1].permissions ==
            BLE_GATT_PERM_READ);
@@ -221,7 +221,7 @@ static void test_gap_service_characteristics(void) {
     gap_wipe(&gap_ead_key, sizeof(gap_ead_key));
 
     gap_adv_stop(0);
-    mesh_gatt_poll();
+    mesh_gatt_poll(fake_now_ms);
     assert(mesh_gatt.server.attrs[
            MESH_GATT_HANDLE_GAP_DEVICE_NAME - 1].permissions ==
            BLE_GATT_PERM_READ_AUTHN);
@@ -320,27 +320,27 @@ static void test_proxy_sar_and_configuration(void) {
     mesh_gatt_proxy_set_rx_callback(capture_proxy_pdu, NULL);
     const uint8_t first[] = {0x40, 0xaa, 0xbb};
     const uint8_t last[] = {0xc0, 0xcc, 0xdd};
-    mesh_gatt_proxy_input(first, sizeof(first), 0);
+    mesh_gatt_proxy_input(first, sizeof(first), 0, fake_now_ms);
     assert(mesh_gatt.proxy_rx_active && !received_len);
-    mesh_gatt_proxy_input(last, sizeof(last), 0);
+    mesh_gatt_proxy_input(last, sizeof(last), 0, fake_now_ms);
     assert(!mesh_gatt.proxy_rx_active);
     assert(received_type == MESH_GATT_PROXY_NETWORK && received_len == 4);
     assert(!memcmp(received_pdu, (uint8_t[]){0xaa, 0xbb, 0xcc, 0xdd}, 4));
 
     const uint8_t set_blacklist[] = {MESH_GATT_PROXY_CONFIGURATION, 0, 1};
-    mesh_gatt_proxy_input(set_blacklist, sizeof(set_blacklist), 0);
+    mesh_gatt_proxy_input(set_blacklist, sizeof(set_blacklist), 0, fake_now_ms);
     assert(mesh_gatt.filter_type == 1 && mesh_gatt.filter_count == 0);
     assert(mesh_gatt.proxy_tx_count == 1);
     mesh_gatt.proxy_tx_head = mesh_gatt.proxy_tx_count = 0;
 
-    const uint8_t network[MESH_GATT_PROXY_NETWORK_PDU_MIN] = {0};
+    const uint8_t network[MESH_PROXY_NETWORK_PDU_MIN] = {0};
     set_cccd(MESH_GATT_HANDLE_DATA_OUT_CCCD, 1);
     assert(mesh_gatt_proxy_offer(MESH_GATT_PROXY_NETWORK, network,
                                  sizeof(network), 0x1201));
     mesh_gatt.proxy_tx_head = mesh_gatt.proxy_tx_count = 0;
 
     const uint8_t add[] = {MESH_GATT_PROXY_CONFIGURATION, 1, 0x01, 0x12};
-    mesh_gatt_proxy_input(add, sizeof(add), 0);
+    mesh_gatt_proxy_input(add, sizeof(add), 0, fake_now_ms);
     assert(mesh_gatt.filter_count == 1 && mesh_gatt.filter[0] == 0x1201);
     mesh_gatt.proxy_tx_head = mesh_gatt.proxy_tx_count = 0;
     assert(!mesh_gatt_proxy_offer(MESH_GATT_PROXY_NETWORK, network,
@@ -411,15 +411,15 @@ static void test_full_65_byte_provisioning_pdu(void) {
     uint8_t part[20];
     for (uint8_t i = 0; i < 19; i++) part[i + 1] = i;
     part[0] = 0x43; // Provisioning SAR Start.
-    mesh_gatt_proxy_input(part, sizeof(part), 1);
+    mesh_gatt_proxy_input(part, sizeof(part), 1, fake_now_ms);
     part[0] = 0x83;
     for (uint8_t i = 0; i < 19; i++) part[i + 1] = (uint8_t)(i + 19);
-    mesh_gatt_proxy_input(part, sizeof(part), 1);
+    mesh_gatt_proxy_input(part, sizeof(part), 1, fake_now_ms);
     for (uint8_t i = 0; i < 19; i++) part[i + 1] = (uint8_t)(i + 38);
-    mesh_gatt_proxy_input(part, sizeof(part), 1);
+    mesh_gatt_proxy_input(part, sizeof(part), 1, fake_now_ms);
     part[0] = 0xc3; // Complete with the final eight bytes.
     for (uint8_t i = 0; i < 8; i++) part[i + 1] = (uint8_t)(i + 57);
-    mesh_gatt_proxy_input(part, 9, 1);
+    mesh_gatt_proxy_input(part, 9, 1, fake_now_ms);
     assert(provisioning_received_len == 65);
     for (uint8_t i = 0; i < 65; i++) assert(provisioning_received[i] == i);
 
@@ -437,8 +437,8 @@ static void test_mesh_sar_timeout_and_link_cleanup(void) {
     gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(gap_conn_slot);
     mesh_gatt.proxy_rx_active = 1;
     mesh_gatt.proxy_rx_started_ms = 100;
-    fake_now_ms = 100 + MESH_GATT_PROXY_SAR_TIMEOUT_MS;
-    assert(mesh_gatt_proxy_sar_timeout_poll());
+    fake_now_ms = 100 + MESH_PROXY_SAR_TIMEOUT_MS;
+    assert(proxy_sar_timeout_poll(fake_now_ms));
     assert(!mesh_gatt.proxy_rx_active && mesh_gatt.proxy_sar_disconnect_pending);
     assert(conn->link_state.terminate_queued &&
            conn->link_layer.local_terminate_reason == 0x13);

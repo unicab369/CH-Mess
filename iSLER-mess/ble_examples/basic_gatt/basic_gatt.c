@@ -53,12 +53,13 @@ int main(void) {
 
     for (;;) {
         uint32_t now = GET_MILLIS();
+        uint32_t now_us = GET_MICROS();
 
         if (gap_conn_count())
-            gap_conn_poll_all();
+            gap_conn_poll_all(now_us, now);
 
-        gap_hw_scan_poll(GET_MICROS());
-        (void)ble_gap_gatt_poll(gatt_links);
+        gap_hw_scan_poll(now_us, now);
+        (void)ble_gap_gatt_poll(gatt_links, now);
 
         if ((int32_t)(now - next_update) >= 0) {
             next_update = now + 1000;

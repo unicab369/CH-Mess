@@ -359,11 +359,11 @@ static size_t mesh_pack_app_indexes(
     return len;
 }
 
-static uint8_t mesh_health_attention_remaining(uint8_t element) {
+static uint8_t mesh_health_attention_remaining(uint8_t element, uint32_t now_ms) {
     if (!mesh_models.health_server[element].attention)
         return 0;
 
-    uint32_t elapsed = (uint32_t)(GET_MILLIS() - mesh_models.health_server[element].attention_started_ms);
+    uint32_t elapsed = (uint32_t)(now_ms - mesh_models.health_server[element].attention_started_ms);
     uint32_t total = (uint32_t)mesh_models.health_server[element].attention * 1000;
     if (elapsed >= total) {
         mesh_models.health_server[element].attention = 0;
@@ -441,7 +441,7 @@ static uint8_t mesh_heartbeat_log(uint32_t value, uint8_t round_up) {
 
 // Config Server: persisted node and model configuration.
 
-static int server_config_receive(const mesh_access_pdu *message) {
+static int server_config_receive(const mesh_access_pdu *message, uint32_t now_ms) {
     const mesh_net_state *state = &mesh_network.state;
     mesh_network.reply_net_idx = message->net_key_index;
     const uint8_t *p = message->params;
@@ -568,7 +568,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
                             pub.count_log == 0x11 ? 0xfffe :
                             pub.count_log ? (uint16_t)(1u << (pub.count_log - 1)) : 0;
                     mesh_network.heartbeat.remaining = count;
-                    mesh_network.heartbeat.publish_at_ms = GET_MILLIS();
+                    mesh_network.heartbeat.publish_at_ms = now_ms;
                 }
             }
 
@@ -612,24 +612,24 @@ static int server_config_receive(const mesh_access_pdu *message) {
                 mesh_network.heartbeat.src = mesh_network.heartbeat.dst = 0;
                 mesh_network.heartbeat.count = 0;
                 mesh_network.heartbeat.min_hops = mesh_network.heartbeat.max_hops = 0;
-                mesh_network.heartbeat.expires_at_ms = GET_MILLIS();
+                mesh_network.heartbeat.expires_at_ms = now_ms;
                 mesh_network.heartbeat.subscribed = 0;
             }
             else if (p[4]) {
                 mesh_network.heartbeat.src = src; mesh_network.heartbeat.dst = dst;
                 mesh_network.heartbeat.count = 0;
                 mesh_network.heartbeat.min_hops = 0x7f; mesh_network.heartbeat.max_hops = 0;
-                mesh_network.heartbeat.expires_at_ms = GET_MILLIS() + (1u << (p[4] - 1)) * 1000u;
+                mesh_network.heartbeat.expires_at_ms = now_ms + (1u << (p[4] - 1)) * 1000u;
                 mesh_network.heartbeat.subscribed = 1;
             }
             else {
-                mesh_network.heartbeat.expires_at_ms = GET_MILLIS();
+                mesh_network.heartbeat.expires_at_ms = now_ms;
                 mesh_network.heartbeat.subscribed = 0;
                 stopped = 1;
             }
         }
 
-        int32_t ms = (int32_t)(mesh_network.heartbeat.expires_at_ms - GET_MILLIS());
+        int32_t ms = (int32_t)(mesh_network.heartbeat.expires_at_ms - now_ms);
         if (ms <= 0)
             mesh_network.heartbeat.subscribed = 0;
         uint32_t seconds = mesh_network.heartbeat.subscribed ? (uint32_t)ms / 1000u : 0;
@@ -1721,7 +1721,9 @@ static inline int mesh_health_faults(
 }
 
 // Health Server: AppKey-protected diagnostics, publication cadence, and attention.
-static int server_health_receive(const mesh_access_pdu *message, uint8_t element) {
+static int server_health_receive(
+    const mesh_access_pdu *message, uint8_t element, uint32_t now_ms
+) {
     const uint8_t *p = message->params;
     size_t len = message->params_len;
     uint32_t opcode = message->opcode;
@@ -1737,7 +1739,7 @@ static int server_health_receive(const mesh_access_pdu *message, uint8_t element
                 BLE_MESH_MODELS_SAVE_STATE(&next) != 1
             ) return 0;
             mesh_models.state = next;
-            mesh_models.publications[element][2].period_at_ms = GET_MILLIS() + mesh_health_period(element);
+            mesh_models.publications[element][2].period_at_ms = now_ms + mesh_health_period(element);
             if (opcode == OP_HEALTH_PERIOD_SET_UNACK)
                 return 1;
         }
@@ -1793,7 +1795,7 @@ static int server_health_receive(const mesh_access_pdu *message, uint8_t element
             return 0;
 
         mesh_models.health_server[element].attention = message->params[0];
-        mesh_models.health_server[element].attention_started_ms = GET_MILLIS();
+        mesh_models.health_server[element].attention_started_ms = now_ms;
         BLE_MESH_HEALTH_ATTENTION(mesh_network.state.unicast_address + element,
                                   mesh_models.health_server[element].attention);
         if (message->opcode == OP_HEALTH_ATTENTION_SET_UNACK)
@@ -1801,7 +1803,7 @@ static int server_health_receive(const mesh_access_pdu *message, uint8_t element
     }
     else return 0;
 
-    uint8_t remaining = mesh_health_attention_remaining(element);
+    uint8_t remaining = mesh_health_attention_remaining(element, now_ms);
     return mesh_access_queue(mesh_network.state.unicast_address + element,
                                  message->src, mesh_models.state.default_ttl,
                                  message->app_key_index,

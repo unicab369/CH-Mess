@@ -123,7 +123,7 @@ static uint8_t gap_conn_rate_busy(const gap_conn_context *conn) {
 
 #if GAP_SECURITY_SUPPORT >= 2
 static void gap_smp_link_close(gap_conn_context *conn);
-static void gap_smp_poll_context(gap_conn_context *conn);
+static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms);
 #endif // GAP_SECURITY_SUPPORT >= 2
 
 #if GAP_EXT_ADV_SUPPORT
@@ -202,7 +202,7 @@ static void gap_conn_end(void) {
 // arrives. Connection timing controls when this device wakes to exchange data;
 // the instant event follows the old interval, then uses the new transmit window.
 static void gap_conn_update_apply(
-    gap_conn_context *conn, uint8_t instant_packet_received
+    gap_conn_context *conn, uint8_t instant_packet_received, uint32_t now_ms
 ) {
     uint8_t tx_payload_len = conn->tx_frame[1];
     uint8_t tx_control_opcode = conn->tx_frame[2];
@@ -239,7 +239,7 @@ static void gap_conn_update_apply(
             conn->link_layer.next_us += (uint32_t)conn->next_schedule.win_offset * 125u;
         }
 
-        conn->link_layer.last_rx_ms = GET_MILLIS();
+        conn->link_layer.last_rx_ms = now_ms;
         conn->schedule.interval_125us = conn->next_schedule.interval_125us;
         conn->schedule.base_event = conn->next_schedule.instant;
         conn->schedule.factor = conn->next_schedule.factor;
@@ -301,7 +301,7 @@ static void gap_conn_update_apply(
         conn->schedule.latency = conn->new_params.latency;
         conn->schedule.timeout_10ms = conn->new_params.supervision_timeout;
         conn->window_size = conn->update_window_size;
-        conn->link_layer.last_rx_ms = GET_MILLIS();
+        conn->link_layer.last_rx_ms = now_ms;
         conn->procedure_state.update_window_active = !instant_packet_received;
         conn->c_subrate.force_event = 1;
         conn->procedure_state.procedure_flags &= (uint8_t)~GAP_PENDING_TIMING_UPDATE;
@@ -754,7 +754,7 @@ static uint8_t gap_conn_control(
         gap_wipe(entropy, sizeof(entropy));
         conn->security.status = GAP_CONNECTION_PENDING;
         conn->security.phase = GAP_ENC_KEY_REQUEST;
-        conn->security.started_ms = GET_MILLIS();
+        conn->security.started_ms = now_ms;
         break;
     }
     case LL_ENC_RSP:
@@ -806,7 +806,7 @@ static uint8_t gap_conn_control(
         conn->tx_frame[2] = LL_PAUSE_ENC_RSP;
         conn->security.rx_enabled = 0;
         conn->security.phase = GAP_ENC_PERIPHERAL_PAUSE;
-        conn->security.started_ms = GET_MILLIS();
+        conn->security.started_ms = now_ms;
         conn->security.status = GAP_CONNECTION_PENDING;
         break;
 
@@ -1032,7 +1032,7 @@ static uint8_t gap_conn_control(
                 conn->queued_action = GAP_QUEUED_NONE;
             conn->c_features.request_pending = 0;
             conn->procedure_state.params_state = GAP_CONN_PARAMS_REMOTE;
-            conn->params_started_ms = GET_MILLIS();
+            conn->params_started_ms = now_ms;
             conn->tx_frame[1] = 24;
             memcpy(conn->tx_frame + 2, frame + 2, 24);
             conn->tx_frame[2] = LL_CONNECTION_PARAM_RSP;
@@ -1591,7 +1591,7 @@ static uint8_t gap_conn_control(
         conn->next_schedule.continuation = continuation;
         conn->next_schedule.timeout_10ms = timeout;
         conn->c_rate.update_pending = 1;
-        conn->params_started_ms = GET_MILLIS();
+        conn->params_started_ms = now_ms;
         conn->connection_status = GAP_CONNECTION_PENDING;
         break;
     }
@@ -1732,7 +1732,7 @@ static uint8_t gap_conn_control(
         conn->channel_report.min_spacing_200ms = frame[4];
         conn->channel_report.max_delay_200ms = frame[5];
         conn->peripheral.status_queued = frame[3];
-        conn->peripheral.status_changed_ms = GET_MILLIS();
+        conn->peripheral.status_changed_ms = now_ms;
         conn->peripheral.last_sent_valid = 0;
         break;
     }
@@ -1900,7 +1900,7 @@ static uint8_t gap_conn_control(
         else {
             // The Central's request wins simultaneous requests.
             conn->procedure_state.phy_request = 1;
-            conn->phy_state.started_ms = GET_MILLIS();
+            conn->phy_state.started_ms = now_ms;
             conn->tx_frame[1] = 3;
             conn->tx_frame[2] = LL_PHY_RSP;
             conn->tx_frame[3] = conn->phy_state.preferred.tx;
@@ -2509,7 +2509,7 @@ static int gap_receive_data(
         return 0;
 
 #if GAP_SECURITY_SUPPORT >= 2
-    gap_smp_poll_context(conn);
+    gap_smp_poll_context(conn, GET_MILLIS());
 #endif
 
     if (*len < conn->rx_packet.len)

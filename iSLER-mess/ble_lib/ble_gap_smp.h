@@ -1461,11 +1461,11 @@ static void smp_bond_peripheral_start(gap_conn_context *conn) {
 
 // Route only SMP (L2CAP CID 0x0006); leave ATT and other application data queued.
 // Called from connection polling and before an application takes an RX fragment.
-static void gap_smp_poll_context(gap_conn_context *conn) {
+static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
     typeof(conn->smp.pairing) *pairing = &conn->smp.pairing;
 
     if (conn->smp.l2cap_ready) {
-        conn->smp.bearer.now_ms = GET_MILLIS();
+        conn->smp.bearer.now_ms = now_ms;
 
         if (conn->smp.bearer.procedure_active &&
             (int32_t)(conn->smp.bearer.now_ms - conn->smp.bearer.deadline_ms) >= 0

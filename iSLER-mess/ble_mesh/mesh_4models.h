@@ -73,7 +73,9 @@ static inline int mesh_onoff_set_virtual(
         params, sizeof(params), 0);
 }
 
-static int server_onoff_receive(const mesh_access_pdu *message, uint8_t element) {
+static int server_onoff_receive(
+    const mesh_access_pdu *message, uint8_t element, uint32_t now_ms
+) {
     struct mesh_onoff_server_state *server = &mesh_models.onoff_server[element];
     uint32_t opcode = message->opcode;
     if (opcode == OP_ONOFF_GET) {
@@ -86,25 +88,22 @@ static int server_onoff_receive(const mesh_access_pdu *message, uint8_t element)
     ) {
         if (message->params_len != 2 || message->params[0] > 1)
             return 0;
-        uint32_t now = GET_MILLIS();
-
         if (!server->has_tid ||
             server->last_src != message->src ||
             server->last_dst != message->dst ||
             server->last_tid != message->params[1] ||
-            (uint32_t)(now - server->last_set_ms) >= 6000
+            (uint32_t)(now_ms - server->last_set_ms) >= 6000
         ) {
             uint8_t changed = server->onoff != message->params[0];
             server->onoff = message->params[0];
             if (changed)
                 mesh_publication_begin(element, MESH_MODEL_ONOFF_SERVER,
                 OP_ONOFF_STATUS, &server->onoff, 1);
-            BLE_MESH_ONOFF_CHANGED(mesh_network.state.unicast_address + element,
-                                   server->onoff);
+            BLE_MESH_ONOFF_CHANGED(mesh_network.state.unicast_address + element, server->onoff);
             server->last_src = message->src;
             server->last_dst = message->dst;
             server->last_tid = message->params[1];
-            server->last_set_ms = now;
+            server->last_set_ms = now_ms;
             server->has_tid = 1;
         }
 
@@ -137,8 +136,7 @@ static inline int mesh_onoff_publish(
 }
 
 // Periodic publications and retransmissions share the existing access TX path.
-static void mesh_publications_poll(void) {
-    uint32_t now = GET_MILLIS();
+static void mesh_publications_poll(uint32_t now_ms) {
     const uint16_t models[] = {MESH_MODEL_ONOFF_SERVER, MESH_MODEL_ONOFF_CLIENT,
                               MESH_MODEL_HEALTH_SERVER, MESH_MODEL_HEALTH_CLIENT};
     for (uint8_t i = 0; i < mesh_network.state.element_count; i++) {
@@ -152,8 +150,8 @@ static void mesh_publications_poll(void) {
             uint32_t period = j == 2 ? mesh_health_period(i) :
                 j == 3 ? 0 : mesh_publication_period(pub->period);
             if ((j == 2 && mesh_models.health_server[i].publish_pending) ||
-                (period && (int32_t)(now - mesh_models.publications[i][j].period_at_ms) >= 0)) {
-                mesh_models.publications[i][j].period_at_ms = now + period;
+                (period && (int32_t)(now_ms - mesh_models.publications[i][j].period_at_ms) >= 0)) {
+                mesh_models.publications[i][j].period_at_ms = now_ms + period;
                 if (j == 0)
                     mesh_publication_begin(i, models[j], OP_ONOFF_STATUS,
                     &mesh_models.onoff_server[i].onoff, 1);
@@ -176,11 +174,11 @@ static void mesh_publications_poll(void) {
             }
 
             if (mesh_models.publications[i][j].remaining &&
-                (int32_t)(now - mesh_models.publications[i][j].retransmit_at_ms) >= 0 &&
+                (int32_t)(now_ms - mesh_models.publications[i][j].retransmit_at_ms) >= 0 &&
                 mesh_publication_send(i, j)) {
                 mesh_models.publications[i][j].remaining--;
                 mesh_models.publications[i][j].retransmit_at_ms =
-                    now + ((pub->retransmit >> 3) + 1u) * 50u;
+                    now_ms + ((pub->retransmit >> 3) + 1u) * 50u;
             }
         }
     }
@@ -195,8 +193,9 @@ static inline int mesh_models_poll(void) {
 
     if (!mesh_models.ready && !mesh_models_init())
         return 0;
+    uint32_t now_ms = GET_MILLIS();
     for (uint8_t i = 0; i < mesh_network.state.element_count; i++)
-        mesh_health_attention_remaining(i);
+        mesh_health_attention_remaining(i, now_ms);
     mesh_access_message raw;
     mesh_access_pdu access;
     int result;
@@ -205,10 +204,10 @@ static inline int mesh_models_poll(void) {
         mesh_models.local.pending = 0;
         result = 1;
     }
-    else result = mesh_access_poll(&raw, &access);
+    else result = mesh_access_poll(&raw, &access, now_ms);
     // Handle received requests first so publications do not occupy their reply slot.
     if (result <= 0) {
-        mesh_publications_poll();
+        mesh_publications_poll(now_ms);
         if (mesh_models.local.pending) {
             access = mesh_models.local.access;
             mesh_models.local.pending = 0;
@@ -235,7 +234,7 @@ static inline int mesh_models_poll(void) {
         if (message->device_key_owner == message->dst) {
             uint16_t primary_net_idx = mesh_network.state.net_key_index;
             mesh_network.reply_net_idx = message->net_key_index;
-            int handled = server_config_receive(message);
+            int handled = server_config_receive(message, now_ms);
             mesh_network.reply_net_idx = primary_net_idx;
             if (handled) return 1;
         }
@@ -331,7 +330,7 @@ static inline int mesh_models_poll(void) {
             continue;
 
         if (model == MESH_MODEL_ONOFF_SERVER)
-            handled |= server_onoff_receive(message, i);
+            handled |= server_onoff_receive(message, i, now_ms);
         else if (model == MESH_MODEL_ONOFF_CLIENT) {
             if (message->params_len != 1 || message->params[0] > 1)
                 continue;
@@ -353,7 +352,7 @@ static inline int mesh_models_poll(void) {
                                    message->src, opcode, message->params, len);
             handled = 1;
         }
-        else handled |= server_health_receive(message, i);
+        else handled |= server_health_receive(message, i, now_ms);
     }
     return handled;
 }

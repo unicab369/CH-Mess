@@ -137,9 +137,9 @@ static inline uint8_t mesh_access_ack_status(void) {
 }
 
 // Service the one outstanding transaction after checking for a reply.
-static inline void mesh_access_ack_poll(void) {
+static inline void mesh_access_ack_poll(uint32_t now_ms) {
     if (mesh_access_ack.state != MESH_ACCESS_ACK_PENDING ||
-        (int32_t)(GET_MILLIS() - mesh_access_ack.retry_at_ms) < 0
+        (int32_t)(now_ms - mesh_access_ack.retry_at_ms) < 0
     ) return;
     if (mesh_access_ack.retries_sent >= mesh_access_ack.retry_limit) {
         mesh_access_ack.state = MESH_ACCESS_ACK_TIMED_OUT;
@@ -155,12 +155,12 @@ static inline void mesh_access_ack_poll(void) {
     mesh_network.reply_net_idx = previous_net_idx;
     if (queued) {
         mesh_access_ack.retries_sent++;
-        mesh_access_ack.retry_at_ms = GET_MILLIS() + mesh_access_ack.timeout_ms;
+        mesh_access_ack.retry_at_ms = now_ms + mesh_access_ack.timeout_ms;
     }
     else {
         // A full transport queue is not a lost response; try the same retry
         // again shortly without consuming one of the bounded attempts.
-        mesh_access_ack.retry_at_ms = GET_MILLIS() + 100u;
+        mesh_access_ack.retry_at_ms = now_ms + 100u;
     }
 }
 
@@ -232,18 +232,18 @@ static inline int mesh_access_queue_virtual(
 // Returns 1 if decoded, 0 if none/malformed, or -1 on a transport error.
 static inline int mesh_access_poll(
     mesh_access_message *message,
-                                       mesh_access_pdu *access
+    mesh_access_pdu *access, uint32_t now_ms
 ) {
     if (!message || !access) return -1;
-    int result = mesh_transport_poll(message);
+    int result = mesh_transport_poll(message, now_ms);
     if (result < 0) return result;
     if (!result) {
-        mesh_access_ack_poll();
+        mesh_access_ack_poll(now_ms);
         return 0;
     }
 
     if (!message->len || message->len > sizeof(message->data)) {
-        mesh_access_ack_poll();
+        mesh_access_ack_poll(now_ms);
         return 0;
     }
 
@@ -251,7 +251,7 @@ static inline int mesh_access_poll(
     size_t opcode_len = (first & 0x80) == 0 ? 1 :
                         (first & 0xc0) == 0x80 ? 2 : 3;
     if (first == 0x7f || message->len < opcode_len) {
-        mesh_access_ack_poll();
+        mesh_access_ack_poll(now_ms);
         return 0;
     }
 
@@ -278,7 +278,7 @@ static inline int mesh_access_poll(
         access->app_key_index == mesh_access_ack.app_key_index &&
         access->opcode == mesh_access_ack.response_opcode
     ) mesh_access_ack.state = MESH_ACCESS_ACK_COMPLETE;
-    mesh_access_ack_poll();
+    mesh_access_ack_poll(now_ms);
     return 1;
 }
 

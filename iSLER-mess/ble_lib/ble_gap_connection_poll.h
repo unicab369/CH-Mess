@@ -705,7 +705,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
                 conn->tx_frame[0] = 0x01;
         }
 
-        gap_conn_update_apply(conn, 1);
+        gap_conn_update_apply(conn, 1, now_ms);
         if (conn->tx_frame[1]) conn->c_subrate.event_activity = 1;
 
         // Each update stage can close the slot, so check before continuing.
@@ -715,7 +715,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         }
 
         gap_conn_event_advance(conn);
-        gap_conn_update_apply(conn, 0);
+        gap_conn_update_apply(conn, 0, now_ms);
         // This stage can also close the slot, so it needs a separate check.
         if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))) {
             gap_conn_slot = previous_slot;
@@ -823,7 +823,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 
     if (periodic_scan && pdu_type == CONNECT_IND && frame[1] == 34 &&
         !gap_ext_scan.ready &&
-        gap_pawr_conn_req_start(gap_ext_scan.slot, frame, 36)
+        gap_pawr_conn_req_start(gap_ext_scan.slot, frame, 36, receive_us)
     ) {
         gap_ext_scan.rssi = RADIO_RSSI();
         memcpy(gap_ext_scan.frame, frame, 36);
@@ -885,7 +885,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
          || gap_initiator.active
 #endif
         ) &&
-        gap_ext_aux_request_start(frame)
+        gap_aux_request_start(frame, now_ms)
     ) {
         gap_conn_slot = previous_slot;
         return;
@@ -1230,8 +1230,9 @@ static uint32_t gap_conn_close_us(
 
 // A skipped subrate event still advances the event counter and channel hop.
 static inline uint8_t gap_conn_can_skip_event(
-    const gap_conn_context *conn, uint16_t event
+    const gap_conn_context *conn, uint16_t event, uint32_t now_ms
 ) {
+    (void)now_ms;
     if (conn->c_subrate.force_event || conn->c_subrate.continuations)
         return 0;
 
@@ -1312,13 +1313,14 @@ static void gap_conn_poll(uint32_t now_us) {
 #endif // GAP_SECURITY_SUPPORT >= 2
     }
 
+    uint32_t now_ms = GET_MILLIS();
+
     // Bond loading is one-time; restoration and SMP protocol work are polled each event.
 #if GAP_SECURITY_SUPPORT >= 2
     smp_bond_restore_poll(conn);
-    gap_smp_poll_context(conn);
+    gap_smp_poll_context(conn, now_ms);
 #endif // GAP_SECURITY_SUPPORT >= 2
 
-    uint32_t now_ms = GET_MILLIS();
 #if GAP_SECURITY_SUPPORT >= 1
     // The mask excludes GAP_ENC_IDLE, GAP_ENC_QUEUED,
     // GAP_ENC_PAUSE_QUEUED, and GAP_ENC_RESTART_QUEUED.
@@ -1430,7 +1432,7 @@ static void gap_conn_poll(uint32_t now_us) {
         do {
             conn->link_layer.next_us += (uint32_t)conn->schedule.interval_125us * 125;
             gap_conn_event_advance(conn);
-            gap_conn_update_apply(conn, 0);
+            gap_conn_update_apply(conn, 0, now_ms);
             if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
                 return;
 
@@ -1457,14 +1459,14 @@ static void gap_conn_poll(uint32_t now_us) {
 
     // During a Central's subrate update, wake for either the old or new
     // subrated events until the indication is acknowledged.
-    if (gap_conn_can_skip_event(conn, conn->link_layer.event_counter)) {
+    if (gap_conn_can_skip_event(conn, conn->link_layer.event_counter, now_ms)) {
         // Skipping radio work does not skip the connection event counter or
         // CSA#1 channel sequence. Advance at the anchor, not ahead of time.
         conn->link_layer.unmapped_channel =
                         (conn->link_layer.unmapped_channel + conn->link_layer.hop) % 37;
         conn->link_layer.next_us += (uint32_t)conn->schedule.interval_125us * 125;
         gap_conn_event_advance(conn);
-        gap_conn_update_apply(conn, 0);
+        gap_conn_update_apply(conn, 0, now_ms);
         return;
     }
 
@@ -1581,7 +1583,7 @@ static void gap_conn_poll(uint32_t now_us) {
 
 // Run housekeeping for every live link and let the first due link claim the
 // shared radio until its connection event finishes.
-static inline void gap_conn_poll_all(void) {
+static inline void gap_conn_poll_all(uint32_t now_us, uint32_t now_ms) {
 #if GAP_LEGACY_ADV_SET_COUNT > 0
     if (adv_evt.phase) return;
 #endif // GAP_LEGACY_ADV_SET_COUNT > 0
@@ -1605,8 +1607,6 @@ static inline void gap_conn_poll_all(void) {
     uint8_t order[GAP_CONNECTION_COUNT];
     uint32_t deadlines[GAP_CONNECTION_COUNT];
     uint8_t count = 0;
-    uint32_t now_ms = GET_MILLIS();
-    uint32_t now_us = GET_MICROS();
 
     for (uint8_t offset = 0; offset < GAP_CONNECTION_COUNT; offset++) {
         uint8_t slot = (uint8_t)((gap_poll.poll_cursor + offset) % GAP_CONNECTION_COUNT);
@@ -1648,8 +1648,7 @@ static inline void gap_conn_poll_all(void) {
 // =============================================================================
 // Hardware scan polling
 // =============================================================================
-void gap_hw_scan_poll(uint32_t now_us) {
-    uint32_t now_ms = GET_MILLIS();
+void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
 
 #if GAP_LEGACY_ADV_SET_COUNT > 0
     if (adv_evt.phase) return;
@@ -1679,7 +1678,7 @@ void gap_hw_scan_poll(uint32_t now_us) {
 #if GAP_EXT_ADV_SUPPORT && GAP_PERIPHERAL_SUPPORT
     if (gap_ext_pawr.connect.reply_armed) {
         if (!RADIO_TX_DONE()) {
-            if ((int32_t)(now_ms - gap_ext_pawr.connect.reply_deadline_ms) < 0)
+            if ((int32_t)(now_us - gap_ext_pawr.connect.reply_deadline_us) < 0)
                 return;
             gap_ext_pawr.connect.reply_armed = 0;
             gap_ext_scan.ready = 0;
@@ -1852,7 +1851,7 @@ void gap_hw_scan_poll(uint32_t now_us) {
         memset(gap_aux_request, 0, sizeof(gap_aux_request));
     }
 
-    gap_ext_scan_process();
+    gap_ext_scan_process(now_ms);
 
     if (gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC) {
         uint8_t slot = gap_ext_scan.slot;
@@ -1936,7 +1935,7 @@ void gap_hw_scan_poll(uint32_t now_us) {
             }
             else {
                 if (connected && window_started) {
-                    if (gap_sync_conn_overlap(sync->start_us, sync->end_us)) {
+                    if (gap_sync_conn_overlap(sync->start_us, sync->end_us, now_ms)) {
                         gap_sync_window_missed((uint8_t)sync_slot);
                         sync_slot = -1;
                     }
@@ -2091,7 +2090,7 @@ int gap_send_due(
                 gap_scanner.scanning = 0;
                 gap_scanner.active = 0;
                 gap_scanner.generation++;
-                gap_conn_poll(GET_MICROS());
+                gap_conn_poll(now_us);
                 return 2;
             }
             adv_evt.channel = 39;

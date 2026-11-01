@@ -555,11 +555,11 @@ the Bluetooth specification; the remaining standard layouts are tracked in
 
 ## GAP connection integration
 
-`ble_gatt.h` provides `ble_gap_gatt_poll()` to poll the fixed ATT bearer for each configured GAP link. Give
+`ble_gatt.h` provides `ble_gap_gatt_poll(peers, now_ms)` to poll the fixed ATT bearer for each configured GAP link. Give
 each connection slot its own server, transport, client (when used), and service
 state. Register services before binding because transport initialization seals
 the server database. This adapter reads GAP fragments directly, so do not also
-call `ble_gap_l2cap_poll()` for the same links.
+call `ble_gap_l2cap_poll(now_ms)` for the same links.
 
 GAP owns one L2CAP connection and transmit queue per live link. The attached
 ATT transport and SMP use that same connection, so fixed and dynamic channels
@@ -588,7 +588,7 @@ static int gatt_services_init(void) {
 }
 
 // Call from the application's main loop after GAP polling.
-(void)ble_gap_gatt_poll(gatt_links);
+(void)ble_gap_gatt_poll(gatt_links, now_ms);
 ```
 
 The manager selects each live GAP handle while moving received LL fragments,
