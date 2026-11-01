@@ -169,9 +169,9 @@ static GAP_RADIO_BUFFER_ATTR uint8_t gap_ext_adv_frame[255];
 static GAP_RADIO_BUFFER_ATTR uint8_t gap_ext_aux_frame[255];
 
 static volatile struct {
-    uint8_t active, failed, set_id, channel;
-    uint16_t offset, adv_data_info;
     uint32_t pdu_start_us;
+    uint16_t offset, adv_data_info;
+    uint8_t active, failed, set_id, channel;
 } gap_periodic_train;
 
 enum {
@@ -179,20 +179,21 @@ enum {
     GAP_EXT_AUX_SCAN_WINDOW, GAP_EXT_AUX_CONNECT_WINDOW, GAP_EXT_AUX_FAILED
 };
 
+enum { GAP_EXT_CHAIN_IDLE, GAP_EXT_CHAIN_TX_PENDING };
+
 static struct {
-    volatile uint8_t phase;
-    uint8_t set_id;
+    uint32_t primary_start_us, window_deadline_us;
     gap_address advertiser;
     uint16_t adv_data_info;
-    uint32_t primary_start_us, window_deadline_us;
+    uint8_t set_id;
+    volatile uint8_t phase;
 } gap_ext_aux;
 
-enum { GAP_EXT_CHAIN_IDLE, GAP_EXT_CHAIN_TX_PENDING };
 static struct {
-    volatile uint8_t phase;
+    uint32_t pdu_start_us;
     uint16_t remaining, adv_data_info;
     uint8_t address_type, channel, set_id;
-    uint32_t pdu_start_us;
+    volatile uint8_t phase;
 } gap_ext_chain;
 
 enum {
