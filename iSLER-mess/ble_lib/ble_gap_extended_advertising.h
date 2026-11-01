@@ -122,7 +122,6 @@ static struct {
 
 typedef struct {
     uint8_t set_id, sid, subevent, response_slot;
-    uint8_t has_address;
     gap_address peer;
     uint16_t event_counter, data_len;
     int8_t rssi;
@@ -1049,7 +1048,6 @@ static void gap_ext_report_queue(
     uint8_t slot = (gap_ext_report_state.head + gap_ext_report_state.count) % GAP_EXT_ADV_REPORT_COUNT;
     gap_ext_report *report = &gap_ext_adv_reports[slot];
 
-    report->has_address = identity->peer.type != GAP_ADDR_NONE;
     report->peer = identity->peer;
     report->identity = *peer;
     report->has_adi = identity->has_adi;
@@ -1471,7 +1469,6 @@ static void gap_pawr_report_push(
                 report->event_counter = event_counter;
                 report->subevent = subevent;
                 report->response_slot = resp_slot;
-                report->has_address = fields.identity.peer.type != GAP_ADDR_NONE;
                 report->peer = fields.identity.peer;
                 report->data_len = fields.payload.len;
                 report->rssi = gap_ext_pawr.response.rssi;

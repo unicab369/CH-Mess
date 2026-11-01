@@ -111,7 +111,7 @@ static struct {
 #if GAP_EXT_ADV_SUPPORT
 typedef struct {
     uint16_t adv_data_info;
-    uint8_t has_address, has_adi, sid;
+    uint8_t has_adi, sid;
     gap_address peer;
 } gap_ext_identity;
 

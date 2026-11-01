@@ -327,7 +327,8 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         }
 
         const uint8_t *request = gap_scan.request;
-        uint8_t peer_matches = !response.identity.has_address ||
+        uint8_t peer_matches =
+            response.identity.peer.type == GAP_ADDR_NONE ||
             (response.identity.peer.type == ((request[0] >> 7) & 1) &&
              memcmp(response.identity.peer.address, request + 8, 6) == 0);
         uint8_t target_matches = !response.has_target ||

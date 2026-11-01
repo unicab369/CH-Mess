@@ -755,7 +755,6 @@ static void test_extended_immediate_requests(void) {
     gap_scan_start(1);
     gap_hw_scan_poll(GET_MICROS(), now_ms); // Apply the scan generation before the simulated AUX RX.
     gap_ext_ctx[0].active = 1;
-    gap_ext_ctx[0].identity.has_address = 1;
     gap_ext_ctx[0].identity.peer.type = 0;
     memcpy(gap_ext_ctx[0].identity.peer.address, peer, 6);
     gap_ext_ctx[0].identity.has_adi = 1;
@@ -871,7 +870,7 @@ static void test_extended_advertising_reassembly(void) {
     assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         chain, sizeof(chain), -50) == 1);
     assert(gap_ext_scan_poll(&report));
-    assert(report.has_address && report.peer.type == 1 &&
+    assert(report.peer.type != GAP_ADDR_NONE && report.peer.type == 1 &&
            !memcmp(report.peer.address, auxiliary + 4, 6));
     assert(report.sid == 2 && report.data_len == 3 && report.rssi == -50 &&
            !memcmp(report.data, (uint8_t[]){0x02, 0x01, 0x06}, 3));
@@ -1032,7 +1031,7 @@ static void test_extended_advertising_radio_followup(void) {
     gap_hw_received();
     gap_hw_scan_poll(GET_MICROS(), now_ms);
     assert(gap_ext_scan_poll(&report));
-    assert(report.has_address && report.sid == 2 && report.data_len == 3 &&
+    assert(report.peer.type != GAP_ADDR_NONE && report.sid == 2 && report.data_len == 3 &&
            !memcmp(report.data, (uint8_t[]){0x02, 0x01, 0x06}, 3));
 
     gap_scan_stop();
@@ -1137,7 +1136,7 @@ static void test_extended_advertising_transmit(void) {
         auxiliary, captured_extended_pdu_lengths[1], -40));
     assert(!gap_ext_ctx[0].active);
     assert(gap_ext_scan_poll(&report));
-    assert(report.has_address && report.sid == 4 && report.data_len == 3 &&
+    assert(report.peer.type != GAP_ADDR_NONE && report.sid == 4 && report.data_len == 3 &&
            !memcmp(report.data, data, sizeof(data)));
     assert(gap_ext_adv_stop(0));
     gap_scan_stop();
@@ -1269,7 +1268,7 @@ static void test_extended_advertising_chain_transmit(void) {
         assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
             captured_extended_pdus[i], captured_extended_pdu_lengths[i], -40));
     assert(gap_ext_scan_poll(&report));
-    assert(report.has_address && report.sid == 5 &&
+    assert(report.peer.type != GAP_ADDR_NONE && report.sid == 5 &&
            report.data_len == sizeof(data) &&
            !memcmp(report.data, data, sizeof(data)));
     assert(gap_ext_adv_stop(0));
