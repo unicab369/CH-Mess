@@ -759,8 +759,8 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     }
 
 #if GAP_PERIPHERAL_SUPPORT
-    if (pdu_type == CONNECT_IND && gap_aux_exchange.waiting &&
-        !gap_aux_exchange.response_started && frame[1] == 34 &&
+    if (pdu_type == CONNECT_IND &&
+        gap_aux_exchange.phase == GAP_AUX_EXCHANGE_WAITING && frame[1] == 34 &&
         GAP_ADDR_CMP(frame, 7, 8, gap_ext_aux.advertiser) &&
         gap_conn_request_valid(frame) && gap_conn_free_slot() >= 0
     ) {
@@ -784,14 +784,13 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             memcpy(gap_ext_adv_frame + 4, gap_ext_aux.advertiser.address, 6);
             memcpy(gap_ext_adv_frame + 10, frame + 2, 6);
             RADIO_TX_CLEAR_DONE();
-            gap_aux_exchange.response_started = 1;
+            gap_aux_exchange.phase = GAP_AUX_EXCHANGE_RESPONSE_TX;
 
             if (!RADIO_IFS_TX_TIMER_ARM(gap_ext_adv_frame, BLE_ADV_ACCESS_ADDRESS, 0, 0,
                                     gap_aux_exchange.connect.phy,
                                     gap_aux_exchange.connect.phy, 0x555555)
             ) {
-                gap_aux_exchange.response_started = 0;
-                gap_aux_exchange.waiting = 0;
+                gap_aux_exchange.phase = GAP_AUX_EXCHANGE_IDLE;
             } else gap_ext_aux.window_deadline_us = receive_us + 1150;
         }
         return;
@@ -811,7 +810,8 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     }
 #endif
 
-    if (pdu_type == SCAN_REQ && gap_aux_exchange.waiting) {
+    if (pdu_type == SCAN_REQ &&
+        gap_aux_exchange.phase == GAP_AUX_EXCHANGE_WAITING) {
         if (frame[1] != 12 ||
             !GAP_ADDR_CMP(frame, 7, 8, gap_ext_aux.advertiser)) {
             return;
@@ -829,7 +829,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         ) {
             // A request addressed to this advertiser but excluded by its
             // filter policy closes this scannable advertising event.
-            gap_aux_exchange.waiting = 0;
+            gap_aux_exchange.phase = GAP_AUX_EXCHANGE_IDLE;
             return;
         }
 
@@ -837,14 +837,13 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         // must start T_IFS after the request's on-air end.
         // Prepare the buffer and timing before marking the response and starting TX.
         gap_aux_exchange.timestamp_us = receive_us + 150;
-        gap_aux_exchange.response_started = 1;
+        gap_aux_exchange.phase = GAP_AUX_EXCHANGE_RESPONSE_TX;
         gap_extended_adv_set *set = &gap_ext_adv[gap_ext_aux.set_id];
 
         if (!RADIO_IFS_TX_TIMER_ARM(gap_ext_adv_frame, BLE_ADV_ACCESS_ADDRESS, 0, 0,
                                     set->aux_phy, set->aux_phy, 0x555555)
         ) {
-            gap_aux_exchange.response_started = 0;
-            gap_aux_exchange.waiting = 0;
+            gap_aux_exchange.phase = GAP_AUX_EXCHANGE_IDLE;
         }
         return;
     }
@@ -1117,8 +1116,7 @@ void gap_hw_init(void) {
 #endif
 
 #if GAP_EXT_ADV_SUPPORT
-    gap_aux_exchange.waiting = 0;
-    gap_aux_exchange.response_started = 0;
+    gap_aux_exchange.phase = GAP_AUX_EXCHANGE_IDLE;
 #if GAP_PERIPHERAL_SUPPORT
     gap_ext_pawr.connect.reply_armed = 0;
 #endif

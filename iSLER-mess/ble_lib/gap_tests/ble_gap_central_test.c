@@ -252,10 +252,6 @@ int RADIO_IFS_TX_TIMER_ARM(const uint8_t *frame, uint32_t access_address,
         gap_ext_scan.request_phase = GAP_EXT_REQ_CONNECT_RX;
     }
     mock_radio_link_tx(frame);
-#if GAP_PERIPHERAL_SUPPORT
-    if (gap_aux_exchange.response_started)
-        gap_aux_exchange.waiting = 0;
-#endif
     return 1;
 }
 static void mock_radio_link_tx(const uint8_t *frame) {
@@ -337,7 +333,7 @@ static void mock_radio_link_tx(const uint8_t *frame) {
     }
 
     if (gap_ext_aux.phase == GAP_EXT_AUX_SCAN_WINDOW &&
-        gap_aux_exchange.waiting && gap_aux_exchange.response_started &&
+        gap_aux_exchange.phase == GAP_AUX_EXCHANGE_RESPONSE_TX &&
         captured_extended_count < 16) {
         uint8_t *frame = (uint8_t *)tx_buffer;
         unsigned slot = captured_extended_count++;
@@ -347,10 +343,6 @@ static void mock_radio_link_tx(const uint8_t *frame) {
         captured_extended_channels[slot] = configured_radio_channel;
         captured_extended_ticks[slot] = fake_radio_ticks;
         fake_radio_ticks += ((uint32_t)frame[1] + 10u) * 8u;
-#if GAP_EXT_ADV_SUPPORT
-        if (gap_aux_exchange.response_started)
-            gap_aux_exchange.waiting = 0;
-#endif
     }
 }
 void RADIO_LINK_TX(const uint8_t *frame, uint32_t access_address,
@@ -409,7 +401,8 @@ void RADIO_LINK_RX(uint32_t access_address, uint8_t channel,
                    uint8_t phy, uint32_t crc_init) {
     mock_radio_link_config(access_address, channel, 0, phy, phy, crc_init);
     link_rx_count++;
-    if (inject_ext_connect_request && gap_aux_exchange.waiting) {
+    if (inject_ext_connect_request &&
+        gap_aux_exchange.phase == GAP_AUX_EXCHANGE_WAITING) {
         static const uint8_t initiator[6] = {0x51, 0x52, 0x53, 0x54, 0x55, 0x56};
         memset(rx_frame, 0, sizeof(rx_frame));
         rx_frame[0] = CONNECT_IND | (gap_ext_aux.advertiser.type << 7);
@@ -442,7 +435,8 @@ void RADIO_LINK_RX(uint32_t access_address, uint8_t channel,
         gap_hw_received();
     }
 
-    if (force_aux_scan_request && gap_aux_exchange.waiting) {
+    if (force_aux_scan_request &&
+        gap_aux_exchange.phase == GAP_AUX_EXCHANGE_WAITING) {
         static const uint8_t scanner_address[6] = {
             0x21, 0x22, 0x23, 0x24, 0x25, 0x26
         };
@@ -2354,7 +2348,7 @@ static void test_extended_scannable_advertising(void) {
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(!force_aux_scan_request && captured_extended_count == 2 &&
-           !gap_aux_exchange.response_started);
+           gap_aux_exchange.phase == GAP_AUX_EXCHANGE_IDLE);
     assert(gap_ext_adv_stop(0));
     assert(gap_accept_list_clear());
     assert(gap_adv_filter_policy(0, 0));
@@ -2375,13 +2369,13 @@ static void test_extended_scannable_advertising(void) {
         short_response, sizeof(short_response), 9, 100, GAP_PHY_1M));
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(gap_ext_aux.phase == GAP_EXT_AUX_SCAN_WINDOW &&
-           gap_aux_exchange.waiting);
+           gap_aux_exchange.phase == GAP_AUX_EXCHANGE_WAITING);
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(gap_ext_aux.phase == GAP_EXT_AUX_SCAN_WINDOW);
     fake_radio_ticks = gap_ext_aux.window_deadline_us;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(gap_ext_aux.phase == GAP_EXT_AUX_IDLE &&
-           !gap_aux_exchange.waiting);
+           gap_aux_exchange.phase == GAP_AUX_EXCHANGE_IDLE);
     assert(gap_ext_adv_stop(0));
     assert(gap_use_public_address());
     fake_radio_tick_autoincrement = 0;

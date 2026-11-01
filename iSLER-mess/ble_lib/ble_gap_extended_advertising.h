@@ -195,6 +195,11 @@ static struct {
     uint32_t pdu_start_us;
 } gap_ext_chain;
 
+enum {
+    GAP_AUX_EXCHANGE_IDLE,
+    GAP_AUX_EXCHANGE_WAITING,
+    GAP_AUX_EXCHANGE_RESPONSE_TX
+};
 static struct {
     uint32_t timestamp_us;
 #if GAP_PERIPHERAL_SUPPORT
@@ -203,7 +208,7 @@ static struct {
         uint8_t phy;
     } connect;
 #endif
-    volatile uint8_t waiting, response_started;
+    volatile uint8_t phase;
 } gap_aux_exchange;
 
 // PAwR response and connection state
@@ -699,8 +704,7 @@ int gap_ext_adv_stop(uint8_t set_id) {
         gap_ext_aux.set_id == set_id
     ) {
         RADIO_STOP();
-        gap_aux_exchange.waiting = 0;
-        gap_aux_exchange.response_started = 0;
+        gap_aux_exchange.phase = GAP_AUX_EXCHANGE_IDLE;
         gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
     }
     if (gap_ext_chain.phase != GAP_EXT_CHAIN_IDLE &&
@@ -2668,17 +2672,17 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
     //! TODO REVIEW
     if (gap_ext_aux.phase == GAP_EXT_AUX_SCAN_WINDOW) {
         gap_extended_adv_set *set = &gap_ext_adv[gap_ext_aux.set_id];
-        if (gap_aux_exchange.response_started) {
+        if (gap_aux_exchange.phase == GAP_AUX_EXCHANGE_RESPONSE_TX) {
             if (!RADIO_TX_DONE()) {
                 if ((int32_t)(now_us - (gap_aux_exchange.timestamp_us + 1000)) < 0)
                     return 1;
                 RADIO_STOP();
-                gap_aux_exchange.waiting = 0;
+                gap_aux_exchange.phase = GAP_AUX_EXCHANGE_IDLE;
                 gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
                 return -1;
             }
             RADIO_STOP();
-            gap_aux_exchange.waiting = 0;
+            gap_aux_exchange.phase = GAP_AUX_EXCHANGE_IDLE;
             gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
             if (set->scan_resp_len > GAP_EXT_ADV_FINAL_DATA_MAX - 4) {
                 uint16_t remaining = set->scan_resp_len - GAP_EXT_ADV_FIRST_DATA_MAX;
@@ -2689,12 +2693,12 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
                 return 1;
             }
         } else {
-            if (gap_aux_exchange.waiting &&
+            if (gap_aux_exchange.phase == GAP_AUX_EXCHANGE_WAITING &&
                 (int32_t)(now_us - gap_ext_aux.window_deadline_us) < 0
             )
                 return 1;
             RADIO_STOP();
-            gap_aux_exchange.waiting = 0;
+            gap_aux_exchange.phase = GAP_AUX_EXCHANGE_IDLE;
             gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
         }
         gap_ext_adv_event_reschedule(gap_ext_aux.set_id, now_ms);
@@ -2702,14 +2706,15 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
     }
 #if GAP_PERIPHERAL_SUPPORT
     if (gap_ext_aux.phase == GAP_EXT_AUX_CONNECT_WINDOW) {
-        if (gap_aux_exchange.waiting &&
+        if (gap_aux_exchange.phase != GAP_AUX_EXCHANGE_IDLE &&
             (int32_t)(now_us - gap_ext_aux.window_deadline_us) < 0
         )
             return 1;
 
-        uint8_t response_sent = gap_aux_exchange.response_started && RADIO_TX_DONE();
+        uint8_t response_sent = gap_aux_exchange.phase == GAP_AUX_EXCHANGE_RESPONSE_TX &&
+                                RADIO_TX_DONE();
         RADIO_STOP();
-        gap_aux_exchange.waiting = 0;
+        gap_aux_exchange.phase = GAP_AUX_EXCHANGE_IDLE;
         gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
         gap_conn_context *accepted = response_sent ? gap_conn_accept(
             gap_aux_exchange.connect.request,
@@ -3014,8 +3019,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         }
 
         memcpy(gap_ext_adv_frame + payload_offset, set->data, first_chunk);
-        gap_aux_exchange.response_started = 0;
-        gap_aux_exchange.waiting = 1;
+        gap_aux_exchange.phase = GAP_AUX_EXCHANGE_WAITING;
         // The TX completion callback schedules AUX using this frame, so
         // both packets must be ready before starting primary TX.
         gap_ext_aux_primary_start((uint8_t)send_extended, &advertiser, adv_data_info);
@@ -3031,8 +3035,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         write_u16_le(gap_ext_aux_frame + 10, adv_data_info);
 
         gap_aux_exchange.connect.phy = set->aux_phy;
-        gap_aux_exchange.response_started = 0;
-        gap_aux_exchange.waiting = 1;
+        gap_aux_exchange.phase = GAP_AUX_EXCHANGE_WAITING;
         gap_ext_aux_primary_start((uint8_t)send_extended, &advertiser, adv_data_info);
         return 1;
     }
