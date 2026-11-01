@@ -1785,8 +1785,9 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
     // periodic sync in the radio gaps between those events.
     if (gap_poll.slot_valid) return;
 
+    uint8_t slot_bit = GAP_CONN_SLOT_BIT(gap_conn_slot);
     const gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
+    if ((gap_conn_slot_mask & slot_bit) &&
         (conn->link_state.rx_armed || conn->link_state.event_replied)
     ) return;
 
@@ -1884,7 +1885,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
             gap_sync_context *sync = &gap_syncs[sync_slot];
             uint8_t window_started = (int32_t)(now_us - sync->start_us) >= 0;
             uint8_t window_ended = (int32_t)(sync->end_us - now_us) < 0;
-            uint8_t connected = gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot);
+            uint8_t connected = gap_conn_slot_mask & slot_bit;
 
             if (window_ended) {
                 gap_sync_window_missed((uint8_t)sync_slot);
