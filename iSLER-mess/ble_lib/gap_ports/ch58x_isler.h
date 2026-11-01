@@ -111,6 +111,7 @@ void iSLER_Radio_Transmitted_Cb(void) {
     }
 #endif
 
+    // The GAP_CONNECT_TX_SENDING case above takes priority over extended advertising TX.
 #if GAP_EXT_ADV_SUPPORT
     if (gap_periodic_train.active) {
         gap_extended_adv_set *set = &gap_ext_adv[gap_periodic_train.set_id];
@@ -152,8 +153,6 @@ void iSLER_Radio_Transmitted_Cb(void) {
         gap_ext_pawr.connect.tx_end_valid = 1;
     }
 #endif
-    if (gap_ext_aux_exchange.response_started)
-        gap_ext_aux_exchange.waiting = 0;
 #endif
 
     if (gap_link.ifs_tx_active) {
@@ -195,6 +194,7 @@ void iSLER_Radio_Transmitted_Cb(void) {
         }
         return;
     }
+
     if (gap_link.receive_after_tx &&
         gap_link.tx_phy != gap_link.rx_phy) {
         iSLERLinkConfig(gap_link.access_address, gap_link.channel,
