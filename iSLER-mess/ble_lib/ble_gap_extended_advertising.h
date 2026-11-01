@@ -2806,8 +2806,9 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
     // Periodic events use microseconds so their interval does not inherit
     // millisecond scheduler jitter. Advance the event counter across missed
     // intervals as required by the periodic channel selection algorithm.
-    if (!resume_aux && (gap_conn_slot_mask == 0 ||
-         ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central)) &&
+    uint8_t connected_central = (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central;
+
+    if (!resume_aux && (gap_conn_slot_mask == 0 || connected_central) &&
         gap_scan.active_address.type == GAP_ADDR_NONE &&
 #if GAP_CENTRAL_SUPPORT
         !gap_initiator.active
@@ -2843,7 +2844,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
             set->periodic.event_counter = (uint16_t)(set->periodic.event_counter + missed);
             set->periodic.next_us += missed * interval_us;
 
-            if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central) {
+            if (connected_central) {
                 uint32_t event_us = gap_periodic_tx_us(set->periodic.data_len, set->aux_phy);
 
                 if (set->pawr.enabled) {
