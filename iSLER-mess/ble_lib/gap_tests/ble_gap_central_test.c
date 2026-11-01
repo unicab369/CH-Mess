@@ -873,7 +873,7 @@ static void test_extended_advertising_reassembly(void) {
     assert(gap_ext_scan_poll(&report));
     assert(report.has_address && report.peer.type == 1 &&
            !memcmp(report.peer.address, auxiliary + 4, 6));
-    assert(report.sid == 2 && report.data_len == 3 && report.rssi == -50 &&
+    assert(report.set_id == 2 && report.data_len == 3 && report.rssi == -50 &&
            !memcmp(report.data, (uint8_t[]){0x02, 0x01, 0x06}, 3));
     assert(!gap_ext_scan_poll(&report));
 
@@ -897,8 +897,8 @@ static void test_extended_advertising_reassembly(void) {
         chain, sizeof(chain), -44) == 1);
     assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
         chain_b, sizeof(chain_b), -45) == 1);
-    assert(gap_ext_scan_poll(&report) && report.sid == 2);
-    assert(gap_ext_scan_poll(&report) && report.sid == 3 &&
+    assert(gap_ext_scan_poll(&report) && report.set_id == 2);
+    assert(gap_ext_scan_poll(&report) && report.set_id == 3 &&
            !memcmp(report.peer.address, auxiliary_b + 4, 6));
 
     gap_scan_stop();
@@ -1032,7 +1032,7 @@ static void test_extended_advertising_radio_followup(void) {
     gap_hw_received();
     gap_hw_scan_poll(GET_MICROS(), now_ms);
     assert(gap_ext_scan_poll(&report));
-    assert(report.has_address && report.sid == 2 && report.data_len == 3 &&
+    assert(report.has_address && report.set_id == 2 && report.data_len == 3 &&
            !memcmp(report.data, (uint8_t[]){0x02, 0x01, 0x06}, 3));
 
     gap_scan_stop();
@@ -1137,7 +1137,7 @@ static void test_extended_advertising_transmit(void) {
         auxiliary, captured_extended_pdu_lengths[1], -40));
     assert(!gap_ext_ctx[0].active);
     assert(gap_ext_scan_poll(&report));
-    assert(report.has_address && report.sid == 4 && report.data_len == 3 &&
+    assert(report.has_address && report.set_id == 4 && report.data_len == 3 &&
            !memcmp(report.data, data, sizeof(data)));
     assert(gap_ext_adv_stop(0));
     gap_scan_stop();
@@ -1269,7 +1269,7 @@ static void test_extended_advertising_chain_transmit(void) {
         assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
             captured_extended_pdus[i], captured_extended_pdu_lengths[i], -40));
     assert(gap_ext_scan_poll(&report));
-    assert(report.has_address && report.sid == 5 &&
+    assert(report.has_address && report.set_id == 5 &&
            report.data_len == sizeof(data) &&
            !memcmp(report.data, data, sizeof(data)));
     assert(gap_ext_adv_stop(0));
@@ -1541,7 +1541,7 @@ static void test_pawr_advertising_subevents(void) {
     assert(set->periodic.event_counter == 1);
     gap_pawr_report response_report;
     assert(gap_pawr_report_poll(&response_report) &&
-           response_report.set_id == 0 && response_report.sid == 3 &&
+           response_report.set_id == 0 && response_report.set_id == 3 &&
            response_report.event_counter == 0 && response_report.subevent == 0 &&
            response_report.response_slot == 0 && response_report.rssi == -40 &&
            response_report.data_len == 3 &&
@@ -1717,7 +1717,7 @@ static void test_pawr_connection_accept(void) {
     sync->used = sync->established = 1;
     sync->peer.type = 0;
     memcpy(sync->peer.address, advertiser, sizeof(advertiser));
-    sync->sid = 4;
+    sync->set_id = 4;
     sync->pawr.timing.has_timing = 1;
     sync->pawr.timing.subevents = 2;
     sync->pawr.timing.subevent_interval = 6;
@@ -1810,7 +1810,7 @@ static void test_pawr_observer_response(void) {
     gap_sync_reports.head = gap_sync_reports.count = 0;
     memset(sync, 0, sizeof(*sync));
     sync->used = sync->established = 1;
-    sync->sid = 6;
+    sync->set_id = 6;
     sync->params.interval = 24;
     sync->event_counter = 12;
     sync->anchor_us = 2000000;
@@ -2030,7 +2030,7 @@ static void test_periodic_advertising_sync(void) {
            gap_syncs[0].window_chain);
     assert(gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_ESTABLISHED &&
-           event.slot == slot && event.sid == 6);
+           event.slot == slot && event.set_id == 6);
 
     uint64_t chain_window_start = gap_syncs[0].start_us;
     fake_radio_ticks = chain_window_start;
@@ -2042,7 +2042,7 @@ static void test_periodic_advertising_sync(void) {
     gap_hw_received();
     gap_hw_scan_poll(GET_MICROS(), now_ms);
     assert(gap_report_poll(&report));
-    assert(report.slot == slot && report.sid == 6 &&
+    assert(report.slot == slot && report.set_id == 6 &&
            report.event_counter == 5 && report.did == 2 &&
            report.rssi == -40 && report.data_len == 3 &&
            !memcmp(report.data, (uint8_t[]){2, 0x01, 0x06}, 3));
@@ -2323,7 +2323,7 @@ static void test_extended_scannable_advertising(void) {
     }
     assert(gap_ext_report_state.count == 1);
     assert(gap_ext_scan_poll(&report));
-    assert(report.sid == 6 && report.data_len == sizeof(data) &&
+    assert(report.set_id == 6 && report.data_len == sizeof(data) &&
            !memcmp(report.data, data, sizeof(data)));
 
     assert(gap_ext_adv_stop(0));
@@ -3226,7 +3226,7 @@ static void test_periodic_sync_transfer_receive(void) {
     memcpy(valid_transfer, rx_frame, sizeof(valid_transfer));
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_syncs[0].used &&
            !gap_syncs[0].established &&
-           gap_syncs[0].sid == 6 &&
+           gap_syncs[0].set_id == 6 &&
            gap_syncs[0].phy == GAP_PHY_1M &&
            gap_syncs[0].event_counter == 5 &&
            gap_syncs[0].widening_ppm == 1500 &&
@@ -3246,7 +3246,7 @@ static void test_periodic_sync_transfer_receive(void) {
     assert(gap_syncs[0].established);
     assert(gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_ESTABLISHED &&
-           event.slot == 0 && event.sid == 6);
+           event.slot == 0 && event.set_id == 6);
     assert(!gap_periodic_sync_transfer(0, 0x1234));
     conn->data_length.tx_octets = 251;
     conn->data_length.tx_time = 2120;
@@ -3266,7 +3266,7 @@ static void test_periodic_sync_transfer_receive(void) {
     gap_ext_fields transferred_fields;
     assert(gap_ext_adv_decode(transferred_sync_info,
         sizeof(transferred_sync_info), &transferred_fields) &&
-        transferred_fields.identity.sid == 6 &&
+        transferred_fields.identity.set_id == 6 &&
         transferred_fields.sync.params.interval == 8 &&
         transferred_fields.sync.params.access_address == 0x12345678 &&
         transferred_fields.sync.params.crc_init == 0x123456);

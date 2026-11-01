@@ -324,7 +324,7 @@ enum {
 };
 
 typedef struct {
-    uint8_t enabled, sid, flags, aux_phy;
+    uint8_t enabled, set_id, flags, aux_phy;
     struct {
         uint8_t enabled, sync_info_sent;
         uint16_t data_len, event_counter, did;
