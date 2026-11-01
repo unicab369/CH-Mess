@@ -488,7 +488,7 @@ static inline void mesh_friendship_clear(
 }
 
 // Call after loading provisioned state. Reinitialize after an IV Update.
-static inline int mesh_network_init(const mesh_net_state *state) {
+static inline int mesh_network_init(const mesh_net_state *state, uint32_t now_ms) {
     if (!state || state->unicast_address == 0 ||
         state->unicast_address > 0x7fff ||
         state->element_count == 0 || state->element_count > MESH_MAX_ELEMENTS ||
@@ -583,12 +583,12 @@ static inline int mesh_network_init(const mesh_net_state *state) {
     mesh_friendships_rederive();
 
     memset(&mesh_network.beacon, 0, sizeof(mesh_network.beacon));
-    mesh_network.beacon.observed_at_ms = mesh_network.beacon.last_sent_ms = GET_MILLIS();
+    mesh_network.beacon.observed_at_ms = mesh_network.beacon.last_sent_ms = now_ms;
     memset(&mesh_network.heartbeat, 0, sizeof(mesh_network.heartbeat));
     // Finite publication counts and subscription timers restart disabled.
     if (state->heartbeat.count_log == 0xff)
         mesh_network.heartbeat.remaining = 0xffff;
-    mesh_network.heartbeat.publish_at_ms = GET_MILLIS();
+    mesh_network.heartbeat.publish_at_ms = now_ms;
     mesh_network.replay_count = 0;
     memset(mesh_network.relay_cache, 0, sizeof(mesh_network.relay_cache));
     mesh_network.relay_cache_next = 0;
@@ -596,11 +596,11 @@ static inline int mesh_network_init(const mesh_net_state *state) {
     return 1;
 }
 
-static inline int mesh_network_restore(void) {
+static inline int mesh_network_restore(uint32_t now_ms) {
     mesh_net_state state;
     if (BLE_MESH_NETWORK_LOAD_STATE(&state) != 1)
         return 0;
-    return mesh_network_init(&state);
+    return mesh_network_init(&state, now_ms);
 }
 
 // Save first, then make a key or IV transition visible to packet processing.
@@ -842,7 +842,7 @@ static void mesh_obfuscate(
 
 
 // Queue one authenticated Secure Network Beacon for each installed subnet.
-static inline int mesh_net_beacon_queue(void) {
+static inline int mesh_net_beacon_queue(uint32_t now_ms) {
     if (!mesh_network.ready || !mesh_network.state.beacon)
         return 0;
     const mesh_net_state *state = &mesh_network.state;
@@ -879,7 +879,7 @@ static inline int mesh_net_beacon_queue(void) {
     }
 
     if (sent)
-        mesh_network.beacon.last_sent_ms = GET_MILLIS();
+        mesh_network.beacon.last_sent_ms = now_ms;
     return sent != 0;
 }
 
@@ -983,7 +983,9 @@ static void mesh_beacon_observations(uint32_t now) {
 // Check the complete beacon AD format, flags, known Network ID, and CMAC.
 // Only an authenticated beacon may change Key Refresh or IV Update state.
 // Returns 1 if accepted, 0 if ignored, or -1 if saving state fails.
-static inline int mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
+static inline int mesh_handle_net_beacon(
+    const uint8_t *ad, size_t len, uint32_t now_ms
+) {
     if (!ad || len != 24 || ad[0] != 23 ||
         ad[1] != MESH_NETWORK_BEACON_AD_TYPE || ad[2] != 0x01 ||
         (ad[3] & 0xfcu) != 0 || !mesh_network.ready
@@ -1023,7 +1025,7 @@ static inline int mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
     }
 
     if (!key) return 0;
-    mesh_beacon_observations(GET_MILLIS());
+    mesh_beacon_observations(now_ms);
     uint8_t *observed = &mesh_network.beacon.observed[mesh_network.beacon.bucket];
     if (*observed < 59) (*observed)++;
 
@@ -1084,8 +1086,7 @@ static inline int mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
 // replay update until lower-transport reassembly completes. Returns 1 if
 // accepted, 0 if ignored, or -1 for bad arguments.
 static inline int mesh_net_receive(
-    const uint8_t *pdu, size_t len,
-                                        mesh_net_message *message
+    const uint8_t *pdu, size_t len, mesh_net_message *message, uint32_t now_ms
 ) {
     if (!pdu || !message) return -1;
     if (!mesh_network.ready || len < 14 || len > MESH_NETWORK_MAX_PDU)
@@ -1282,7 +1283,7 @@ static inline int mesh_net_receive(
     // Count subscribed Heartbeats and track hops after authentication and replay checks.
     if (message->ctl && message->transport[0] == 0x0a) {
         if (mesh_network.heartbeat.subscribed &&
-            (int32_t)(mesh_network.heartbeat.expires_at_ms - GET_MILLIS()) <= 0
+            (int32_t)(mesh_network.heartbeat.expires_at_ms - now_ms) <= 0
         ) mesh_network.heartbeat.subscribed = 0;
         if (message->transport_len != 4 || (message->transport[1] & 0x80) ||
             message->transport[1] < message->ttl ||
@@ -1331,11 +1332,11 @@ static inline int mesh_net_poll(mesh_net_message *message, uint32_t now_ms) {
     int result = received < 0 ? -1 : 0;
     if (received > 0 && len >= 2 && (size_t)ad[0] + 1 == len) {
         if (ad[1] == MESH_NETWORK_BEACON_AD_TYPE) {
-            if (mesh_handle_net_beacon(ad, len) < 0)
+            if (mesh_handle_net_beacon(ad, len, now_ms) < 0)
                 result = -1;
         }
         else if (ad[1] == MESH_NETWORK_AD_TYPE) {
-            result = mesh_net_receive(ad + 2, len - 2, message);
+            result = mesh_net_receive(ad + 2, len - 2, message, now_ms);
             if (result == 1)
                 message->rssi = rssi;
         }
@@ -1365,7 +1366,7 @@ static inline int mesh_net_poll(mesh_net_message *message, uint32_t now_ms) {
         if (interval > 600000u)
             interval = 600000u;
         if ((uint32_t)(now_ms - mesh_network.beacon.last_sent_ms) >= interval &&
-            mesh_net_beacon_queue()
+            mesh_net_beacon_queue(now_ms)
         ) mesh_network.beacon.last_sent_ms = now_ms;
     }
     // Expire subscriptions and send due Heartbeats as unsegmented Control PDUs.

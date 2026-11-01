@@ -534,7 +534,7 @@ static void test_key_configuration(void) {
     initial.app_keys[0].net_idx = initial.app_keys[1].net_idx = 0xabc;
     memset(initial.app_keys[0].key, 0x22, 16);
     memset(initial.app_keys[1].key, 0x33, 16);
-    assert(mesh_network_init(&initial));
+    assert(mesh_network_init(&initial, now_ms));
     saved_network = initial;
     memset(&saved, 0, sizeof(saved));
     memset(&mesh_models, 0, sizeof(mesh_models));
@@ -650,7 +650,7 @@ static void test_key_configuration(void) {
     assert(last_params[0] == 0 && network_save_count == writes);
     assert(mesh_add_or_update_app_key(0x1201, 0xabc, 0x234, third_key, 1) && config_request());
     assert(last_params[0] == MESH_CONFIG_CANNOT_UPDATE);
-    assert(mesh_network_restore() && mesh_models_init());
+    assert(mesh_network_restore(now_ms) && mesh_models_init());
     assert(mesh_netkey_get_phase(0x1201, 0xabc) && config_request() && last_params[3] == 1);
 
     network_save_fail = 1;
@@ -692,7 +692,7 @@ static void test_key_configuration(void) {
     assert(last_params[3] == 0 && !memcmp(mesh_network.state.net_key, third_key, 16));
     initial = mesh_network.state;
     initial.phase2_provisioned = 1;
-    assert(mesh_network_init(&initial)); saved_network = initial;
+    assert(mesh_network_init(&initial, now_ms)); saved_network = initial;
     assert(mesh_netkey_get_phase(0x1201, 0xabc) && config_request());
     assert(last_params[3] == 2);
     writes = network_save_count;
@@ -743,7 +743,7 @@ static void test_key_configuration(void) {
 static void test_node_settings(void) {
     mesh_net_state state = {.unicast_address = 0x1201, .element_count = 2,
                             .net_key_index = 0x123, .beacon = 1};
-    assert(mesh_network_init(&state));
+    assert(mesh_network_init(&state, now_ms));
     saved_network = state;
     memset(&saved, 0, sizeof(saved));
     memset(&mesh_models, 0, sizeof(mesh_models));
@@ -764,7 +764,7 @@ static void test_node_settings(void) {
     assert(mesh_set_beacon(0x1201, 0) && config_request());
     assert(last_params[0] == 0 && saved_network.beacon == 0);
     assert(mesh_network.beacon.last_sent_ms == now_ms);
-    assert(mesh_network_restore() && mesh_get_beacon(0x1201) && config_request());
+    assert(mesh_network_restore(now_ms) && mesh_get_beacon(0x1201) && config_request());
     assert(last_params[0] == 0);
     assert(mesh_set_beacon(0x1201, 1) && config_request());
     assert(last_params[0] == 1 && saved_network.beacon == 1);
@@ -785,7 +785,7 @@ static void test_node_settings(void) {
     network_save_fail = 0;
     assert(mesh_set_net_transmit(0x1201, 7, 31) && config_request());
     assert(last_params[0] == 0xff && saved_network.network_transmit == 0xff);
-    assert(mesh_network_restore() && mesh_get_net_transmit(0x1201) && config_request());
+    assert(mesh_network_restore(now_ms) && mesh_get_net_transmit(0x1201) && config_request());
     assert(last_params[0] == 0xff);
     writes = network_save_count;
     assert(mesh_set_net_transmit(0x1201, 7, 31) && config_request());
@@ -807,7 +807,7 @@ static void test_node_settings(void) {
            last_params[0] == 1 && last_params[1] == 0x9a);
     params[0] = 0; params[1] = 0;
     assert(config_message(OP_CONFIG_RELAY_SET, params, 2));
-    assert(mesh_network_restore() && mesh_network.state.relay == 0 &&
+    assert(mesh_network_restore(now_ms) && mesh_network.state.relay == 0 &&
            mesh_network.state.relay_retransmit == 0);
     params[0] = 2; assert(!config_message(OP_CONFIG_RELAY_SET, params, 2));
     assert(!config_message(OP_CONFIG_RELAY_SET, params, 1));
@@ -900,7 +900,7 @@ static void test_health(void) {
     mesh_net_state state = {.unicast_address = 0x1201, .element_count = 2};
     state.app_keys[0].used = 1; state.app_keys[0].index = 0x234;
     state.app_keys[1].used = 1; state.app_keys[1].index = 0x235;
-    assert(mesh_network_init(&state));
+    assert(mesh_network_init(&state, now_ms));
     memset(&saved, 0, sizeof(saved)); memset(&mesh_models, 0, sizeof(mesh_models));
     saved.default_ttl = 5; saved.health_server_bindings = 1; saved.other[0].health_server_bindings = 1;
     assert(mesh_models_init());
@@ -1006,7 +1006,7 @@ static void test_health_client(void) {
     mesh_net_state state = {.unicast_address = 0x1201, .element_count = 2};
     state.app_keys[0].used = 1; state.app_keys[0].index = 0x234;
     state.app_keys[1].used = 1; state.app_keys[1].index = 0x235;
-    assert(mesh_network_init(&state));
+    assert(mesh_network_init(&state, now_ms));
     memset(&saved, 0, sizeof(saved)); memset(&mesh_models, 0, sizeof(mesh_models));
     saved.default_ttl = 5;
     saved.health_server_bindings = 1; // A server binding cannot authorize the client.
@@ -1115,7 +1115,7 @@ static void test_health_client(void) {
 static void test_heartbeat_configuration(void) {
     mesh_net_state state = {.unicast_address = 0x1201, .element_count = 1, .net_key_index = 0x123};
     now_ms = 0;
-    assert(mesh_network_init(&state));
+    assert(mesh_network_init(&state, now_ms));
     saved_network = state;
     memset(&saved, 0, sizeof(saved));
     memset(&mesh_models, 0, sizeof(mesh_models));
@@ -1137,11 +1137,11 @@ static void test_heartbeat_configuration(void) {
     assert(mesh_get_heartbeat_pub(0x1201) && config_request() && last_params[3] == 3);
     mesh_network.heartbeat.remaining = 2;
     assert(mesh_get_heartbeat_pub(0x1201) && config_request() && last_params[3] == 2);
-    assert(mesh_network_restore() && mesh_network.state.heartbeat.dst == 0xc001);
+    assert(mesh_network_restore(now_ms) && mesh_network.state.heartbeat.dst == 0xc001);
     assert(mesh_network.heartbeat.remaining == 0); // Finite counts do not resume after reboot.
     pub.count_log = 0xff;
     assert(mesh_set_heartbeat_pub(0x1201, &pub) && config_request());
-    assert(mesh_network_restore() && mesh_network.heartbeat.remaining == 0xffff);
+    assert(mesh_network_restore(now_ms) && mesh_network.heartbeat.remaining == 0xffff);
     pub.count_log = 0x11;
     assert(mesh_set_heartbeat_pub(0x1201, &pub) && config_request());
     assert(last_params[3] == 0x11 && mesh_network.heartbeat.remaining == 0xfffe);
@@ -1208,7 +1208,7 @@ static void test_heartbeat_configuration(void) {
     assert(!config_message(OP_CONFIG_HEARTBEAT_SUB_SET, NULL, 0));
     assert(mesh_set_heartbeat_sub(0x1201, 0x1202, 0x1201, 0x11) && config_request());
     assert(last_params[5] == 0x11);
-    assert(mesh_network_restore() && mesh_network.heartbeat.src == 0);
+    assert(mesh_network_restore(now_ms) && mesh_network.heartbeat.src == 0);
 
     const uint32_t statuses[] = {OP_CONFIG_NODE_RESET_STATUS, OP_CONFIG_HEARTBEAT_PUB_STATUS,
         OP_CONFIG_HEARTBEAT_SUB_STATUS};

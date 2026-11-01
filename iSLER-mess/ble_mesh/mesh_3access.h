@@ -110,9 +110,8 @@ static inline int mesh_access_queue_acknowledged(
     if (params_len)
         memcpy(data + opcode_len, params, params_len);
     size_t len = opcode_len + params_len;
-    if (!mesh_transport_queue(src, dst, ttl, app_key_index, NULL,
-            data, len, mic_64)
-    ) return 0;
+    if (!mesh_transport_queue(src, dst, ttl, app_key_index, NULL, data, len, mic_64))
+        return 0;
 
     mesh_access_ack.src = src;
     mesh_access_ack.dst = dst;

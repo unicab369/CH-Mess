@@ -281,12 +281,9 @@ static int proxy_sar_timeout_poll(uint32_t now_ms) {
 }
 
 static void mesh_gatt_proxy_deliver(
-    uint8_t type, const uint8_t *pdu,
-                                    size_t len);
+    uint8_t type, const uint8_t *pdu, size_t len);
 static void mesh_gatt_proxy_input(
-    const uint8_t *p, size_t len,
-                                  uint8_t provisioning_service,
-                                  uint32_t now_ms);
+    const uint8_t *p, size_t len, uint8_t provisioning_service, uint32_t now_ms);
 
 static uint8_t mesh_gatt_data_in_write(
     void *context, uint16_t offset,

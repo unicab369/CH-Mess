@@ -527,7 +527,7 @@ int PROVISIONEE_STORE_DATA(
     record.models.sar_receiver = MESH_SAR_RX_DEFAULT;
     if (!mesh_state_save_record(&record))
         return -1;
-    if (!mesh_network_init(&state))
+    if (!mesh_network_init(&state, GET_MILLIS()))
         return -1;
     memset(&mesh_models, 0, sizeof(mesh_models));
     return mesh_models_init() ? 0 : -1;

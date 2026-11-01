@@ -1000,7 +1000,7 @@ static int server_config_receive(const mesh_access_pdu *message, uint32_t now_ms
                     memset(&mesh_models.publications[index][slot], 0,
                            sizeof(mesh_models.publications[index][slot]));
                     mesh_models.publications[index][slot].period_at_ms =
-                        GET_MILLIS() + (model == MESH_MODEL_HEALTH_SERVER ?
+                        now_ms + (model == MESH_MODEL_HEALTH_SERVER ?
                         mesh_health_period((uint8_t)index) : mesh_publication_period(next.period));
                 }
             }
@@ -1677,8 +1677,7 @@ static inline int mesh_replace_subscription(
 
 // Replace active faults and retain their history until Fault Clear or reboot.
 static inline int mesh_health_faults(
-    uint16_t element, uint8_t test_id,
-                                        const uint8_t *faults, size_t len
+    uint16_t element, uint8_t test_id, const uint8_t *faults, size_t len
 ) {
     int index = mesh_element_index(element);
     if (!mesh_models.ready || mesh_models.reset_pending || index < 0 ||
