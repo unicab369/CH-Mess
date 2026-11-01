@@ -2912,10 +2912,22 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
     int send_extended = gap_ext_aux.set_id;
     uint8_t address[6], address_type;
     uint16_t adv_data_info = gap_ext_aux.adv_data_info;
+    gap_extended_adv_set *set;
+    uint8_t *primary = gap_ext_primary_frame;
+    uint8_t *frame = gap_ext_aux_frame;
+    uint8_t adv_header;
 
     if (resume_aux) {
         memcpy(address, gap_ext_aux.address, 6);
         address_type = gap_ext_aux.address_type;
+        set = &gap_ext_adv[send_extended];
+        adv_header = ADV_EXT_IND | (address_type ? 0x40 : 0);
+
+        // Scannable/connectable events resume by listening for requests.
+        if (set->flags) {
+            gap_ext_aux_rx_start(now_us);
+            return 1;
+        }
     } else {
         send_extended = -1;
         for (uint8_t offset = 0; offset < GAP_EXT_ADV_SET_COUNT; offset++) {
@@ -2936,25 +2948,9 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
             gap_rx_armed = 0;
         }
         gap_local_addr_select(-1, address, &address_type);
-        gap_extended_adv_set *selected = &gap_ext_adv[send_extended];
-        adv_data_info = (uint16_t)(((selected->sid & 0x0f) << 12) |
-                         (selected->did & 0x0fff));
-    }
-
-    gap_extended_adv_set *set = &gap_ext_adv[send_extended];
-    uint8_t adv_header = ADV_EXT_IND | (address_type ? 0x40 : 0);
-    uint8_t *primary = gap_ext_primary_frame;
-    uint8_t *frame = gap_ext_aux_frame;
-
-    // On resume, scannable/connectable events listen for requests instead of
-    // rebuilding their already-transmitted advertising PDUs.
-    if (resume_aux) {
-        if (set->flags) {
-            gap_ext_aux_rx_start(now_us);
-            return 1;
-        }
-    }
-    else {
+        set = &gap_ext_adv[send_extended];
+        adv_data_info = (uint16_t)(((set->sid & 0x0f) << 12) | (set->did & 0x0fff));
+        adv_header = ADV_EXT_IND | (address_type ? 0x40 : 0);
         primary[0] = adv_header;
         primary[1] = 7;
         primary[2] = 6; // ExtHdrLen=6; mode bits are set below.
