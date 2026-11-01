@@ -28,7 +28,6 @@ enum {
 };
 
 typedef struct {
-    uint8_t has_address;
     gap_address peer;
     gap_address identity;
     uint8_t has_adi, sid;
@@ -706,6 +705,7 @@ static int gap_ext_adv_decode(
 
     // Optional fields must stay zero when they are absent from the packet.
     memset(fields, 0, sizeof(*fields));
+    fields->identity.peer.type = GAP_ADDR_NONE;
     fields->mode = pdu[2] >> 6;
     uint8_t ext_len = pdu[2] & 0x3f;
 
@@ -727,7 +727,6 @@ static int gap_ext_adv_decode(
     if (fields->flags & 0x01) {
         if (header_end - cursor < 6) return 0;
 
-        fields->identity.has_address = 1;
         fields->identity.peer.type = (pdu[0] >> 6) & 1;
         memcpy(fields->identity.peer.address, pdu + cursor, 6);
         cursor += 6;
@@ -864,14 +863,14 @@ static int gap_aux_request_start(const uint8_t *frame, uint32_t now_ms) {
     ) return 0;
 
     gap_address peer;
-    if (fields.identity.has_address)
+    if (fields.identity.peer.type != GAP_ADDR_NONE)
         peer = fields.identity.peer;
     else {
         int match = -1;
         for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
             gap_ext_scan_context *ctx = &gap_ext_ctx[i];
 
-            if (!ctx->active || !ctx->identity.has_address ||
+            if (!ctx->active || ctx->identity.peer.type == GAP_ADDR_NONE ||
                 !ctx->identity.has_adi || !fields.identity.has_adi ||
                 ctx->identity.adv_data_info != fields.identity.adv_data_info
             ) continue;
@@ -947,8 +946,7 @@ static int gap_aux_request_start(const uint8_t *frame, uint32_t now_ms) {
 
     uint8_t phy = gap_ext_scan.rx_phy;
     gap_ext_scan.request_phase = phase;
-    gap_ext_scan.request_deadline_ms = now_ms +
-            (phase == GAP_EXT_REQ_SCAN_TX ? 30 : 8);
+    gap_ext_scan.request_deadline_ms = now_ms + (phase == GAP_EXT_REQ_SCAN_TX ? 30 : 8);
 
     if (!RADIO_IFS_TX_TIMER_ARM(request, BLE_ADV_ACCESS_ADDRESS,
                 gap_aux_request[gap_ext_scan.slot].channel, 1, phy, phy, 0x555555)
@@ -971,7 +969,7 @@ static void gap_ext_report_queue(
 
     int id_slot = -1;
 
-    if (identity->has_address) {
+    if (identity->peer.type != GAP_ADDR_NONE) {
         id_slot = gap_identity_find(identity->peer.address, identity->peer.type);
         if (!gap_peer_allowed(id_slot, identity->peer.address, identity->peer.type))
             return;
@@ -1051,7 +1049,7 @@ static void gap_ext_report_queue(
     uint8_t slot = (gap_ext_report_state.head + gap_ext_report_state.count) % GAP_EXT_ADV_REPORT_COUNT;
     gap_ext_report *report = &gap_ext_adv_reports[slot];
 
-    report->has_address = identity->has_address;
+    report->has_address = identity->peer.type != GAP_ADDR_NONE;
     report->peer = identity->peer;
     report->identity = *peer;
     report->has_adi = identity->has_adi;
@@ -1289,7 +1287,7 @@ static int gap_sync_info_accept(
     uint8_t packet_len, uint8_t packet_phy, uint32_t packet_end_us
 ) {
     if (!fields || fields->mode != 0 ||
-        !fields->identity.has_address ||
+        fields->identity.peer.type == GAP_ADDR_NONE ||
         !fields->identity.has_adi ||
         !fields->sync.has_info ||
         !fields->sync.offset_us ||
@@ -1473,7 +1471,7 @@ static void gap_pawr_report_push(
                 report->event_counter = event_counter;
                 report->subevent = subevent;
                 report->response_slot = resp_slot;
-                report->has_address = fields.identity.has_address;
+                report->has_address = fields.identity.peer.type != GAP_ADDR_NONE;
                 report->peer = fields.identity.peer;
                 report->data_len = fields.payload.len;
                 report->rssi = gap_ext_pawr.response.rssi;
@@ -1891,9 +1889,10 @@ static void gap_ext_scan_report_process(
             if (ctx->active &&
                 ctx->identity.has_adi &&
                 ctx->identity.adv_data_info == fields->identity.adv_data_info &&
-                ctx->identity.has_address == fields->identity.has_address &&
-                (!fields->identity.has_address || GAP_ADDRESS_EQUAL(ctx->identity.peer,
-                                                                fields->identity.peer))
+                (ctx->identity.peer.type != GAP_ADDR_NONE) ==
+                    (fields->identity.peer.type != GAP_ADDR_NONE) &&
+                (fields->identity.peer.type == GAP_ADDR_NONE ||
+                 GAP_ADDRESS_EQUAL(ctx->identity.peer, fields->identity.peer))
             ) {
                 context_slot = i;
                 break;
@@ -1923,7 +1922,8 @@ static void gap_ext_scan_report_process(
             if (!ctx->active ||
                 (fields->identity.has_adi &&
                  (!ctx->identity.has_adi || ctx->identity.adv_data_info != fields->identity.adv_data_info)) ||
-                (fields->identity.has_address && ctx->identity.has_address &&
+                (fields->identity.peer.type != GAP_ADDR_NONE &&
+                 ctx->identity.peer.type != GAP_ADDR_NONE &&
                  !GAP_ADDRESS_EQUAL(fields->identity.peer, ctx->identity.peer))
             ) continue;
 
@@ -1938,8 +1938,7 @@ static void gap_ext_scan_report_process(
         if (context_slot < 0) return;
         context = &gap_ext_ctx[context_slot];
 
-        if (fields->identity.has_address) {
-            context->identity.has_address = 1;
+        if (fields->identity.peer.type != GAP_ADDR_NONE) {
             context->identity.peer = fields->identity.peer;
         }
 
@@ -2288,7 +2287,7 @@ static int gap_past_receive(
 
     if (!gap_ext_adv_decode(pdu, sizeof(pdu), &fields) ||
         !gap_access_address_valid(fields.sync.params.access_address) ||
-        !fields.identity.has_address ||
+        fields.identity.peer.type == GAP_ADDR_NONE ||
         !fields.identity.has_adi || !fields.sync.has_info ||
         fields.sync.params.interval < 6
     ) return 0;

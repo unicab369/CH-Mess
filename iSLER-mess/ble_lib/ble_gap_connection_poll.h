@@ -1073,7 +1073,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             return;
         }
 
-        // Accept a scan response only from the advertiser we just scanned.
+        //! Accept a scan response only from the advertiser we just scanned.
         if (pdu_type == SCAN_RSP &&
             ((frame[0] >> 6) & 1) == gap_scan.active_address.type &&
             memcmp(frame + 2, gap_scan.active_address.address, 6) == 0
