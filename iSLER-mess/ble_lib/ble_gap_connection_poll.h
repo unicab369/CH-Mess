@@ -355,7 +355,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 
     if (pdu_type == ADV_EXT_IND &&
         gap_ext_pawr.response.listening &&
-        !gap_ext_pawr.connect.waiting &&
+        gap_ext_pawr.connect.phase == GAP_PAWR_CONNECT_IDLE &&
         !gap_ext_pawr.response.ready && frame[1] <= 253
     ) {
         gap_ext_pawr.response.len = (uint8_t)(frame[1] + 2);
@@ -753,7 +753,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     uint8_t aux_scan = (gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX);
 
     if (pdu_type == ADV_EXT_IND && frame[1] == 14 &&
-        gap_ext_pawr.connect.waiting
+        gap_ext_pawr.connect.phase != GAP_PAWR_CONNECT_IDLE
     ) {
         memcpy(gap_ext_pawr.connect.response, frame, 16);
         gap_ext_pawr.connect.response_ready = 1;
@@ -1564,7 +1564,7 @@ static inline void gap_conn_poll_all(uint32_t now_us, uint32_t now_ms) {
     // The PAwR Central exchange owns the radio until its response arrives or
     // times out. Application polling continues; only radio reconfiguration is
     // deferred during this short receive window.
-    if (gap_ext_pawr.connect.waiting) return;
+    if (gap_ext_pawr.connect.phase != GAP_PAWR_CONNECT_IDLE) return;
     if (gap_ext_scan.request_phase != GAP_EXT_REQ_NONE) return;
 #endif
     // Sort live links by their next receive-window deadline before polling.
@@ -1637,7 +1637,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
     if (gap_ext_aux.phase != GAP_EXT_AUX_IDLE) return;
     if (gap_ext_chain.phase != GAP_EXT_CHAIN_IDLE) return;
 #if GAP_CENTRAL_SUPPORT
-    if (gap_ext_pawr.connect.waiting) return;
+    if (gap_ext_pawr.connect.phase != GAP_PAWR_CONNECT_IDLE) return;
 #endif
 #endif
 

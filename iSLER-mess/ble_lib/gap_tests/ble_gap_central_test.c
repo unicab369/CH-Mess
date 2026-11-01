@@ -306,7 +306,8 @@ static void mock_radio_link_tx(const uint8_t *frame) {
         gap_hw_received();
     }
 
-    if (inject_pawr_connect_response && gap_ext_pawr.connect.waiting &&
+    if (inject_pawr_connect_response &&
+        gap_ext_pawr.connect.phase != GAP_PAWR_CONNECT_IDLE &&
         tx_buffer == adv_tx.connect_request) {
         const uint8_t *request = adv_tx.connect_request;
         memset(rx_frame, 0, sizeof(rx_frame));
@@ -1661,7 +1662,8 @@ static void test_pawr_advertiser_connection(void) {
     assert(!gap_pawr_connect(0, 0, test_address(
         peer_address, 0)));
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
-    assert(set->pawr_connect.pending && gap_ext_pawr.connect.waiting);
+    assert(set->pawr_connect.pending &&
+           gap_ext_pawr.connect.phase != GAP_PAWR_CONNECT_IDLE);
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     fake_radio_ticks = gap_ext_pawr.connect.resp_deadline_us;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
@@ -1687,7 +1689,7 @@ static void test_pawr_advertiser_connection(void) {
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     drain_pawr_advertiser_event();
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
-           gap_ext_pawr.connect.waiting);
+           gap_ext_pawr.connect.phase != GAP_PAWR_CONNECT_IDLE);
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central &&
            !set->pawr_connect.pending && !set->enabled &&

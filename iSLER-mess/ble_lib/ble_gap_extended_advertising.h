@@ -223,31 +223,32 @@ enum {
 };
 static struct {
     struct {
-        volatile uint8_t listening, ready;
+        uint32_t received_us;
         uint8_t frame[255], len;
         int8_t rssi;
-        uint32_t received_us;
+        volatile uint8_t listening, ready;
     } response;
     struct {
-        volatile uint8_t waiting, response_ready;
-        uint8_t response[16];
         uint32_t request_end_us;
+        volatile uint8_t phase;
 #if GAP_CENTRAL_SUPPORT
-        volatile uint8_t phase, tx_end_valid;
-        uint8_t set_id;
         uint32_t resp_deadline_us;
+        volatile uint8_t tx_end_valid;
+        uint8_t set_id;
 #endif
 #if GAP_PERIPHERAL_SUPPORT
-        volatile uint8_t reply_armed;
         uint32_t reply_deadline_us;
         uint32_t reply_received_us;
+        volatile uint8_t reply_armed;
 #endif
+        uint8_t response[16];
+        volatile uint8_t response_ready;
     } connect;
     struct {
+        uint32_t event_start_us;
+        uint16_t event_counter;
         volatile uint8_t phase;
         uint8_t set_id, subevent;
-        uint16_t event_counter;
-        uint32_t event_start_us;
     } advertiser;
 } gap_ext_pawr;
 
@@ -1681,7 +1682,6 @@ static int gap_pawr_advertiser_poll(uint32_t now_us, uint8_t slot_bit) {
                     gap_ext_pawr.connect.tx_end_valid = 0;
                     gap_ext_pawr.connect.set_id = (uint8_t)(set - gap_ext_adv);
                     gap_ext_pawr.connect.resp_deadline_us = tx_start_us + 1000;
-                    gap_ext_pawr.connect.waiting = 1;
                     gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_TX_PENDING;
                     RADIO_TX_CLEAR_DONE();
 
@@ -1690,7 +1690,6 @@ static int gap_pawr_advertiser_poll(uint32_t now_us, uint8_t slot_bit) {
                                           1, set->aux_phy, set->aux_phy,
                                           set->periodic.params.crc_init)
                     ) {
-                        gap_ext_pawr.connect.waiting = 0;
                         gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_IDLE;
                         set->pawr_connect.pending = 0;
                         RADIO_STOP();
@@ -2772,7 +2771,6 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
                     return 1;
 
                 gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_IDLE;
-                gap_ext_pawr.connect.waiting = 0;
                 gap_ext_adv[gap_ext_pawr.connect.set_id].pawr_connect.pending = 0;
                 RADIO_STOP();
             }
@@ -2792,7 +2790,6 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
                 (int32_t)(now_us - gap_ext_pawr.connect.resp_deadline_us) < 0
             ) return 1;
 
-            gap_ext_pawr.connect.waiting = 0;
             gap_ext_pawr.connect.phase = GAP_PAWR_CONNECT_IDLE;
             RADIO_STOP();
 
