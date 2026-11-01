@@ -181,7 +181,8 @@ enum {
 
 static struct {
     volatile uint8_t phase;
-    uint8_t set_id, address_type, address[6];
+    uint8_t set_id;
+    gap_address advertiser;
     uint16_t adv_data_info;
     uint32_t primary_start_us, window_deadline_us;
 } gap_ext_aux;
@@ -2595,12 +2596,10 @@ static void gap_ext_aux_rx_start(uint32_t now_us) {
 }
 
 static void gap_ext_aux_primary_start(
-    uint8_t set_id, const uint8_t address[6],
-    uint8_t address_type, uint16_t adv_data_info
+    uint8_t set_id, const gap_address *advertiser, uint16_t adv_data_info
 ) {
     gap_ext_aux.set_id = set_id;
-    gap_ext_aux.address_type = address_type;
-    memcpy(gap_ext_aux.address, address, 6);
+    gap_ext_aux.advertiser = *advertiser;
     gap_ext_aux.adv_data_info = adv_data_info;
     gap_ext_aux.primary_start_us = GET_MICROS();
     gap_ext_aux.phase = GAP_EXT_AUX_PRIMARY;
@@ -2694,7 +2693,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
                 uint32_t next_start_us = gap_aux_exchange.detail.scan_response_us +
                     ((gap_phy_airtime_us(gap_ext_adv_frame[1], set->aux_phy) + 629) / 30) * 30;
                 if (!gap_ext_chain_send(gap_ext_aux.set_id, remaining, gap_ext_aux.adv_data_info,
-                                        gap_ext_aux.address_type, next_start_us)) return -1;
+                                        gap_ext_aux.advertiser.type, next_start_us)) return -1;
                 return 1;
             }
         } else {
@@ -2948,13 +2947,12 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
     }
 
     int send_extended = gap_ext_aux.set_id;
-    uint8_t address[6], address_type;
+    gap_address advertiser;
     uint16_t adv_data_info = gap_ext_aux.adv_data_info;
     gap_extended_adv_set *set;
 
     if (resume_aux) {
-        memcpy(address, gap_ext_aux.address, 6);
-        address_type = gap_ext_aux.address_type;
+        advertiser = gap_ext_aux.advertiser;
         set = &gap_ext_adv[send_extended];
 
         // Scannable/connectable events resume by listening for requests.
@@ -2981,7 +2979,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
             RADIO_STOP();
             gap_rx_armed = 0;
         }
-        gap_local_addr_select(-1, address, &address_type);
+        gap_local_addr_select(-1, advertiser.address, &advertiser.type);
         set = &gap_ext_adv[send_extended];
         adv_data_info = (uint16_t)(((set->sid & 0x0f) << 12) | (set->did & 0x0fff));
         gap_ext_primary_frame[1] = 7;
@@ -2991,7 +2989,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         gap_aux_ptr_write(gap_ext_primary_frame + 6, 0, 480, set->aux_phy);
     }
 
-    gap_ext_primary_frame[0] = ADV_EXT_IND | (address_type ? 0x40 : 0);
+    gap_ext_primary_frame[0] = ADV_EXT_IND | (advertiser.type ? 0x40 : 0);
     gap_ext_aux_frame[0] = gap_ext_primary_frame[0];
 
     if (set->flags & GAP_EXT_SCANNABLE) {
@@ -3001,7 +2999,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         gap_ext_aux_frame[1] = 10;
         gap_ext_aux_frame[2] = 0x89; // AdvMode=scannable, ExtHdrLen=9.
         gap_ext_aux_frame[3] = 0x09; // AdvA and ADI.
-        memcpy(gap_ext_aux_frame + 4, address, sizeof(address));
+        memcpy(gap_ext_aux_frame + 4, advertiser.address, sizeof(advertiser.address));
         write_u16_le(gap_ext_aux_frame + 10, adv_data_info);
 
         uint8_t payload_offset = 12;
@@ -3010,7 +3008,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         gap_ext_adv_frame[1] = (uint8_t)(10 + first_chunk);
         gap_ext_adv_frame[2] = 9;
         gap_ext_adv_frame[3] = 0x09;
-        memcpy(gap_ext_adv_frame + 4, address, 6);
+        memcpy(gap_ext_adv_frame + 4, advertiser.address, sizeof(advertiser.address));
         write_u16_le(gap_ext_adv_frame + 10, adv_data_info);
 
         if (first_chunk > GAP_EXT_ADV_FINAL_DATA_MAX - 4) {
@@ -3028,7 +3026,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         gap_aux_exchange.waiting = 1;
         // The TX completion callback schedules AUX using this frame, so
         // both packets must be ready before starting primary TX.
-        gap_ext_aux_primary_start((uint8_t)send_extended, address, address_type, adv_data_info);
+        gap_ext_aux_primary_start((uint8_t)send_extended, &advertiser, adv_data_info);
         return 1;
     }
 #if GAP_PERIPHERAL_SUPPORT
@@ -3037,13 +3035,13 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         gap_ext_aux_frame[1] = 10;
         gap_ext_aux_frame[2] = 0x49; // Connectable AUX_ADV_IND, AdvA and ADI.
         gap_ext_aux_frame[3] = 0x09;
-        memcpy(gap_ext_aux_frame + 4, address, 6);
+        memcpy(gap_ext_aux_frame + 4, advertiser.address, sizeof(advertiser.address));
         write_u16_le(gap_ext_aux_frame + 10, adv_data_info);
 
         gap_aux_exchange.detail.connect.phy = set->aux_phy;
         gap_aux_exchange.response_started = 0;
         gap_aux_exchange.waiting = 1;
-        gap_ext_aux_primary_start((uint8_t)send_extended, address, address_type, adv_data_info);
+        gap_ext_aux_primary_start((uint8_t)send_extended, &advertiser, adv_data_info);
         return 1;
     }
 #endif
@@ -3069,7 +3067,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         gap_ext_aux_frame[1] = (uint8_t)(1 + ext_len + first_chunk);
         gap_ext_aux_frame[2] = ext_len;
         gap_ext_aux_frame[3] = ext_flags;
-        memcpy(gap_ext_aux_frame + 4, address, sizeof(address));
+        memcpy(gap_ext_aux_frame + 4, advertiser.address, sizeof(advertiser.address));
         write_u16_le(gap_ext_aux_frame + 10, adv_data_info);
         uint8_t *sync_info = NULL;
         uint8_t header_offset = 12;
@@ -3144,7 +3142,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         }
 
         if (!resume_aux) {
-            gap_ext_aux_primary_start((uint8_t)send_extended, address, address_type, adv_data_info);
+            gap_ext_aux_primary_start((uint8_t)send_extended, &advertiser, adv_data_info);
             return 1;
         }
 
@@ -3155,7 +3153,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
             uint32_t next_start_us = pdu_start_us +
                             ((gap_phy_airtime_us(gap_ext_aux_frame[1], set->aux_phy) + 629) / 30) * 30;
             int transmit_result = gap_ext_chain_send((uint8_t)send_extended,
-                                remaining, adv_data_info, address_type, next_start_us);
+                                remaining, adv_data_info, advertiser.type, next_start_us);
             if (!transmit_result) return -1;
             if (transmit_result == 2) return 1;
         }
