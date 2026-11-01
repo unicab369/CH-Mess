@@ -717,18 +717,18 @@ static int test_ext_scan_receive(uint8_t kind, const uint8_t *pdu,
         return 0;
 
     memcpy(gap_ext_scan.frame, pdu, pdu_len);
-    gap_ext_scan.listen_state = kind == GAP_EXT_ADV_PERIODIC_PDU
-        ? GAP_EXT_SCAN_PERIODIC : kind == GAP_EXT_ADV_AUXILIARY_PDU
+    gap_ext_scan.listen_state = kind == GAP_EXT_PDU_PERIODIC
+        ? GAP_EXT_SCAN_PERIODIC : kind == GAP_EXT_PDU_AUX
         ? GAP_EXT_SCAN_AUX : GAP_EXT_SCAN_NONE;
     gap_ext_scan.rssi = rssi;
     gap_ext_scan.received_us = GET_MICROS();
     gap_ext_scan.ready = 1;
     gap_rx_armed = 1;
-    if (kind == GAP_EXT_ADV_AUXILIARY_PDU) {
+    if (kind == GAP_EXT_PDU_AUX) {
         gap_ext_scan.slot = gap_aux_request[0].active ? 0 : 1;
         gap_ext_scan.rx_phy = GAP_PHY_1M;
     }
-    else if (kind == GAP_EXT_ADV_PERIODIC_PDU) {
+    else if (kind == GAP_EXT_PDU_PERIODIC) {
         gap_ext_scan.slot = 0;
         gap_ext_scan.rx_phy = GAP_PHY_1M;
     }
@@ -741,7 +741,7 @@ static int test_ext_scan_receive(uint8_t kind, const uint8_t *pdu,
     if (had_context || gap_ext_report_state.count != reports_before) return 1;
     for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
         if (gap_ext_ctx[i].active) return 1;
-    return kind == GAP_EXT_ADV_PRIMARY_PDU && fields.has_aux_ptr;
+    return kind == GAP_EXT_PDU_PRIMARY && fields.has_aux_ptr;
 }
 
 #define gap_ext_scan_receive test_ext_scan_receive
@@ -759,7 +759,7 @@ static void test_extended_immediate_requests(void) {
     gap_ext_ctx[0].identity.peer.type = 0;
     memcpy(gap_ext_ctx[0].identity.peer.address, peer, 6);
     gap_ext_ctx[0].identity.has_adi = 1;
-    gap_ext_ctx[0].identity.adi = 0x1234;
+    gap_ext_ctx[0].identity.adv_data_info = 0x1234;
     gap_ext_ctx[0].await_scan_response = 1;
     gap_ext_ctx[0].deadline_ms = GET_MILLIS() + 100;
     gap_aux_request[0].active = 1;
@@ -861,19 +861,19 @@ static void test_extended_advertising_reassembly(void) {
     };
     gap_ext_report report;
     gap_scan_start(0);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_PRIMARY,
         primary, sizeof(primary) - 1, -45) == 0); // Truncated PDU.
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_PRIMARY,
         primary, sizeof(primary), -45) == 1);
     assert(!gap_ext_scan_poll(&report));
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         auxiliary, sizeof(auxiliary), -48) == 1);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         chain, sizeof(chain), -50) == 1);
     assert(gap_ext_scan_poll(&report));
     assert(report.has_address && report.peer.type == 1 &&
            !memcmp(report.peer.address, auxiliary + 4, 6));
-    assert(report.set_id == 2 && report.data_len == 3 && report.rssi == -50 &&
+    assert(report.sid == 2 && report.data_len == 3 && report.rssi == -50 &&
            !memcmp(report.data, (uint8_t[]){0x02, 0x01, 0x06}, 3));
     assert(!gap_ext_scan_poll(&report));
 
@@ -885,37 +885,37 @@ static void test_extended_advertising_reassembly(void) {
     primary_b[4] = auxiliary_b[10] = chain_b[4] = 0x45;
     primary_b[5] = auxiliary_b[11] = chain_b[5] = 0x30;
     memset(auxiliary_b + 4, 0x22, 6);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_PRIMARY,
         primary, sizeof(primary), -40) == 1);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_PRIMARY,
         primary_b, sizeof(primary_b), -41) == 1);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         auxiliary, sizeof(auxiliary), -42) == 1);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         auxiliary_b, sizeof(auxiliary_b), -43) == 1);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         chain, sizeof(chain), -44) == 1);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         chain_b, sizeof(chain_b), -45) == 1);
-    assert(gap_ext_scan_poll(&report) && report.set_id == 2);
-    assert(gap_ext_scan_poll(&report) && report.set_id == 3 &&
+    assert(gap_ext_scan_poll(&report) && report.sid == 2);
+    assert(gap_ext_scan_poll(&report) && report.sid == 3 &&
            !memcmp(report.peer.address, auxiliary_b + 4, 6));
 
     gap_scan_stop();
     assert(gap_scan_configure(20, 20, GAP_DISCOVERY_GENERAL, 1));
     gap_scan_start(0);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_PRIMARY,
         primary, sizeof(primary), -40) == 1);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         auxiliary, sizeof(auxiliary), -40) == 1);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         chain, sizeof(chain), -40) == 1);
     assert(gap_ext_scan_poll(&report));
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_PRIMARY,
         primary, sizeof(primary), -40) == 1);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         auxiliary, sizeof(auxiliary), -40) == 1);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         chain, sizeof(chain), -40) == 1);
     assert(!gap_ext_scan_poll(&report));
     uint8_t updated_primary[sizeof(primary)], updated_auxiliary[sizeof(auxiliary)];
@@ -924,11 +924,11 @@ static void test_extended_advertising_reassembly(void) {
     memcpy(updated_auxiliary, auxiliary, sizeof(auxiliary));
     memcpy(updated_chain, chain, sizeof(chain));
     updated_primary[4] = updated_auxiliary[10] = updated_chain[4] = 0x35;
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_PRIMARY,
         updated_primary, sizeof(updated_primary), -40) == 1);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         updated_auxiliary, sizeof(updated_auxiliary), -40) == 1);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         updated_chain, sizeof(updated_chain), -40) == 1);
     assert(gap_ext_scan_poll(&report) && report.did == 0x35);
 
@@ -938,11 +938,11 @@ static void test_extended_advertising_reassembly(void) {
     uint8_t private_auxiliary[sizeof(auxiliary)];
     memcpy(private_auxiliary, auxiliary, sizeof(auxiliary));
     memcpy(private_auxiliary + 4, test_rpa, sizeof(test_rpa));
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_PRIMARY,
         primary, sizeof(primary), -40) == 1);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         private_auxiliary, sizeof(private_auxiliary), -40) == 1);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         chain, sizeof(chain), -40) == 1);
     assert(gap_ext_scan_poll(&report) &&
            report.identity.type == 0 &&
@@ -954,34 +954,34 @@ static void test_extended_advertising_reassembly(void) {
     uint8_t malformed[sizeof(primary)];
     memcpy(malformed, primary, sizeof(primary));
     malformed[3] = 0x98; // Reserved extended-header flag.
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_PRIMARY,
         malformed, sizeof(malformed), -40) == 0);
 
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_PRIMARY,
         primary, sizeof(primary), -40) == 1);
     now_ms += GAP_EXT_ADV_CHAIN_TIMEOUT_MS + 1;
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         chain, sizeof(chain), -40) == 0);
 
     uint8_t malformed_chain[sizeof(chain)];
     memcpy(malformed_chain, chain, sizeof(chain));
     malformed_chain[1] = 5;
     malformed_chain[6] = 0; // Invalid zero-length AD structure.
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_PRIMARY,
         primary, sizeof(primary), -40) == 1);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         auxiliary, sizeof(auxiliary), -40) == 1);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         malformed_chain, sizeof(malformed_chain) - 1, -40) == 0);
     assert(!gap_ext_scan_poll(&report));
     gap_scan_stop();
     assert(gap_scan_configure(20, 20, GAP_DISCOVERY_LIMITED, 0));
     gap_scan_start(0);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_PRIMARY,
         primary, sizeof(primary), -40) == 1);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         auxiliary, sizeof(auxiliary), -40) == 1);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         chain, sizeof(chain), -40) == 1);
     assert(!gap_ext_scan_poll(&report));
     gap_scan_stop();
@@ -1032,7 +1032,7 @@ static void test_extended_advertising_radio_followup(void) {
     gap_hw_received();
     gap_hw_scan_poll(GET_MICROS(), now_ms);
     assert(gap_ext_scan_poll(&report));
-    assert(report.has_address && report.set_id == 2 && report.data_len == 3 &&
+    assert(report.has_address && report.sid == 2 && report.data_len == 3 &&
            !memcmp(report.data, (uint8_t[]){0x02, 0x01, 0x06}, 3));
 
     gap_scan_stop();
@@ -1129,15 +1129,15 @@ static void test_extended_advertising_transmit(void) {
            !memcmp(auxiliary + 10, primary + 4, 2) &&
            !memcmp(auxiliary + 12, data, sizeof(data)));
     assert(fake_radio_ticks >= 1000480);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_PRIMARY,
         primary, captured_extended_pdu_lengths[0], -40));
     assert(gap_ext_ctx[0].active &&
-           gap_ext_ctx[0].identity.adi == read_u16_le(primary + 4));
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+           gap_ext_ctx[0].identity.adv_data_info == read_u16_le(primary + 4));
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         auxiliary, captured_extended_pdu_lengths[1], -40));
     assert(!gap_ext_ctx[0].active);
     assert(gap_ext_scan_poll(&report));
-    assert(report.has_address && report.set_id == 4 && report.data_len == 3 &&
+    assert(report.has_address && report.sid == 4 && report.data_len == 3 &&
            !memcmp(report.data, data, sizeof(data)));
     assert(gap_ext_adv_stop(0));
     gap_scan_stop();
@@ -1263,13 +1263,13 @@ static void test_extended_advertising_chain_transmit(void) {
            last[3] == 0x08 &&
            !memcmp(last + 4, auxiliary + 10, 2));
 
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_PRIMARY,
         primary, captured_extended_pdu_lengths[0], -40));
     for (uint8_t i = 1; i < captured_extended_count; i++)
-        assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+        assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
             captured_extended_pdus[i], captured_extended_pdu_lengths[i], -40));
     assert(gap_ext_scan_poll(&report));
-    assert(report.has_address && report.set_id == 5 &&
+    assert(report.has_address && report.sid == 5 &&
            report.data_len == sizeof(data) &&
            !memcmp(report.data, data, sizeof(data)));
     assert(gap_ext_adv_stop(0));
@@ -1541,7 +1541,7 @@ static void test_pawr_advertising_subevents(void) {
     assert(set->periodic.event_counter == 1);
     gap_pawr_report response_report;
     assert(gap_pawr_report_poll(&response_report) &&
-           response_report.set_id == 0 && response_report.set_id == 3 &&
+           response_report.set_id == 0 && response_report.sid == 3 &&
            response_report.event_counter == 0 && response_report.subevent == 0 &&
            response_report.response_slot == 0 && response_report.rssi == -40 &&
            response_report.data_len == 3 &&
@@ -1717,7 +1717,7 @@ static void test_pawr_connection_accept(void) {
     sync->used = sync->established = 1;
     sync->peer.type = 0;
     memcpy(sync->peer.address, advertiser, sizeof(advertiser));
-    sync->set_id = 4;
+    sync->sid = 4;
     sync->pawr.timing.has_timing = 1;
     sync->pawr.timing.subevents = 2;
     sync->pawr.timing.subevent_interval = 6;
@@ -1810,7 +1810,7 @@ static void test_pawr_observer_response(void) {
     gap_sync_reports.head = gap_sync_reports.count = 0;
     memset(sync, 0, sizeof(*sync));
     sync->used = sync->established = 1;
-    sync->set_id = 6;
+    sync->sid = 6;
     sync->params.interval = 24;
     sync->event_counter = 12;
     sync->anchor_us = 2000000;
@@ -2030,7 +2030,7 @@ static void test_periodic_advertising_sync(void) {
            gap_syncs[0].window_chain);
     assert(gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_ESTABLISHED &&
-           event.slot == slot && event.set_id == 6);
+           event.slot == slot && event.sid == 6);
 
     uint64_t chain_window_start = gap_syncs[0].start_us;
     fake_radio_ticks = chain_window_start;
@@ -2042,7 +2042,7 @@ static void test_periodic_advertising_sync(void) {
     gap_hw_received();
     gap_hw_scan_poll(GET_MICROS(), now_ms);
     assert(gap_report_poll(&report));
-    assert(report.slot == slot && report.set_id == 6 &&
+    assert(report.slot == slot && report.sid == 6 &&
            report.event_counter == 5 && report.did == 2 &&
            report.rssi == -40 && report.data_len == 3 &&
            !memcmp(report.data, (uint8_t[]){2, 0x01, 0x06}, 3));
@@ -2307,9 +2307,9 @@ static void test_extended_scannable_advertising(void) {
            captured_extended_channels[3] == 1);
     assert(captured_extended_ticks[3] - captured_extended_ticks[2] >= 2729 &&
            captured_extended_ticks[3] - captured_extended_ticks[2] <= 2760);
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_PRIMARY,
         primary, captured_extended_pdu_lengths[0], -40));
-    assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+    assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
         auxiliary, captured_extended_pdu_lengths[1], -40));
     for (uint8_t i = 2; i < captured_extended_count; i++) {
         if (i == 8) {
@@ -2318,12 +2318,12 @@ static void test_extended_scannable_advertising(void) {
             assert(!memcmp(captured_extended_pdus[i] + 6, data + 1470, 180));
         }
 
-        assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
+        assert(gap_ext_scan_receive(GAP_EXT_PDU_AUX,
             captured_extended_pdus[i], captured_extended_pdu_lengths[i], -40));
     }
     assert(gap_ext_report_state.count == 1);
     assert(gap_ext_scan_poll(&report));
-    assert(report.set_id == 6 && report.data_len == sizeof(data) &&
+    assert(report.sid == 6 && report.data_len == sizeof(data) &&
            !memcmp(report.data, data, sizeof(data)));
 
     assert(gap_ext_adv_stop(0));
@@ -3226,7 +3226,7 @@ static void test_periodic_sync_transfer_receive(void) {
     memcpy(valid_transfer, rx_frame, sizeof(valid_transfer));
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_syncs[0].used &&
            !gap_syncs[0].established &&
-           gap_syncs[0].set_id == 6 &&
+           gap_syncs[0].sid == 6 &&
            gap_syncs[0].phy == GAP_PHY_1M &&
            gap_syncs[0].event_counter == 5 &&
            gap_syncs[0].widening_ppm == 1500 &&
@@ -3246,7 +3246,7 @@ static void test_periodic_sync_transfer_receive(void) {
     assert(gap_syncs[0].established);
     assert(gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_ESTABLISHED &&
-           event.slot == 0 && event.set_id == 6);
+           event.slot == 0 && event.sid == 6);
     assert(!gap_periodic_sync_transfer(0, 0x1234));
     conn->data_length.tx_octets = 251;
     conn->data_length.tx_time = 2120;
@@ -3266,7 +3266,7 @@ static void test_periodic_sync_transfer_receive(void) {
     gap_ext_fields transferred_fields;
     assert(gap_ext_adv_decode(transferred_sync_info,
         sizeof(transferred_sync_info), &transferred_fields) &&
-        transferred_fields.identity.set_id == 6 &&
+        transferred_fields.identity.sid == 6 &&
         transferred_fields.sync.params.interval == 8 &&
         transferred_fields.sync.params.access_address == 0x12345678 &&
         transferred_fields.sync.params.crc_init == 0x123456);
@@ -4033,7 +4033,7 @@ static void test_connection_subrating(void) {
     gap_conn_update_apply(conn, 0, now_ms);
     assert(conn->schedule.factor == 1 && conn->schedule.continuation == 0 &&
            conn->schedule.latency == 2 && conn->c_subrate.force_event);
-    assert(!gap_conn_can_skip_event(conn, conn->link_layer.event_counter));
+    assert(!gap_conn_can_skip_event(conn, conn->link_layer.event_counter, now_ms));
     gap_conn_event_advance(conn);
     assert(!conn->c_subrate.force_event);
     gap_conn_end();
@@ -4110,7 +4110,7 @@ static void test_connection_rate_exchange(void) {
     receive_test_control(0x3f, indication, sizeof(indication));
     assert(conn->c_rate.update_pending && conn->next_schedule.interval_125us == 80 &&
            conn->next_schedule.factor == 2 && conn->peripheral.rate_ack_waiting &&
-           !gap_conn_can_skip_event(conn, (uint16_t)(conn->link_layer.event_counter + 1u)));
+           !gap_conn_can_skip_event(conn, (uint16_t)(conn->link_layer.event_counter + 1u), now_ms));
     conn->link_layer.tx_pending = 1;
     conn->link_layer.tx_sn = 0;
     receive_test_link_packet(1);
