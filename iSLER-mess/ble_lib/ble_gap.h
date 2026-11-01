@@ -309,7 +309,7 @@ enum {
 #if GAP_EXT_ADV_SUPPORT
 typedef struct {
     uint8_t channel_map[5];
-    uint8_t sca;
+    uint8_t clk_accuracy;
     uint16_t interval;
     uint32_t access_address, crc_init;
 } gap_periodic_params;
