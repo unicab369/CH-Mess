@@ -2035,8 +2035,8 @@ static void gap_ext_scan_process(uint32_t now_ms) {
                 gap_ext_pawr.connect.reply_armed = 0;
                 RADIO_STOP();
 
-                gap_conn_context *conn = gap_conn_accept(
-                    pdu, gap_ext_pawr.connect.reply_received_us, 1250, 2500);
+                gap_conn_context *conn = gap_conn_accept(pdu,
+                        gap_ext_pawr.connect.reply_received_us, 1250, 2500);
 
                 if (conn) {
                     gap_conn_slot = (uint8_t)(conn - gap_conn_ctx);

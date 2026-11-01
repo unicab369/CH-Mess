@@ -135,6 +135,7 @@ static int gap_past_receive(
 
 static void gap_conn_end(gap_conn_context *conn) {
     uint8_t slot = (uint8_t)(conn - gap_conn_ctx);
+
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)))
         return;
 
@@ -144,6 +145,13 @@ static void gap_conn_end(gap_conn_context *conn) {
         gap_rx_armed = 0;
     }
 
+#if GAP_EXT_ADV_SUPPORT
+    conn->sync_transfer_queued = 0;
+    conn->sync_transfer_slot = 0;
+#endif
+
+    // Run gap_smp_link_close(conn) before wiping the bond/security state: it uses
+    // the SMP phase and security status to decide whether stored bond cleanup is needed.
 #if GAP_SECURITY_SUPPORT >= 2
     gap_smp_link_close(conn);
     gap_wipe(&conn->bond, sizeof(conn->bond));
@@ -179,12 +187,6 @@ static void gap_conn_end(gap_conn_context *conn) {
     conn->is_central = 0;
     memset(&conn->procedure_state, 0, sizeof(conn->procedure_state));
     memset(&conn->c_features, 0, sizeof(conn->c_features));
-
-    // Clear the queued periodic sync transfer.
-#if GAP_EXT_ADV_SUPPORT
-    conn->sync_transfer_queued = 0;
-    conn->sync_transfer_slot = 0;
-#endif
 
     if (conn->connection_status == GAP_CONNECTION_PENDING)
         conn->connection_status = GAP_STATUS_CONNECTION_TIMEOUT; // Connection timeout/loss.

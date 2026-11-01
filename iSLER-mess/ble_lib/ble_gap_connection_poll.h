@@ -1778,6 +1778,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
         gap_sync_scan_finish();
     }
 #endif // GAP_EXT_ADV_SUPPORT
+
     // The connection poll owns an armed connection event. Only schedule a
     // periodic sync in the radio gaps between those events.
     if (gap_poll.slot_valid) return;
