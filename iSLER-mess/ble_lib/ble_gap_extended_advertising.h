@@ -2035,8 +2035,11 @@ static void gap_ext_scan_process(uint32_t now_ms) {
                 gap_ext_pawr.connect.reply_armed = 0;
                 RADIO_STOP();
 
-                if (gap_conn_accept(pdu, gap_ext_pawr.connect.reply_received_us, 1250, 2500)) {
-                    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+                gap_conn_context *conn = gap_conn_accept(
+                    pdu, gap_ext_pawr.connect.reply_received_us, 1250, 2500);
+
+                if (conn) {
+                    gap_conn_slot = (uint8_t)(conn - gap_conn_ctx);
                     conn->link_layer.peer_sca_ppm = 500;
                     conn->is_central = 0;
 #if GAP_CENTRAL_SUPPORT
@@ -2680,11 +2683,12 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         RADIO_STOP();
         gap_ext_aux_exchange.waiting = 0;
         gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
-        if (response_sent &&
-            gap_conn_accept(gap_ext_aux_exchange.detail.connect.request,
-                            gap_ext_aux_exchange.detail.connect.request_us, 1250, 2500)
-        ) {
-            gap_conn_context *accepted = &gap_conn_ctx[gap_conn_slot];
+        gap_conn_context *accepted = response_sent ? gap_conn_accept(
+            gap_ext_aux_exchange.detail.connect.request,
+            gap_ext_aux_exchange.detail.connect.request_us, 1250, 2500) : NULL;
+
+        if (accepted) {
+            gap_conn_slot = (uint8_t)(accepted - gap_conn_ctx);
             accepted->is_central = 0;
             accepted->link_layer.peer_sca_ppm = 500;
             gap_ext_adv[gap_ext_aux.set_id].enabled = 0;
@@ -2763,15 +2767,19 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
             const uint8_t *local_address = request + 2;
             uint8_t expected_header = ADV_EXT_IND | (peer_type << 6) | (local_type << 7);
 
+            conn = NULL;
             if (gap_ext_pawr.connect.response_ready &&
                 gap_ext_pawr.connect.tx_end_valid &&
                 (response[0] & 0xcf) == expected_header &&
                 response[1] == 14 && response[2] == 13 && response[3] == 0x03 &&
                 memcmp(response + 4, peer_address, 6) == 0 &&
-                memcmp(response + 10, local_address, 6) == 0 &&
-                gap_conn_accept(request, gap_ext_pawr.connect.request_end_us, 1250, 2500)
+                memcmp(response + 10, local_address, 6) == 0
             ) {
-                conn = &gap_conn_ctx[gap_conn_slot];
+                conn = gap_conn_accept(request, gap_ext_pawr.connect.request_end_us, 1250, 2500);
+            }
+
+            if (conn) {
+                gap_conn_slot = (uint8_t)(conn - gap_conn_ctx);
                 conn->is_central = 1;
                 conn->central.central_anchor_set = 0;
                 conn->link_layer.peer_sca_ppm = 500;

@@ -2970,8 +2970,9 @@ static void test_connection_context_slots(void) {
     memset(request + 30, 0xff, 4);
     request[34] = 0x1f;
     request[35] = 5;
-    assert(gap_conn_accept(request, GET_MICROS(), 1250, 1250));
-    conn = &gap_conn_ctx[gap_conn_slot];
+    conn = gap_conn_accept(request, GET_MICROS(), 1250, 1250);
+    assert(conn);
+    gap_conn_slot = (uint8_t)(conn - gap_conn_ctx);
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
     smp = &conn->smp;
     assert(gap_conn_slot == 1 && (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
@@ -3131,7 +3132,9 @@ static void test_connection_context_slots(void) {
     gap_conn_end(&gap_conn_ctx[gap_conn_slot]);
     assert((gap_conn_slot_mask != 0) && gap_conn_free_slot() == 1);
     assert(!gap_conn_select(second_handle));
-    assert(gap_conn_accept(request, GET_MICROS(), 1250, 1250));
+    conn = gap_conn_accept(request, GET_MICROS(), 1250, 1250);
+    assert(conn);
+    gap_conn_slot = (uint8_t)(conn - gap_conn_ctx);
     assert(gap_conn_count() == 2);
     assert(!gap_conn_select(second_handle));
     assert(gap_conn_current(&current_handle));

@@ -1652,10 +1652,9 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
 #if GAP_CENTRAL_SUPPORT
     if (gap_connect_tx.phase == GAP_CONNECT_TX_DONE) {
         gap_connect_tx.phase = GAP_CONNECT_TX_IDLE;
-        uint8_t previous_slot = gap_conn_slot;
-
-        if (gap_conn_accept(adv_tx.connect_request, gap_connect_tx.end_us, 1250, 1250)) {
-            gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+        gap_conn_context *conn = gap_conn_accept(adv_tx.connect_request,
+                                gap_connect_tx.end_us, 1250, 1250);
+        if (conn) {
             conn->central.central_anchor_set = 0;
             conn->link_layer.peer_sca_ppm = 500;
             conn->is_central = 1;
@@ -1680,10 +1679,8 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
             gap_scanner.active = 0;
             gap_scanner.generation++;
             gap_rx_packet.ready = 0;
-            gap_conn_slot = previous_slot;
             return;
         }
-        gap_conn_slot = previous_slot;
     }
     else if (gap_connect_tx.phase != GAP_CONNECT_TX_IDLE) {
         if ((int32_t)(now_ms - gap_connect_tx.deadline_ms) < 0) return;
@@ -1703,12 +1700,12 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
             RADIO_STOP();
             gap_aux_request[gap_ext_scan.slot].active = 0;
             gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
-            uint8_t previous_slot = gap_conn_slot;
             const uint8_t *request = adv_tx.connect_request;
+            gap_conn_context *conn = gap_conn_accept(request,
+                                    gap_ext_scan.request_end_us, 1250, 2500);
 
-            if (gap_conn_accept(request, gap_ext_scan.request_end_us, 1250, 2500)) {
+            if (conn) {
                 uint8_t peer_type = (request[0] >> 7) & 1;
-                gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
                 conn->is_central = 1;
                 conn->central.central_anchor_set = 0;
                 conn->link_layer.peer_sca_ppm = 500;
@@ -1729,10 +1726,8 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
                 gap_scanner.scanning = 0;
                 gap_scanner.active = 0;
                 gap_scanner.generation++;
-                gap_conn_slot = previous_slot;
                 return;
             }
-            gap_conn_slot = previous_slot;
         }
         else
 #endif // GAP_CENTRAL_SUPPORT
@@ -2034,8 +2029,12 @@ int gap_send_due(
             adv_evt.rx_event = adv_evt.phase = 0;
             adv_evt.conn_req_ready = 0;
 
-            if (gap_conn_accept(adv_evt.conn_req_frame, adv_evt.conn_req_us,
-                                1250, 1250)) {
+            gap_conn_context *conn = gap_conn_accept(adv_evt.conn_req_frame,
+                                    adv_evt.conn_req_us, 1250, 1250);
+
+            if (conn) {
+                // Select the accepted link for the immediate first-event poll.
+                gap_conn_slot = (uint8_t)(conn - gap_conn_ctx);
                 if (adv_evt.send_gap)
                     advertiser->enabled = 0;
 #if GAP_CENTRAL_SUPPORT

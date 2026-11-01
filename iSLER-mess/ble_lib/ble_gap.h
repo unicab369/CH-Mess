@@ -1723,20 +1723,18 @@ static inline uint64_t subtract_clamp0_64(uint64_t value, uint64_t amount) {
 static l2cap_ops gap_l2cap_ops;
 
 // Validate a legacy CONNECT_IND and initialize its data-channel state.
-static int gap_conn_accept(
+static gap_conn_context *gap_conn_accept(
     const uint8_t frame[36], uint32_t received_us,
     uint32_t unit_us, uint32_t delay_us
 ) {
     if (!gap_conn_request_valid(frame) ||
         MIN(RADIO_DATA_MAX, GAP_CONN_DATA_MAX) < 27
-    ) return 0;
+    ) return NULL;
 
     int free_slot = gap_conn_free_slot();
-    if (free_slot < 0) return 0;
+    if (free_slot < 0) return NULL;
 
-    // Must precede per-slot state initialization and slot-sensitive helpers.
-    gap_conn_slot = free_slot;
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[free_slot];
 
 #if GAP_SECURITY_SUPPORT >= 1
     uint32_t security_generation = conn->security_generation + 1;
@@ -1760,12 +1758,11 @@ static int gap_conn_accept(
     memcpy(conn->responder.address, frame + 8, 6);
 #endif
 
-    if (!l2cap_conn_init(&conn->l2cap, &gap_l2cap_ops, &conn->l2cap_tx_queue)) return 0;
+    if (!l2cap_conn_init(&conn->l2cap, &gap_l2cap_ops, &conn->l2cap_tx_queue))
+        return NULL;
 
 #if GAP_SECURITY_SUPPORT >= 2
-    if (!smp_link_init(&gap_conn_ctx[gap_conn_slot].smp, &conn->l2cap)) {
-        return 0;
-    }
+    if (!smp_link_init(&conn->smp, &conn->l2cap)) return NULL;
 #endif
 
     uint8_t count = 0;
@@ -1806,16 +1803,16 @@ static int gap_conn_accept(
     conn->phy_state.preferred.tx = RADIO_PHY_MASK() & 7;
     conn->phy_state.preferred.rx = conn->phy_state.preferred.tx;
 
-    if (++gap_conn_generations[gap_conn_slot] == 0)
-        gap_conn_generations[gap_conn_slot] = 1;
+    if (++gap_conn_generations[free_slot] == 0)
+        gap_conn_generations[free_slot] = 1;
 
 #if GAP_EXT_ADV_SUPPORT
     for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
         gap_ext_adv[i].enabled = 0;
 #endif
 
-    gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(gap_conn_slot);
-    return 1;
+    gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(free_slot);
+    return conn;
 }
 
 #include "ble_gap_connection_poll.h"
