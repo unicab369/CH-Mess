@@ -544,11 +544,10 @@ int smp_port_cmac(
     return 1;
 }
 
-static int gap_sc_generate_key(gap_smp_context *smp) {
+static int gap_sc_generate_key(gap_smp_context *smp, uint8_t slot_bit) {
     uECC_Curve curve = uECC_secp256r1();
     uECC_RNG_Function previous = uECC_get_rng();
     uint8_t private_key[32], public_key[64];
-    uint8_t slot_bit = GAP_CONN_SLOT_BIT(gap_conn_slot);
     int generated = 0;
     uECC_set_rng(smp_random_bytes);
 
@@ -574,7 +573,7 @@ static int gap_sc_generate_key(gap_smp_context *smp) {
 }
 
 static int gap_sc_accept_key(
-    gap_smp_context *smp, const uint8_t on_air[64]
+    gap_smp_context *smp, const uint8_t on_air[64], uint8_t slot_bit
 ) {
     for (uint8_t coordinate = 0; coordinate < 2; coordinate++) {
         gap_bytes_reverse(smp->secure.peer_public_key + 32 * coordinate,
@@ -594,7 +593,7 @@ static int gap_sc_accept_key(
     int derived = uECC_shared_secret(smp->secure.peer_public_key,
                                     smp->secure.private_key, dhkey, curve);
     uECC_set_rng(previous);
-    derived = derived && (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot));
+    derived = derived && (gap_conn_slot_mask & slot_bit);
 
     if (derived) memcpy(smp->secure.dhkey, dhkey, 32);
     gap_wipe(dhkey, sizeof(dhkey));
@@ -995,7 +994,7 @@ int gap_sc_oob_get(gap_oob_data *out) {
     gap_oob_local *local = &conn->smp.local_oob;
     gap_wipe(local, sizeof(*local));
 
-    int generated = gap_sc_generate_key(&conn->smp) &&
+    int generated = gap_sc_generate_key(&conn->smp, slot_bit) &&
             smp_random_bytes(local->oob.data.random, sizeof(local->oob.data.random)) &&
             (gap_conn_slot_mask & slot_bit);
 
@@ -1712,6 +1711,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
     }
 
     uint8_t slot_bit = GAP_CONN_SLOT_BIT((uint8_t)(conn - gap_conn_ctx));
+
     if (pairing->phase == SMP_PHASE_SC_ENCRYPT) {
         if (gap_encrypted()) {
             conn->authenticated = pairing->authenticated;
@@ -2397,7 +2397,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
                 }
             }
 
-            if (!use_oob_key && !gap_sc_generate_key(&conn->smp)) {
+            if (!use_oob_key && !gap_sc_generate_key(&conn->smp, slot_bit)) {
                 if (gap_conn_slot_mask & slot_bit)
                     gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                 return;
@@ -2512,7 +2512,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
         pairing->secure_connections &&
         pairing->phase == SMP_PHASE_SC_PUBLIC_KEY
     ) {
-        if (!gap_sc_accept_key(&conn->smp, pdu + 1)) {
+        if (!gap_sc_accept_key(&conn->smp, pdu + 1, slot_bit)) {
             if (!(gap_conn_slot_mask & slot_bit))
                 return;
 
