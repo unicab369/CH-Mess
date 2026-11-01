@@ -438,7 +438,7 @@ static void test_mesh_sar_timeout_and_link_cleanup(void) {
     mesh_gatt.proxy_rx_active = 1;
     mesh_gatt.proxy_rx_started_ms = 100;
     fake_now_ms = 100 + MESH_PROXY_SAR_TIMEOUT_MS;
-    assert(proxy_sar_timeout_poll(fake_now_ms));
+    assert(proxy_sar_timeout_poll(conn, fake_now_ms));
     assert(!mesh_gatt.proxy_rx_active && mesh_gatt.proxy_sar_disconnect_pending);
     assert(conn->link_state.terminate_queued &&
            conn->link_layer.local_terminate_reason == 0x13);

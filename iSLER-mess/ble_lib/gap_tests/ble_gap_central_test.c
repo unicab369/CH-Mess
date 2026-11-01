@@ -3393,7 +3393,7 @@ static void test_connection_timing_updates(void) {
     assert(!(conn->procedure_state.procedure_flags & GAP_PENDING_TIMING_UPDATE) && !conn->central.local_update);
 
     start_test_central_link();
-    assert(gap_disconnect(0x13));
+    assert(gap_disconnect_context(conn, 0x13));
     assert(!gap_conn_update(conn, 48, 0, 300));
     gap_conn_end(&gap_conn_ctx[gap_conn_slot]);
 }

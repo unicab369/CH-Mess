@@ -258,9 +258,9 @@ static void mesh_gatt_proxy_sar_cancel(void) {
 
 // A Proxy SAR timeout terminates the Mesh Proxy bearer as required by its
 // bearer behavior; this is separate from generic ATT indication timeouts.
-static int proxy_sar_timeout_poll(uint32_t now_ms) {
+static int proxy_sar_timeout_poll(gap_conn_context *conn, uint32_t now_ms) {
     if (mesh_gatt.proxy_sar_disconnect_pending) {
-        gap_disconnect(0x13);
+        gap_disconnect_context(conn, 0x13);
         return 1;
     }
 
@@ -273,7 +273,7 @@ static int proxy_sar_timeout_poll(uint32_t now_ms) {
         mesh_gatt_proxy_sar_cancel();
         mesh_gatt.proxy_tx_head = mesh_gatt.proxy_tx_count = 0;
         mesh_gatt.proxy_sar_disconnect_pending = 1;
-        gap_disconnect(0x13);
+        gap_disconnect_context(conn, 0x13);
         return 1;
     }
 
@@ -613,8 +613,6 @@ static void mesh_gatt_proxy_input(
                                   uint32_t now_ms
 ) {
     if (!len) return;
-    if (proxy_sar_timeout_poll(now_ms))
-        return;
     uint8_t header = p[0], sar = header >> 6, type = header & 0x0f;
     if ((header & 0x30) ||
         (provisioning_service ? type != MESH_GATT_PROXY_PROVISIONING :
@@ -754,7 +752,7 @@ void mesh_gatt_poll(uint32_t now_ms) {
         l2cap_connection *l2cap = link_access.link;
         l2cap_tx_queue *tx_queue = link_access.tx_queue;
         if (!tx_queue->data || tx_queue->capacity < 4) {
-            (void)gap_disconnect(0x13);
+            (void)gap_disconnect_context(conn, 0x13);
             return;
         }
         mesh_gatt.transport.l2cap_link = l2cap;
@@ -765,7 +763,7 @@ void mesh_gatt_poll(uint32_t now_ms) {
         if (!l2cap_fixed_register(l2cap, &mesh_gatt.transport, L2CAP_CID_ATT,
                 gatt_transport_receive_att)
         ) {
-            (void)gap_disconnect(0x13);
+            (void)gap_disconnect_context(conn, 0x13);
             return;
         }
     }
@@ -811,7 +809,7 @@ void mesh_gatt_poll(uint32_t now_ms) {
         mesh_gatt_provisioning_link_notify(1);
     }
 
-    if (proxy_sar_timeout_poll(now_ms))
+    if (proxy_sar_timeout_poll(conn, now_ms))
         return;
     mesh_gatt_notify_poll(now_ms);
     if (!mesh_gatt.transport.tx_queue_link->length) {
@@ -822,14 +820,14 @@ void mesh_gatt_poll(uint32_t now_ms) {
         if (received < 0 || (received > 0 &&
             gatt_transport_receive_fragment( &mesh_gatt.transport, llid, fragment, len) < 0
         )) {
-            (void)gap_disconnect(0x13);
+            (void)gap_disconnect_context(conn, 0x13);
             return;
         }
     }
 
     int status = gatt_transport_poll(&mesh_gatt.transport, now_ms);
     if (status < 0) {
-        (void)gap_disconnect(0x13);
+        (void)gap_disconnect_context(conn, 0x13);
         return;
     }
 
@@ -840,7 +838,7 @@ void mesh_gatt_poll(uint32_t now_ms) {
         int ready = gatt_transport_tx_peek(&mesh_gatt.transport,
                                         tx_octets, &llid, &fragment, &len);
         if (ready < 0) {
-            (void)gap_disconnect(0x13);
+            (void)gap_disconnect_context(conn, 0x13);
         }
         else if (ready && gap_send_data(conn, llid, fragment, len)) {
             (void)gatt_transport_tx_sent(&mesh_gatt.transport, len, now_ms);

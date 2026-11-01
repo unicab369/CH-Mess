@@ -2481,12 +2481,12 @@ static int gap_send_data(
 }
 
 // Application facing
-// Gracefully terminate the active Peripheral connection after sending the
-// reason in LL_TERMINATE_IND; the link closes once the peer acknowledges it.
-int gap_disconnect(uint8_t reason) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-
-    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
+// Queue termination on the explicitly supplied link after sending the reason
+// in LL_TERMINATE_IND; the link closes once the peer acknowledges it.
+int gap_disconnect_context(gap_conn_context *conn, uint8_t reason) {
+    if (!conn) return 0;
+    uint8_t slot = (uint8_t)(conn - gap_conn_ctx);
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)) ||
         (!conn->is_central && conn->link_layer.first_event) ||
         !reason ||
         conn->link_state.terminate_after_reply ||

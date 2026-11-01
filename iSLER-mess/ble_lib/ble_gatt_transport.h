@@ -1587,7 +1587,6 @@ static inline int ble_gap_gatt_poll(
 ) {
     if (!peers) return -1;
 
-    uint8_t previous_slot = gap_conn_slot;
     uint8_t seen[GAP_CONNECTION_COUNT] = {0};
     uint8_t fragment[BLE_GATT_TRANSPORT_LL_MAX];
     int work = 0, failed = 0;
@@ -1610,7 +1609,6 @@ static inline int ble_gap_gatt_poll(
             }
         }
         peer->conn_ref = conn_ref;
-        if (!gap_conn_select(conn_ref)) continue;
 
         if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)) ||
             (!conn->is_central && conn->link_layer.first_event))
@@ -1624,7 +1622,7 @@ static inline int ble_gap_gatt_poll(
             (transport->connected && (!transport->shared_l2cap ||
              transport->l2cap_link != l2cap ||
              transport->tx_queue_link != tx_queue))) {
-            (void)gap_disconnect(0x13);
+            (void)gap_disconnect_context(conn, 0x13);
             failed = 1;
             continue;
         }
@@ -1640,14 +1638,14 @@ static inline int ble_gap_gatt_poll(
         if (transport->eatt_enabled) {
             if (L2CAP_LOCAL_MAX_PDU_PAYLOAD < L2CAP_ECFC_MPS_MIN ||
                 !l2cap_service_register(BLE_GATT_EATT_SERVICE_ID)) {
-                (void)gap_disconnect(0x13);
+                (void)gap_disconnect_context(conn, 0x13);
                 failed = 1;
                 continue;
             }
         }
 #endif
         if (!l2cap_fixed_register(l2cap, transport, L2CAP_CID_ATT, gatt_transport_receive_att)) {
-            (void)gap_disconnect(0x13);
+            (void)gap_disconnect_context(conn, 0x13);
             failed = 1;
             continue;
         }
@@ -1694,7 +1692,7 @@ static inline int ble_gap_gatt_poll(
         if (received < 0 || (received &&
             gatt_transport_receive_fragment(transport, llid, fragment, fragment_len) < 0)
         ) {
-            (void)gap_disconnect(0x13);
+            (void)gap_disconnect_context(conn, 0x13);
             failed = 1;
             continue;
         }
@@ -1702,7 +1700,7 @@ static inline int ble_gap_gatt_poll(
 
         int result = gatt_transport_poll(transport, now_ms);
         if (result < 0) {
-            (void)gap_disconnect(0x13);
+            (void)gap_disconnect_context(conn, 0x13);
             failed = 1;
             continue;
         }
@@ -1726,7 +1724,6 @@ static inline int ble_gap_gatt_poll(
         peer->connected = 0;
         memset(&peer->conn_ref, 0, sizeof(peer->conn_ref));
     }
-    gap_conn_slot = previous_slot;
     return failed ? -1 : work;
 }
 
