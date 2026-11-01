@@ -1593,7 +1593,9 @@ static inline int ble_gap_gatt_poll(
     gap_conn_ref conn_ref;
 
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
-        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot))) continue;
+        uint8_t slot_bit = GAP_CONN_SLOT_BIT(slot);
+        if (!(gap_conn_slot_mask & slot_bit)) continue;
+
         gap_conn_context *conn = &gap_conn_ctx[slot];
         ble_gap_gatt_peer *peer = &peers[slot];
         conn_ref.slot = slot;
@@ -1610,7 +1612,7 @@ static inline int ble_gap_gatt_poll(
         }
         peer->conn_ref = conn_ref;
 
-        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)) ||
+        if (!(gap_conn_slot_mask & slot_bit) ||
             (!conn->is_central && conn->link_layer.first_event))
             continue;
 

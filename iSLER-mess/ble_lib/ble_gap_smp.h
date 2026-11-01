@@ -548,19 +548,20 @@ static int gap_sc_generate_key(gap_smp_context *smp) {
     uECC_Curve curve = uECC_secp256r1();
     uECC_RNG_Function previous = uECC_get_rng();
     uint8_t private_key[32], public_key[64];
+    uint8_t slot_bit = GAP_CONN_SLOT_BIT(gap_conn_slot);
     int generated = 0;
     uECC_set_rng(smp_random_bytes);
 
     for (uint8_t attempt = 0; attempt < 8 && !generated; attempt++) {
         if (!smp_random_bytes(private_key, sizeof(private_key)) ||
-            !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))
+            !(gap_conn_slot_mask & slot_bit)
         ) break;
 
         generated = uECC_compute_public_key(private_key, public_key, curve);
     }
 
     uECC_set_rng(previous);
-    generated = generated && (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot));
+    generated = generated && (gap_conn_slot_mask & slot_bit);
 
     if (generated) {
         memcpy(smp->secure.private_key, private_key, 32);
