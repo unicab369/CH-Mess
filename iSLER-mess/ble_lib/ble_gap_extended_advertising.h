@@ -196,7 +196,6 @@ static struct {
 
 static struct {
     volatile uint8_t waiting, response_started;
-    gap_address peer;
     union {
         uint32_t scan_response_us;
 #if GAP_PERIPHERAL_SUPPORT
@@ -3026,8 +3025,6 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
 
         memcpy(gap_ext_adv_frame + payload_offset, set->data, first_chunk);
         gap_aux_exchange.response_started = 0;
-        gap_aux_exchange.peer.type = address_type;
-        memcpy(gap_aux_exchange.peer.address, address, sizeof(gap_aux_exchange.peer.address));
         gap_aux_exchange.waiting = 1;
         // The TX completion callback schedules AUX using this frame, so
         // both packets must be ready before starting primary TX.
@@ -3043,8 +3040,6 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         memcpy(gap_ext_aux_frame + 4, address, 6);
         write_u16_le(gap_ext_aux_frame + 10, adv_data_info);
 
-        gap_aux_exchange.peer.type = address_type;
-        memcpy(gap_aux_exchange.peer.address, address, sizeof(gap_aux_exchange.peer.address));
         gap_aux_exchange.detail.connect.phy = set->aux_phy;
         gap_aux_exchange.response_started = 0;
         gap_aux_exchange.waiting = 1;
