@@ -392,7 +392,7 @@ int gap_periodic_adv_start(
 
     uint32_t delay_us = (uint32_t)interval * 1250;
     if (delay_us > 100000) delay_us = 100000;
-    set->periodic.next_us = gap_time_us_from_ticks(RADIO_TICKS()) + delay_us;
+    set->periodic.next_us = GET_MICROS() + delay_us;
     set->periodic.enabled = 1;
     set->next_event_ms = GET_MILLIS();
     return 1;
@@ -1344,7 +1344,7 @@ static int gap_sync_info_accept(
 
     uint32_t window_start_us = target_us - widen_us;
     uint32_t window_end_us = target_us + unit_us + widen_us;
-    uint32_t now_us = gap_time_us_from_ticks(RADIO_TICKS());
+    uint32_t now_us = GET_MICROS();
     uint32_t interval_us = (uint32_t)fields->sync.params.interval * 1250;
     uint16_t event_counter = fields->sync.event_counter;
     uint8_t skipped = 0;
@@ -2565,7 +2565,7 @@ static void gap_ext_aux_primary_start(
     gap_ext_aux.address_type = address_type;
     memcpy(gap_ext_aux.address, address, 6);
     gap_ext_aux.adi = adi;
-    gap_ext_aux.primary_start_us = gap_time_us_from_ticks(RADIO_TICKS());
+    gap_ext_aux.primary_start_us = GET_MICROS();
     gap_ext_aux.phase = GAP_EXT_AUX_PRIMARY;
 
     RADIO_TX_CLEAR_DONE();

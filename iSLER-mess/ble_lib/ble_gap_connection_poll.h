@@ -304,7 +304,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     const uint8_t *frame = RADIO_RX_FRAME();
     RADIO_TX_TIMER_BEGIN();
     uint8_t pdu_type = frame[0] & 0x0f;
-    uint32_t receive_us = gap_time_us_from_ticks(RADIO_TICKS());
+    uint32_t receive_us = GET_MICROS();
     uint32_t conn_anchor_us = 0;
 
     uint8_t previous_slot = gap_conn_slot;
@@ -2061,6 +2061,7 @@ int gap_send_due(
     const uint8_t *fallback_ad, uint8_t fallback_len,
     uint32_t now, uint32_t *sent_at, uint8_t *jitter
 ) {
+    uint32_t now_us = GET_MICROS();
     if (gap_poll.slot_valid) return 0;
 
 #if GAP_LEGACY_ADV_SET_COUNT > 0
@@ -2101,7 +2102,7 @@ int gap_send_due(
 
         if (adv_evt.phase == GAP_LEGACY_ADV_TX) {
             if (!RADIO_TX_DONE()) {
-                if (RADIO_TICKS() < adv_evt.deadline)
+                if ((int32_t)(now_us - adv_evt.deadline_us) < 0)
                     return 0;
                 RADIO_STOP();
                 adv_evt.rx_event = 0;
@@ -2115,24 +2116,24 @@ int gap_send_due(
                 adv_evt.phase = 0;
             } else {
                 adv_evt.phase = GAP_LEGACY_ADV_RX;
-                adv_evt.deadline = RADIO_TICKS() + HW_TICKS_FROM_US(800);
+                adv_evt.deadline_us = now_us + 800;
             }
         }
 
         if (adv_evt.phase == GAP_LEGACY_ADV_RX) {
             if (adv_evt.scan_resp_started) {
                 adv_evt.phase = GAP_LEGACY_ADV_SCAN_RESPONSE_TX;
-                adv_evt.deadline = RADIO_TICKS() + HW_TICKS_FROM_US(1000);
+                adv_evt.deadline_us = now_us + 1000;
             }
             else if (gap_rx_packet.ready)
                 adv_evt.channel = 39;
-            else if (RADIO_TICKS() < adv_evt.deadline)
+            else if ((int32_t)(now_us - adv_evt.deadline_us) < 0)
                 return 0;
         }
 
         if (adv_evt.phase == GAP_LEGACY_ADV_SCAN_RESPONSE_TX) {
             if (!RADIO_TX_DONE()) {
-                if (RADIO_TICKS() < adv_evt.deadline)
+                if ((int32_t)(now_us - adv_evt.deadline_us) < 0)
                     return 0;
                 RADIO_STOP();
                 adv_evt.rx_event = adv_evt.phase = 0;
@@ -2156,7 +2157,7 @@ int gap_send_due(
                         receive_after_tx, GAP_PHY_1M, GAP_PHY_1M, 0x555555);
             adv_evt.rx_event = 1;
             adv_evt.phase = GAP_LEGACY_ADV_TX;
-            adv_evt.deadline = RADIO_TICKS() + HW_TICKS_FROM_US(1000);
+            adv_evt.deadline_us = now_us + 1000;
             return 0;
         }
 
@@ -2277,7 +2278,7 @@ int gap_send_due(
     RADIO_LINK_TX(adv_evt.adv_frame, BLE_ADV_ACCESS_ADDRESS, adv_evt.channel,
                   receive_after_tx, GAP_PHY_1M, GAP_PHY_1M, 0x555555);
     adv_evt.phase = GAP_LEGACY_ADV_TX;
-    adv_evt.deadline = RADIO_TICKS() + HW_TICKS_FROM_US(1000);
+    adv_evt.deadline_us = now_us + 1000;
     return 0;
 
 #else

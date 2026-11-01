@@ -247,14 +247,6 @@ void RADIO_LINK_RX(uint32_t access_address, uint8_t channel,
 void RADIO_SCAN_RX(uint8_t channel);
 int RADIO_TX_DONE(void);
 void RADIO_TX_CLEAR_DONE(void);
-uint64_t RADIO_TICKS(void);
-uint64_t HW_TICKS_FROM_US(uint32_t us);
-
-// Convert the radio timer to the wrapping 32-bit microsecond time base.
-static inline uint32_t gap_time_us_from_ticks(uint64_t ticks) {
-    uint64_t ticks_per_us = HW_TICKS_FROM_US(1);
-    return ticks_per_us ? (uint32_t)(ticks / ticks_per_us) : 0;
-}
 void RADIO_PUBLIC_ADDRESS(uint8_t address[6]);
 // Provide cryptographically secure random bytes or fail without using a weak fallback.
 int GAP_RANDOM_BYTES(uint8_t *out, size_t len);

@@ -17,7 +17,7 @@ static uint8_t configured_tx;
 static uint8_t tx_started, rx_started;
 
 uint32_t GET_MILLIS(void) { return 1000; }
-uint32_t GET_MICROS(void) { return (uint32_t)RADIO_TICKS(); }
+uint32_t GET_MICROS(void) { return (uint32_t)radio_ticks++; }
 uint32_t GAP_CRITICAL_ENTER(void) { return 0; }
 void GAP_CRITICAL_EXIT(uint32_t state) { (void)state; }
 const uint8_t *RADIO_RX_FRAME(void) { return NULL; }
@@ -70,8 +70,6 @@ void RADIO_LINK_RX(uint32_t aa, uint8_t channel, uint8_t phy, uint32_t crc_init)
 void RADIO_SCAN_RX(uint8_t channel) { (void)channel; }
 int RADIO_TX_DONE(void) { return 1; }
 void RADIO_TX_CLEAR_DONE(void) {}
-uint64_t RADIO_TICKS(void) { return radio_ticks++; }
-uint64_t HW_TICKS_FROM_US(uint32_t us) { return us; }
 void RADIO_PUBLIC_ADDRESS(uint8_t address[6]) { memset(address, 0, 6); }
 int GAP_RANDOM_BYTES(uint8_t *out, size_t len) {
     memset(out, 0, len); return 1;

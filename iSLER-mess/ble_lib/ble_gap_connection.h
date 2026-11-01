@@ -105,7 +105,7 @@ static struct {
     volatile uint8_t conn_req_ready;
     volatile uint8_t phase;
     uint8_t channel, send_gap, set_id;
-    uint64_t deadline;
+    uint32_t deadline_us;
     uint8_t conn_req_frame[36];
     uint32_t conn_req_us;
 } adv_evt;
