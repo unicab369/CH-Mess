@@ -260,6 +260,11 @@ enum {
     GAP_AUX_PTR_ZERO_OFFSET
 };
 
+enum {
+    GAP_AUX_CA_50_PPM = 1u << 0,
+    GAP_AUX_OFFSET_300_US = 1u << 1
+};
+
 typedef struct {
     // Common extended header and advertiser identity.
     uint8_t mode, flags;
@@ -268,7 +273,7 @@ typedef struct {
 
     // AuxPtr scheduling information.
     uint8_t aux_ptr_state;
-    uint8_t aux_channel, aux_ca, aux_offset_unit, aux_phy;
+    uint8_t aux_channel, aux_timing_flags, aux_phy;
     uint32_t aux_offset_us;
 
     // Periodic SyncInfo.
@@ -770,9 +775,9 @@ static int gap_ext_adv_decode(
                                                GAP_AUX_PTR_VALID;
         fields->aux_channel = channel;
         fields->aux_phy = phy;
-        fields->aux_ca = (pdu[cursor] >> 6) & 1;
-        fields->aux_offset_unit = (pdu[cursor] >> 7) & 1;
-        fields->aux_offset_us = (uint32_t)offset * (fields->aux_offset_unit ? 300 : 30);
+        fields->aux_timing_flags = (pdu[cursor] >> 6) & 0x03;
+        fields->aux_offset_us = (uint32_t)offset *
+                ((fields->aux_timing_flags & GAP_AUX_OFFSET_300_US) ? 300 : 30);
         cursor += 3;
     }
 
@@ -2098,18 +2103,17 @@ static void gap_ext_scan_process(uint32_t now_ms) {
                     }
 
                     gap_aux_request_context *request = &gap_aux_request[aux_slot];
-                    uint32_t tx_ca_ppm = fields.aux_ca ? 50 : 500;
-                    uint32_t offset_unit_us = fields.aux_offset_unit ? 300 : 30;
+                    uint32_t tx_ca_ppm = (fields.aux_timing_flags & GAP_AUX_CA_50_PPM) ? 50 : 500;
+                    uint32_t offset_unit_us = (fields.aux_timing_flags & GAP_AUX_OFFSET_300_US) ? 300 : 30;
                     uint32_t widen_us = ((tx_ca_ppm + 500) * (fields.aux_offset_us + offset_unit_us) +
                                                             999999) / 1000000 + 2;
                     // AuxOffset starts at the PDU start; the timestamp is captured
                     // at PDU reception completion, so subtract this PDU's airtime.
                     uint32_t after_packet_us = fields.aux_offset_us - airtime_us;
-                    request->start_us = gap_ext_scan.received_us +
-                                        subtract_clamp0_32(after_packet_us, widen_us);
+                    uint32_t start_offset_us = subtract_clamp0_32(after_packet_us, widen_us);
+                    request->start_us = gap_ext_scan.received_us + start_offset_us;
                     // The AuxPtr receive window lasts only a few milliseconds.
-                    request->duration_us = after_packet_us + offset_unit_us + widen_us -
-                                           subtract_clamp0_32(after_packet_us, widen_us);
+                    request->duration_us = after_packet_us + offset_unit_us + widen_us - start_offset_us;
                     request->channel = fields.aux_channel;
                     request->phy = aux_phy;
                     request->active = 1;
@@ -2173,8 +2177,8 @@ static void gap_ext_scan_process(uint32_t now_ms) {
             uint32_t airtime_us = gap_phy_airtime_us(pdu[1], packet_phy);
 
             if (fields.aux_offset_us > airtime_us) {
-                uint32_t tx_ca_ppm = fields.aux_ca ? 50 : 500;
-                uint32_t unit_us = fields.aux_offset_unit ? 300 : 30;
+                uint32_t tx_ca_ppm = (fields.aux_timing_flags & GAP_AUX_CA_50_PPM) ? 50 : 500;
+                uint32_t unit_us = (fields.aux_timing_flags & GAP_AUX_OFFSET_300_US) ? 300 : 30;
                 uint32_t after_packet_us = fields.aux_offset_us - airtime_us;
                 uint32_t widen_us = ((tx_ca_ppm + 500) * (fields.aux_offset_us + unit_us) +
                                                             999999) / 1000000 + 2;
