@@ -1545,6 +1545,7 @@ static void gap_conn_poll(uint32_t now_us) {
                       conn->phy_state.current.rx, conn->link_layer.crc_init);
 }
 
+// Application facing
 // Run housekeeping for every live link and let the first due link claim the
 // shared radio until its connection event finishes.
 static inline void gap_conn_poll_all(uint32_t now_us, uint32_t now_ms) {
@@ -1612,6 +1613,7 @@ static inline void gap_conn_poll_all(uint32_t now_us, uint32_t now_ms) {
 // =============================================================================
 // Hardware scan polling
 // =============================================================================
+// Application facing
 void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
 
 #if GAP_LEGACY_ADV_SET_COUNT > 0
@@ -2013,6 +2015,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
 // =============================================================================
 // Advertising and shared radio scheduling
 // =============================================================================
+// Application facing
 int gap_send_due(
     const uint8_t *fallback_ad, uint8_t fallback_len,
     uint32_t now_ms, uint32_t *sent_at, uint8_t *jitter

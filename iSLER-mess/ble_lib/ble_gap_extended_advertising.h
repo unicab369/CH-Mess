@@ -1797,7 +1797,6 @@ static int gap_ext_chain_arm(uint32_t start_us) {
 }
 
 // Start or advance one AUX_CHAIN_IND at a time. Return 2 while a chain is in
-// flight; gap_ext_send_due() resumes it on later polls.
 static int gap_ext_chain_send(
     uint8_t set_id, uint16_t remaining, uint16_t adv_data_info,
     uint8_t address_type, uint32_t next_start_us
