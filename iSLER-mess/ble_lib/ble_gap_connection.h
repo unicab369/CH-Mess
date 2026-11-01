@@ -107,7 +107,7 @@ static struct {
     uint8_t channel, send_gap, set_id;
     uint64_t deadline;
     uint8_t conn_req_frame[36];
-    uint64_t conn_req_ticks;
+    uint32_t conn_req_us;
 } adv_evt;
 #endif // GAP_LEGACY_ADV_SET_COUNT > 0
 
@@ -129,7 +129,7 @@ static void gap_smp_poll_context(gap_conn_context *conn);
 #if GAP_EXT_ADV_SUPPORT
 static int gap_past_receive(
     const uint8_t *frame,
-    uint64_t connection_anchor_ticks, uint16_t conn_event_counter
+    uint32_t connection_anchor_us, uint16_t conn_event_counter
 );
 #endif
 
@@ -231,13 +231,12 @@ static void gap_conn_update_apply(
         }
 
         if (instant_packet_received) {
-            conn->link_layer.next_ticks = conn->link_layer.next_ticks -
-                    HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125) +
-                    HW_TICKS_FROM_US((uint32_t)conn->next_schedule.interval_125us * 125);
+            conn->link_layer.next_us = conn->link_layer.next_us -
+                    (uint32_t)conn->schedule.interval_125us * 125 +
+                    (uint32_t)conn->next_schedule.interval_125us * 125;
         }
         else {
-            conn->link_layer.next_ticks +=
-                (uint64_t)conn->next_schedule.win_offset * HW_TICKS_FROM_US(125);
+            conn->link_layer.next_us += (uint32_t)conn->next_schedule.win_offset * 125u;
         }
 
         conn->link_layer.last_rx_ms = GET_MILLIS();
@@ -274,12 +273,12 @@ static void gap_conn_update_apply(
 
         if (instant_packet_received) {
             // The packet already fixed the new anchor; ignore WinOffset and WinSize.
-            conn->link_layer.next_ticks = conn->link_layer.next_ticks -
-                    HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125) +
-                    (uint64_t)conn->new_params.interval * HW_TICKS_FROM_US(1250);
+            conn->link_layer.next_us = conn->link_layer.next_us -
+                    (uint32_t)conn->schedule.interval_125us * 125 +
+                    (uint64_t)conn->new_params.interval * 1250;
         }
         else {
-            conn->link_layer.next_ticks += (uint64_t)conn->update_win_offset * HW_TICKS_FROM_US(1250);
+            conn->link_layer.next_us += (uint32_t)conn->update_win_offset * 1250u;
         }
 
         if ((uint32_t)conn->new_params.interval * 10 != conn->schedule.interval_125us ) {
@@ -700,7 +699,7 @@ static uint8_t gap_conn_reject_resp(
 
 static uint8_t gap_conn_control(
     const uint8_t *frame,
-    uint8_t authenticated, uint64_t connection_anchor_ticks,
+    uint8_t authenticated, uint32_t connection_anchor_us,
     uint16_t conn_event_counter
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
@@ -1957,7 +1956,7 @@ static uint8_t gap_conn_control(
         if (frame[1] != 35)
             return gap_conn_unknown_resp(conn, frame[2]);
 
-        (void)gap_past_receive(frame, connection_anchor_ticks, conn_event_counter);
+        (void)gap_past_receive(frame, connection_anchor_us, conn_event_counter);
         break;
 
 #endif

@@ -17,6 +17,7 @@ static uint8_t configured_tx;
 static uint8_t tx_started, rx_started;
 
 uint32_t GET_MILLIS(void) { return 1000; }
+uint32_t GET_MICROS(void) { return (uint32_t)RADIO_TICKS(); }
 uint32_t GAP_CRITICAL_ENTER(void) { return 0; }
 void GAP_CRITICAL_EXIT(uint32_t state) { (void)state; }
 const uint8_t *RADIO_RX_FRAME(void) { return NULL; }
@@ -49,10 +50,10 @@ void RADIO_LINK_TX(const uint8_t *frame, uint32_t aa, uint8_t channel,
     mock_radio_link_config(aa, channel, tx, tx_phy, rx_phy, crc_init);
     mock_radio_link_tx(frame);
 }
-int RADIO_LINK_TX_AT(const uint8_t *frame, uint64_t start_ticks,
+int RADIO_LINK_TX_AT(const uint8_t *frame, uint32_t start_us,
                      uint32_t aa, uint8_t channel, uint8_t tx,
                      uint8_t tx_phy, uint8_t rx_phy, uint32_t crc_init) {
-    (void)start_ticks;
+    (void)start_us;
     RADIO_LINK_TX(frame, aa, channel, tx, tx_phy, rx_phy, crc_init);
     return 1;
 }
@@ -89,7 +90,7 @@ int main(void) {
     radio_data_max = 27;
 
     conn->is_central = 1;
-    conn->link_layer.next_ticks = 10000;
+    conn->link_layer.next_us = 10000;
     conn->link_layer.last_rx_ms = 1000;
     conn->link_layer.access_address = 0x12345678;
     conn->link_layer.hop = 5;
@@ -104,7 +105,7 @@ int main(void) {
     conn->central.central_anchor_set = 1;
 
     radio_ticks = 10000;
-    gap_conn_poll();
+    gap_conn_poll(GET_MICROS());
     assert(transmitted_frame == conn->tx_frame && configured_tx);
     assert(tx_started == 1 && rx_started == 0);
 
@@ -113,8 +114,8 @@ int main(void) {
     conn->link_state.channel_selected = 0;
     conn->link_layer.tx_pending = 0;
     conn->is_central = 0;
-    radio_ticks = conn->link_layer.next_ticks;
-    gap_conn_poll();
+    radio_ticks = conn->link_layer.next_us;
+    gap_conn_poll(GET_MICROS());
     assert(!configured_tx);
     assert(tx_started == 1 && rx_started == 1);
     return 0;

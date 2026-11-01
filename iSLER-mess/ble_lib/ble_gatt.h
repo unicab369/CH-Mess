@@ -738,6 +738,7 @@ static inline int gatt_client_receive(
         else {
             switch (request) {
 
+            case ATT_OP_READ_REQ:
             case ATT_OP_WRITE_REQ:
                 error_handle_valid = client->request.len >= 3 &&
                         error_handle == ble_get_le16(client->request_pdu + 1);

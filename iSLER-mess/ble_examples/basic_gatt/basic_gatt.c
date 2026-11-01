@@ -11,10 +11,6 @@
 #include "../../ble_lib/gap_ports/ch58x_isler.h"
 #include "../../ble_lib/gatt_services/ble_gatt_services.h"
 
-uint32_t GET_MILLIS(void) {
-    return (uint32_t)(funSysTick64() / DELAY_MS_TIME);
-}
-
 static ble_gatt_server gatt_server;
 static ble_gatt_transport gatt_transport;
 static ble_gatt_bas_service battery_service;
@@ -61,7 +57,7 @@ int main(void) {
         if (gap_conn_count())
             gap_conn_poll_all();
 
-        gap_hw_scan_poll();
+        gap_hw_scan_poll(GET_MICROS());
         (void)ble_gap_gatt_poll(gatt_links);
 
         if ((int32_t)(now - next_update) >= 0) {

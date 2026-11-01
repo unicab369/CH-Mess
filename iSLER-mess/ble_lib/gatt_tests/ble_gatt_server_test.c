@@ -151,7 +151,9 @@ static void transaction_execute(void *context, uint8_t commit) {
 
 static void test_database_registration_and_handles(void) {
     ble_gatt_server server;
-    assert(sizeof(server) <= 8192);
+    // The 64-bit host test build uses 8-byte callback pointers; embedded
+    // 32-bit targets keep the original 8 KiB server-state budget.
+    assert(sizeof(server) <= (sizeof(void *) == 8 ? 8256 : 8192));
     gatt_server_init(&server, 247);
     ble_gatt_uuid service_uuid = uuid16(0x180f);
     ble_gatt_uuid level_uuid = uuid16(0x2a19);

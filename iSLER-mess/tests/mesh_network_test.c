@@ -303,6 +303,7 @@ int main(void) {
     assert(message.ttl == 3 && message.src == 0x0003 && message.dst == 0x1201 &&
            message.seq == 0x3129ab && message.iv_index == state.iv_index);
 
+    state.unicast_address = 0x1201;
     assert(mesh_network_init(&state) == 1);
     storage_fails = 1;
     sent_len = 0;

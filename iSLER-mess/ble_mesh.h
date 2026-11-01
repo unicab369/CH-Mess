@@ -64,10 +64,6 @@ int flash_write_data(uint32_t addr, uint8_t *data, int len) {
     return ch5xx_flash_cmd_write(addr, data, len) == 0;
 }
 
-uint32_t GET_MILLIS(void) {
-    return (uint32_t)(funSysTick64() / DELAY_MS_TIME);
-}
-
 #include "ble_mesh/mesh_gatt.h"
 
 // Supply a trusted monotonic second count that survives reboot. Until a clock
@@ -340,7 +336,7 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
     int connection_busy = gap_conn_count() != 0;
     if (connection_busy)
         gap_conn_poll_all();
-    gap_hw_scan_poll();
+    gap_hw_scan_poll(GET_MICROS());
 
     uint32_t now = GET_MILLIS();
     int received = 0;

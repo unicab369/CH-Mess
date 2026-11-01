@@ -146,15 +146,21 @@
 #define GAP_EXT_ADV_FIRST_DATA_MAX 240
 #define GAP_EXT_ADV_CHAIN_DATA_MAX 246
 #define GAP_EXT_ADV_FINAL_DATA_MAX 249
+#ifndef GAP_EXT_ADV_CONTEXT_COUNT
 #define GAP_EXT_ADV_CONTEXT_COUNT 1
+#endif
+#ifndef GAP_EXT_ADV_REPORT_COUNT
 #define GAP_EXT_ADV_REPORT_COUNT 1
-#define GAP_EXT_ADV_SEEN_COUNT 4
+#endif
+#ifndef GAP_EXT_ADV_SEEN_COUNT
+#define GAP_EXT_ADV_SEEN_COUNT 1
+#endif
 #define GAP_EXT_ADV_CHAIN_TIMEOUT_MS 3000
 #define GAP_PAWR_RESPONSE_DATA_MAX 249
-#define GAP_PAWR_RESPONSE_REPORT_COUNT 4
-#define GAP_PERIODIC_SYNC_COUNT 2
-#define GAP_PERIODIC_SYNC_EVENT_COUNT 4
-#define GAP_PERIODIC_REPORT_COUNT 2
+#define GAP_PAWR_RESPONSE_REPORT_COUNT 1
+#define GAP_PERIODIC_SYNC_COUNT 1
+#define GAP_PERIODIC_SYNC_EVENT_COUNT 1
+#define GAP_PERIODIC_REPORT_COUNT 1
 #endif
 
 // Legacy advertising payload and interval limits.
@@ -205,6 +211,8 @@ enum {
 #define GAP_LL_FEATURE_PAGE1_SHORTER_INTERVALS 0x03
 
 uint32_t GET_MILLIS(void);
+// Same monotonic clock in microseconds; wrap-safe comparisons require intervals < 2^31 us.
+uint32_t GET_MICROS(void);
 // AES uses standard byte order; the platform must serialize shared hardware use.
 void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out);
 
@@ -226,7 +234,7 @@ void RADIO_LINK_TX(
     uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy,
     uint32_t crc_init);
 int RADIO_LINK_TX_AT(
-    const uint8_t *frame, uint64_t start_ticks,
+    const uint8_t *frame, uint32_t start_us,
     uint32_t access_address, uint8_t channel,
     uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy,
     uint32_t crc_init);
@@ -241,6 +249,12 @@ int RADIO_TX_DONE(void);
 void RADIO_TX_CLEAR_DONE(void);
 uint64_t RADIO_TICKS(void);
 uint64_t HW_TICKS_FROM_US(uint32_t us);
+
+// Convert the radio timer to the wrapping 32-bit microsecond time base.
+static inline uint32_t gap_time_us_from_ticks(uint64_t ticks) {
+    uint64_t ticks_per_us = HW_TICKS_FROM_US(1);
+    return ticks_per_us ? (uint32_t)(ticks / ticks_per_us) : 0;
+}
 void RADIO_PUBLIC_ADDRESS(uint8_t address[6]);
 // Provide cryptographically secure random bytes or fail without using a weak fallback.
 int GAP_RANDOM_BYTES(uint8_t *out, size_t len);
@@ -324,7 +338,7 @@ typedef struct {
         uint16_t data_len, event_counter, did;
         uint32_t response_access;
         gap_periodic_params params;
-        uint64_t next_ticks;
+        uint32_t next_us;
         uint8_t data[GAP_EXT_ADV_DATA_MAX];
     } periodic;
     struct {
@@ -766,7 +780,8 @@ typedef struct {
         uint32_t access_address; // Access address used for this connection's radio packets.
         uint32_t crc_init; // CRC initialization value used for this connection.
         uint32_t last_rx_ms; // Time of the last received packet, used for timing-widening calculations.
-        uint64_t next_ticks; // Radio timer tick for the next scheduled connection event.
+        // Wrapping microsecond timestamp; comparisons stay within the signed half-range.
+        uint32_t next_us;
     } link_layer;
 
     // Link-layer feature exchange and channel classification.
@@ -928,7 +943,7 @@ typedef struct {
             // A local channel-map update is waiting; values are in next_channel_map.
             volatile uint8_t local_map;
             // Internal scheduler flag: set when the first event initializes
-            // next_ticks, so later polls do not reset the schedule to "now".
+            // next_us, so later polls do not reset the schedule to "now".
             uint8_t central_anchor_set;
             // Application request accepted; the scheduler may need to finish
             // feature exchange or wait for a transmit slot before sending it.
@@ -1720,8 +1735,8 @@ static l2cap_ops gap_l2cap_ops;
 
 // Validate a legacy CONNECT_IND and initialize its data-channel state.
 static int gap_conn_accept(
-    const uint8_t frame[36], uint64_t received_ticks,
-    uint64_t unit_ticks, uint64_t delay_ticks
+    const uint8_t frame[36], uint32_t received_us,
+    uint32_t unit_us, uint32_t delay_us
 ) {
     if (!gap_conn_request_valid(frame) ||
         MIN(RADIO_DATA_MAX, GAP_CONN_DATA_MAX) < 27
@@ -1780,8 +1795,7 @@ static int gap_conn_accept(
 
     static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
     conn->link_layer.peer_sca_ppm = sca_ppm[frame[35] >> 5];
-    conn->link_layer.next_ticks = received_ticks + delay_ticks +
-                                unit_ticks * read_u16_le(frame + 22);
+    conn->link_layer.next_us = received_us + delay_us + unit_us * read_u16_le(frame + 22);
     conn->link_layer.used_count = count;
     conn->link_layer.hop = frame[35] & 0x1f;
     conn->link_layer.last_rx_ms = GET_MILLIS();

@@ -714,7 +714,7 @@ int main(void) {
     uint8_t mtu_req[] = {0x02, 23, 0};
     enqueue_l2cap(&link, L2CAP_CID_ATT, mtu_req,
                   sizeof(mtu_req), 5);
-    while (link.rx_count || transport.l2cap_rx.expected || !transport.tx_queue_link->length) {
+    while (link.rx_count || transport.l2cap_rx.bytes_expected || !transport.tx_queue_link->length) {
         int status = gatt_transport_test_poll(&transport, 10);
         assert(status >= 0);
         if (transport.tx_queue_link->length) break;
@@ -735,11 +735,11 @@ int main(void) {
     assert(!transport.tx_queue_link->length && link.tx_count == 0);
 
     // Link loss clears partial PDUs and all per-link GATT state.
-    transport.l2cap_rx.expected = 10;
+    transport.l2cap_rx.bytes_expected = 10;
     server.mtu_exchanged = 1;
     link.connected = 0;
     assert(gatt_transport_test_poll(&transport, 12) == 0);
-    assert(!transport.l2cap_rx.expected && !server.mtu_exchanged);
+    assert(!transport.l2cap_rx.bytes_expected && !server.mtu_exchanged);
     link.connected = 1;
     server.mtu_exchanged = 1;
     assert(gatt_transport_test_poll(&transport, 13) == 0);

@@ -9,10 +9,6 @@
 #endif
 #include "../../ble_lib/gap_ports/ch58x_isler.h"
 
-uint32_t GET_MILLIS(void) {
-    return (uint32_t)(funSysTick64() / DELAY_MS_TIME);
-}
-
 int main(void) {
     static const uint8_t local_name[] = "Ch32fun - CH582";
     uint8_t advertising_data[31];

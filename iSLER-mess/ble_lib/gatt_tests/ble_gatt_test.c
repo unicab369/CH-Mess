@@ -116,7 +116,7 @@ static void test_gap_service_characteristics(void) {
     assert(mesh_gatt_ensure_initialized());
     const uint8_t flags[] = {2, 0x01, 0x06};
     assert(gap_adv_start(0, ADV_IND, flags, sizeof(flags), NULL, 0, 100));
-    mesh_gatt_gap_policy_update();
+    mesh_gatt_poll();
     assert(mesh_gatt.server.attrs[
            MESH_GATT_HANDLE_GAP_DEVICE_NAME - 1].permissions ==
            BLE_GATT_PERM_READ);
@@ -221,7 +221,7 @@ static void test_gap_service_characteristics(void) {
     gap_wipe(&gap_ead_key, sizeof(gap_ead_key));
 
     gap_adv_stop(0);
-    mesh_gatt_gap_policy_update();
+    mesh_gatt_poll();
     assert(mesh_gatt.server.attrs[
            MESH_GATT_HANDLE_GAP_DEVICE_NAME - 1].permissions ==
            BLE_GATT_PERM_READ_AUTHN);

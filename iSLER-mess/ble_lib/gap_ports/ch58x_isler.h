@@ -3,6 +3,14 @@
 #ifndef GAP_PORT_CH58X_ISLER_H
 #define GAP_PORT_CH58X_ISLER_H
 
+uint32_t GET_MILLIS(void) {
+    return (uint32_t)(funSysTick64() / DELAY_MS_TIME);
+}
+
+uint32_t GET_MICROS(void) {
+    return (uint32_t)(funSysTick64() / DELAY_US_TIME);
+}
+
 
 // Application must override this with a cryptographic entropy source before
 // using GAP features that require random values. Weak pseudo-random bytes are
@@ -59,7 +67,7 @@ int GAP_CCM_DECRYPT(
 
 // iSLER adapter state for GAP's connection and advertising radio operations.
 static struct {
-    uint64_t tx_due_ticks;
+    uint32_t tx_due_us;
     uint32_t access_address;
     uint8_t channel, tx_phy, rx_phy, receive_after_tx;
     volatile uint8_t reply_armed;
@@ -92,9 +100,12 @@ static uint8_t gap_phy_mode(uint8_t phy) {
 // For different TX/RX rates, arm RX from TX completion within the peer's IFS.
 void iSLER_Radio_Transmitted_Cb(void) {
     if (!(tx_done & LL_TX)) return;
+#if GAP_CENTRAL_SUPPORT || GAP_EXT_ADV_SUPPORT
+    uint32_t now_us = GET_MICROS();
+#endif
 #if GAP_CENTRAL_SUPPORT
     if (gap_connect_tx.phase == GAP_CONNECT_TX_SENDING) {
-        gap_connect_tx.end_ticks = RADIO_TICKS();
+        gap_connect_tx.end_us = now_us;
         gap_connect_tx.phase = GAP_CONNECT_TX_DONE;
         return;
     }
@@ -114,23 +125,21 @@ void iSLER_Radio_Transmitted_Cb(void) {
         gap_extended_adv_set *set = &gap_ext_adv[gap_ext_aux.set_id];
         RADIO_TX_CLEAR_DONE();
         gap_ext_aux.phase = GAP_EXT_AUX_PENDING;
-        if (!RADIO_LINK_TX_AT(gap_ext_aux_frame,
-                              gap_ext_aux.primary_start + HW_TICKS_FROM_US(480),
-                              BLE_ADV_ACCESS_ADDRESS, 0, 0,
-                              set->aux_phy, set->aux_phy, 0x555555))
+        if (!RADIO_LINK_TX_AT(gap_ext_aux_frame, gap_ext_aux.primary_start_us + 480,
+                            BLE_ADV_ACCESS_ADDRESS, 0, 0, set->aux_phy, set->aux_phy, 0x555555))
             gap_ext_aux.phase = GAP_EXT_AUX_FAILED;
         return;
     }
     if (gap_ext_aux.phase == GAP_EXT_AUX_PENDING &&
         (gap_ext_adv[gap_ext_aux.set_id].flags & GAP_EXT_SCANNABLE)) {
-        gap_ext_aux_rx_start();
+        gap_ext_aux_rx_start(now_us);
         return;
     }
 
 #if GAP_PERIPHERAL_SUPPORT
     if (gap_ext_aux.phase == GAP_EXT_AUX_PENDING &&
         (gap_ext_adv[gap_ext_aux.set_id].flags & GAP_EXT_CONNECTABLE)) {
-        gap_ext_aux_rx_start();
+        gap_ext_aux_rx_start(now_us);
         return;
     }
     if (gap_ext_aux_exchange.response_started)
@@ -139,7 +148,7 @@ void iSLER_Radio_Transmitted_Cb(void) {
 
 #if GAP_CENTRAL_SUPPORT
     if (gap_ext_pawr.connect.phase == GAP_PAWR_CONNECT_TX_PENDING) {
-        gap_ext_pawr.connect.request_end_ticks = RADIO_TICKS();
+        gap_ext_pawr.connect.request_end_us = now_us;
         gap_ext_pawr.connect.tx_end_valid = 1;
     }
 #endif
@@ -158,12 +167,12 @@ void iSLER_Radio_Transmitted_Cb(void) {
 
             if (set->scan_resp_len > GAP_EXT_ADV_FINAL_DATA_MAX - 4) {
                 uint16_t remaining = set->scan_resp_len - GAP_EXT_ADV_FIRST_DATA_MAX;
-                uint64_t next_start = gap_ext_aux_exchange.detail.scan_response_ticks + HW_TICKS_FROM_US(
-                    ((gap_phy_airtime_us(gap_ext_adv_frame[1], set->aux_phy) + 629) / 30) * 30);
+                uint32_t next_start_us = gap_ext_aux_exchange.detail.scan_response_us +
+                    ((gap_phy_airtime_us(gap_ext_adv_frame[1], set->aux_phy) + 629) / 30) * 30;
                 gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
 
                 if (!gap_ext_chain_send(gap_ext_aux.set_id, remaining, gap_ext_aux.adi,
-                                        gap_ext_aux.address_type, next_start))
+                                        gap_ext_aux.address_type, next_start_us))
                     gap_ext_aux.phase = GAP_EXT_AUX_FAILED;
             }
             return;
@@ -172,7 +181,7 @@ void iSLER_Radio_Transmitted_Cb(void) {
         if (gap_ext_scan.request_phase == GAP_EXT_REQ_SCAN_TX)
             gap_ext_scan.request_phase = GAP_EXT_REQ_SCAN_RX;
         else if (gap_ext_scan.request_phase == GAP_EXT_REQ_CONNECT_TX) {
-            gap_ext_scan.request_end_ticks = RADIO_TICKS();
+            gap_ext_scan.request_end_us = now_us;
             gap_ext_scan.request_phase = GAP_EXT_REQ_CONNECT_RX;
         }
 #endif
@@ -219,22 +228,16 @@ void RADIO_STOP(void) {
 #define GAP_IFS_TX_TARGET_US 120
 
 void RADIO_TX_TIMER_BEGIN(void) {
-    gap_link.tx_due_ticks = RADIO_TICKS() + HW_TICKS_FROM_US(GAP_IFS_TX_TARGET_US);
+    gap_link.tx_due_us = GET_MICROS() + GAP_IFS_TX_TARGET_US;
 }
 
 static int gap_tx_timer_arm(void) {
-    uint64_t now = RADIO_TICKS();
-
-    if (now >= gap_link.tx_due_ticks ||
-        gap_link.tx_due_ticks - now < HW_TICKS_FROM_US(10)
-    ) return 0;
-
-    uint64_t remaining_us = (gap_link.tx_due_ticks - now) / HW_TICKS_FROM_US(1);
+    int32_t remaining_us = (int32_t)(gap_link.tx_due_us - GET_MICROS());
     if (remaining_us < 10) return 0;
 
     tx_done = 0;
     LL->LLSTATUS = INT_ISLER_TMR0;
-    LL->TMR0 = (uint32_t)(remaining_us * 2);
+    LL->TMR0 = (uint32_t)remaining_us * 2;
     return 1;
 }
 
@@ -306,11 +309,11 @@ int RADIO_IFS_TX_TIMER_ARM(
     return 1;
 }
 
-// Configure and start a link TX at an absolute controller tick. This has a
+// Configure and start a link TX at an absolute microsecond timestamp. This has a
 // separate logical arm state from IFS replies, though both use hardware TMR0.
 // It does not replace an IFS reply already in flight.
 int RADIO_LINK_TX_AT(
-    const uint8_t *frame, uint64_t start_ticks,
+    const uint8_t *frame, uint32_t start_us,
     uint32_t access_address, uint8_t channel,
     uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy,
     uint32_t crc_init
@@ -324,7 +327,7 @@ int RADIO_LINK_TX_AT(
     gap_link_configure(access_address, channel, receive_after_tx,
                        tx_phy, rx_phy, crc_init, 1);
     gap_radio_tx_buffer(frame);
-    gap_link.tx_due_ticks = start_ticks;
+    gap_link.tx_due_us = start_us;
     iSLERStop();
     iSLERSetMode(DEVMODE_TX);
     LL->LL1 &= ~LL_AUTO;
