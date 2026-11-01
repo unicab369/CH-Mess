@@ -1046,9 +1046,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 #endif // GAP_PRIVACY_SUPPORT
 
             // This received advertisement is the previous packet on air.
-            // SCAN_REQ must start T_IFS after its on-air end, including CRC.
-            // Copy the received advertisement before sending SCAN_REQ; it must
-            // remain available while waiting for SCAN_RSP.
             memcpy(gap_scan.pending_adv.frame, frame, (size_t)frame[1] + 2);
             memcpy(gap_scan.active_address.address, frame + 2, 6);
 
@@ -1059,9 +1056,12 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             gap_scan.pending_adv.rssi = RADIO_RSSI();
             gap_scan.pending_adv.ready = 1;
 
+            //! SCAN_REQ must start T_IFS after its on-air end, including CRC.
+            // Copy the received advertisement before sending SCAN_REQ; it must
+            // remain available while waiting for SCAN_RSP.
             uint8_t local_type;
             gap_local_addr_select(peer_slot, gap_scan.request + 2, &local_type);
-            gap_scan.request[0] = (uint8_t)(0x03 | (local_type << 6) | (advertiser_type << 7));
+            gap_scan.request[0] = (uint8_t)(SCAN_REQ | (local_type << 6) | (advertiser_type << 7));
             gap_scan.request[1] = 12;
             memcpy(gap_scan.request + 8, frame + 2, 6);
 

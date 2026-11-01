@@ -4,8 +4,6 @@
 #ifndef GAP_H
 #define GAP_H
 
-// CH582 users include this header before iSLER.h to install GAP radio callbacks.
-#if defined(CH582_CH583)
 #ifndef ISLER_CALLBACK_TX
 #define ISLER_CALLBACK_TX iSLER_Radio_Transmitted_Cb
 #endif
@@ -14,7 +12,6 @@
 #endif
 #ifndef ISLER_CALLBACK_TMR0
 #define ISLER_CALLBACK_TMR0 iSLER_Tx_Timer_Cb
-#endif
 #endif
 
 #include <stddef.h>

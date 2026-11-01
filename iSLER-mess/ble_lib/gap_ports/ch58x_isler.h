@@ -161,7 +161,8 @@ void iSLER_Radio_Transmitted_Cb(void) {
 
 #if GAP_EXT_ADV_SUPPORT
         if (gap_ext_aux.phase == GAP_EXT_AUX_SCAN_WINDOW &&
-            gap_ext_aux_exchange.response_started) {
+            gap_ext_aux_exchange.response_started
+        ) {
             gap_link.receive_after_tx = 0;
             gap_extended_adv_set *set = &gap_ext_adv[gap_ext_aux.set_id];
 
@@ -185,6 +186,7 @@ void iSLER_Radio_Transmitted_Cb(void) {
             gap_ext_scan.request_phase = GAP_EXT_REQ_CONNECT_RX;
         }
 #endif
+        //! Resume RX after requests such as SCAN_REQ when a peer reply is expected.
         if (gap_link.receive_after_tx) {
             if (gap_link.tx_phy != gap_link.rx_phy)
                 iSLERLinkConfig(gap_link.access_address, gap_link.channel,
