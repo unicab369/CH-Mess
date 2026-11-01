@@ -133,12 +133,12 @@ static int gap_past_receive(
 );
 #endif
 
-static void gap_conn_end(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
+static void gap_conn_end(gap_conn_context *conn) {
+    uint8_t slot = (uint8_t)(conn - gap_conn_ctx);
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)))
         return;
 
-    if (gap_poll.slot_valid && gap_poll.slot == gap_conn_slot ) {
+    if (gap_poll.slot_valid && gap_poll.slot == slot) {
         RADIO_STOP();
         gap_poll.slot_valid = 0;
         gap_rx_armed = 0;
@@ -175,7 +175,7 @@ static void gap_conn_end(void) {
 
     // Clear link and queued procedure state after stopping radio use.
     memset(&conn->link_state, 0, sizeof(conn->link_state));
-    gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(gap_conn_slot);
+    gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(slot);
     conn->is_central = 0;
     memset(&conn->procedure_state, 0, sizeof(conn->procedure_state));
     memset(&conn->c_features, 0, sizeof(conn->c_features));
@@ -226,7 +226,7 @@ static void gap_conn_update_apply(
             tx_control_opcode == LL_CONNECTION_RATE_IND
         ) {
             conn->connection_status = LL_ERR_INSTANT;
-            gap_conn_end();
+            gap_conn_end(conn);
             return;
         }
 
@@ -267,7 +267,7 @@ static void gap_conn_update_apply(
         if (pending_control && tx_payload_len == 12 &&
             tx_control_opcode == LL_CONNECTION_UPDATE_IND
         ) {
-            gap_conn_end();
+            gap_conn_end(conn);
             return;
         }
 
@@ -318,7 +318,7 @@ static void gap_conn_update_apply(
             tx_control_opcode == LL_PHY_UPDATE_IND
         ) {
             conn->phy_state.status = LL_ERR_INSTANT;
-            gap_conn_end();
+            gap_conn_end(conn);
             return;
         }
 
@@ -341,7 +341,7 @@ static void gap_conn_update_apply(
             tx_control_opcode == LL_CHANNEL_MAP_IND
         ) {
             conn->connection_status = LL_ERR_INSTANT; // Instant passed.
-            gap_conn_end();
+            gap_conn_end(conn);
             return;
         }
 
@@ -700,11 +700,10 @@ static uint8_t gap_conn_reject_resp(
 }
 
 static uint8_t gap_conn_control(
-    const uint8_t *frame,
+    gap_conn_context *conn, const uint8_t *frame,
     uint8_t authenticated, uint32_t connection_anchor_us,
     uint16_t conn_event_counter, uint32_t now_ms
 ) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 #if GAP_SECURITY_SUPPORT < 1
     (void)authenticated;
 #endif
@@ -861,7 +860,7 @@ static uint8_t gap_conn_control(
                 (uint32_t)timeout * 80 > 2ull * (latency + 1) * interval_125us * factor
             ) {
                 if ((uint16_t)(instant - conn->link_layer.event_counter) >= 0x8000) {
-                    gap_conn_end();
+                    gap_conn_end(conn);
                     return 1;
                 }
 
@@ -1083,7 +1082,7 @@ static uint8_t gap_conn_control(
         ) {
             conn->security.status = frame[3];
             if (conn->security.refreshing) {
-                gap_conn_end();
+                gap_conn_end(conn);
                 return 1;
             }
 
@@ -1162,7 +1161,7 @@ static uint8_t gap_conn_control(
         ) {
             conn->security.status = frame[4];
             if (conn->security.refreshing) {
-                gap_conn_end();
+                gap_conn_end(conn);
                 return 1;
             }
 
@@ -1318,7 +1317,7 @@ static uint8_t gap_conn_control(
         ) {
             conn->security.status = LL_ERR_REMOTE_FEATURE;
             if (conn->security.refreshing) {
-                gap_conn_end();
+                gap_conn_end(conn);
                 return 1;
             }
 
@@ -1943,7 +1942,7 @@ static uint8_t gap_conn_control(
             instant == conn->link_layer.event_counter
         ) {
             conn->phy_state.status = LL_ERR_INSTANT;
-            gap_conn_end();
+            gap_conn_end(conn);
             return 1;
         }
 
@@ -2551,7 +2550,7 @@ static uint8_t *gap_security_tx_frame(gap_conn_context *conn) {
 
     if (conn->security.tx_counter >= (UINT64_C(1) << 39)) {
         conn->security.status = 0x3d;
-        gap_conn_end();
+        gap_conn_end(conn);
         return NULL;
     }
 
@@ -2565,7 +2564,7 @@ static uint8_t *gap_security_tx_frame(gap_conn_context *conn) {
                         payload_len, conn->tx_frame + 2 + payload_len)
     ) {
         conn->security.status = 0x3d;
-        gap_conn_end();
+        gap_conn_end(conn);
         return NULL;
     }
 

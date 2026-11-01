@@ -7,8 +7,7 @@
 #endif // GAP_EXT_ADV_SUPPORT
 
 // Stage the next queued LL control PDU for transmission, giving security priority.
-static void gap_conn_send_queued(uint32_t now_ms) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+static void gap_conn_send_queued(gap_conn_context *conn, uint32_t now_ms) {
 
 #if GAP_SECURITY_SUPPORT >= 1
     if (!conn->tx_frame[1]) {
@@ -308,10 +307,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     uint32_t now_ms = GET_MILLIS();
     uint32_t conn_anchor_us = 0;
 
-    uint8_t previous_slot = gap_conn_slot;
-    uint8_t radio_slot = gap_poll.slot_valid ? gap_poll.slot : gap_conn_slot;
-    gap_conn_context *conn = &gap_conn_ctx[radio_slot];
-
 #if GAP_EXT_ADV_SUPPORT
     if (gap_ext_scan.request_phase == GAP_EXT_REQ_SCAN_RX) {
         gap_ext_fields response;
@@ -373,11 +368,12 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     }
 #endif // GAP_EXT_ADV_SUPPORT
 
+    uint8_t radio_slot = gap_poll.slot_valid ? gap_poll.slot : gap_conn_slot;
+    gap_conn_context *conn = &gap_conn_ctx[radio_slot];
+
     if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(radio_slot)) &&
         conn->link_state.rx_armed
     ) {
-        // Select the radio event's connection only while handling its packet.
-        gap_conn_slot = radio_slot;
         // Anchor Central timing to its scheduled event and Peripheral timing
         // to the received packet's on-air start.
         if (conn->is_central) {
@@ -420,8 +416,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
                 cnt >= (UINT64_C(1) << 39) || (duplicate && !conn->security.rx_counter)
             ) {
                 conn->security.status = 0x3d;
-                gap_conn_end();
-                gap_conn_slot = previous_slot;
+                gap_conn_end(conn);
                 return;
             }
 
@@ -435,8 +430,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
                                 plain + 2, plain[1], frame + 2 + plain[1])
             ) {
                 conn->security.status = 0x3d;
-                gap_conn_end();
-                gap_conn_slot = previous_slot;
+                gap_conn_end(conn);
                 return;
             }
 
@@ -449,8 +443,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         // Data Length Extension; enforce the negotiated RX size for all LLIDs.
         if (frame[1]) {
             if (frame[1] > conn->data_length.rx_octets) {
-                gap_conn_end();
-                gap_conn_slot = previous_slot;
+                gap_conn_end(conn);
                 return;
             }
 
@@ -526,8 +519,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 
             if (conn->link_state.terminate_sent) {
                 if ((frame[0] & 3) != 3 || frame[1] != 2 || frame[2] != LL_TERMINATE_IND) {
-                    gap_conn_end();
-                    gap_conn_slot = previous_slot;
+                    gap_conn_end(conn);
                     return;
                 }
                 // Process a simultaneous peer termination so it gets ACKed.
@@ -590,8 +582,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 
                 if (!allowed) {
                     conn->security.status = 0x3d;
-                    gap_conn_end();
-                    gap_conn_slot = previous_slot;
+                    gap_conn_end(conn);
                     return;
                 }
             }
@@ -617,10 +608,9 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             if (new_packet && llid == 3 && frame[1]) {
                 conn->tx_frame[0] = 0x03;
 
-                if (gap_conn_control(frame, authenticated, conn_anchor_us,
+                if (gap_conn_control(conn, frame, authenticated, conn_anchor_us,
                                      conn->link_layer.event_counter, now_ms)
                 ) {
-                    gap_conn_slot = previous_slot;
                     return;
                 }
             }
@@ -636,7 +626,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
                     conn->link_state.terminate_sent = 1;
                     conn->queue_state.tx_queued = 0;
                 }
-                gap_conn_send_queued(now_ms);
+                gap_conn_send_queued(conn, now_ms);
 
 #if GAP_EXT_ADV_SUPPORT
                 if (!conn->tx_frame[1] &&
@@ -705,16 +695,14 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         if (conn->tx_frame[1]) conn->c_subrate.event_activity = 1;
 
         // Each update stage can close the slot, so check before continuing.
-        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))) {
-            gap_conn_slot = previous_slot;
+        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(radio_slot))) {
             return;
         }
 
         gap_conn_event_advance(conn);
         gap_conn_update_apply(conn, 0, now_ms);
         // This stage can also close the slot, so it needs a separate check.
-        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))) {
-            gap_conn_slot = previous_slot;
+        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(radio_slot))) {
             return;
         }
 
@@ -732,7 +720,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             RADIO_STOP();
             gap_rx_armed = 0;
             gap_poll.slot_valid = 0;
-            gap_conn_slot = previous_slot;
             return;
         }
 #endif // GAP_CENTRAL_SUPPORT
@@ -744,7 +731,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 #endif // GAP_SECURITY_SUPPORT >= 1
 
         if (!transmit) {
-            gap_conn_slot = previous_slot;
             return;
         }
 
@@ -759,7 +745,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
                                             conn->link_layer.crc_init)
         ) conn->link_state.event_replied = 1;
 
-        gap_conn_slot = previous_slot;
         return;
     }
 
@@ -1305,7 +1290,7 @@ static void gap_conn_poll(uint32_t now_us) {
         (uint32_t)(now_ms - conn->security.started_ms) >= 40000
     ) {
         conn->security.status = GAP_STATUS_LL_RESPONSE_TIMEOUT;
-        gap_conn_end();
+        gap_conn_end(conn);
         return;
     }
 #endif // GAP_SECURITY_SUPPORT >= 1
@@ -1315,7 +1300,7 @@ static void gap_conn_poll(uint32_t now_us) {
         (uint32_t)(now_ms - conn->phy_state.started_ms) >= 40000
     ) {
         conn->phy_state.status = GAP_STATUS_LL_RESPONSE_TIMEOUT;
-        gap_conn_end();
+        gap_conn_end(conn);
         return;
     }
 
@@ -1324,7 +1309,7 @@ static void gap_conn_poll(uint32_t now_us) {
         (uint32_t)(now_ms - conn->length_started_ms) >= 40000
     ) {
         conn->length_status = GAP_STATUS_LL_RESPONSE_TIMEOUT; // LL response timeout.
-        gap_conn_end();
+        gap_conn_end(conn);
         return;
     }
 
@@ -1348,7 +1333,7 @@ static void gap_conn_poll(uint32_t now_us) {
             conn->c_subrate.status = GAP_STATUS_LL_RESPONSE_TIMEOUT;
         }
 
-        gap_conn_end();
+        gap_conn_end(conn);
         return;
     }
 
@@ -1357,14 +1342,14 @@ static void gap_conn_poll(uint32_t now_us) {
     ) {
         conn->c_subrate.procedure_state = GAP_SUBRATE_IDLE;
         conn->c_subrate.status = GAP_STATUS_LL_RESPONSE_TIMEOUT;
-        gap_conn_end();
+        gap_conn_end(conn);
         return;
     }
 
     if ((uint32_t)(now_ms - conn->link_layer.last_rx_ms) >=
         (uint32_t)conn->schedule.timeout_10ms * 10
     ) {
-        gap_conn_end();
+        gap_conn_end(conn);
         return;
     }
 
@@ -1377,7 +1362,7 @@ static void gap_conn_poll(uint32_t now_us) {
     if (conn->link_state.event_replied) {
         if (!RADIO_TX_DONE()) {
             if ((int32_t)(now_us - conn->link_layer.next_us) > 0)
-                gap_conn_end();
+                gap_conn_end(conn);
             return;
         }
 
@@ -1387,7 +1372,7 @@ static void gap_conn_poll(uint32_t now_us) {
         conn->link_state.event_replied = 0;
 
         if (conn->link_state.terminate_after_reply) {
-            gap_conn_end();
+            gap_conn_end(conn);
             return;
         }
         return;
@@ -1519,7 +1504,7 @@ static void gap_conn_poll(uint32_t now_us) {
             conn->tx_frame[1] = 0;
 
             if (!conn->link_state.terminate_queued && !conn->link_state.terminate_sent) {
-                gap_conn_send_queued(now_ms);
+                gap_conn_send_queued(conn, now_ms);
             }
 
             conn->link_layer.tx_pending = 1;
