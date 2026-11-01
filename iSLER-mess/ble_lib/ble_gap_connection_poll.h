@@ -1390,13 +1390,14 @@ static void gap_conn_poll(uint32_t now_us) {
 
         conn->link_state.rx_armed = 0;
         uint32_t skipped = 0;
+        uint8_t slot_bit = GAP_CONN_SLOT_BIT(gap_conn_slot);
 
         // Re-read the interval each event; an Instant may update the schedule.
         do {
             conn->link_layer.next_us += (uint32_t)conn->schedule.interval_125us * 125;
             gap_conn_event_advance(conn);
             gap_conn_update_apply(conn, 0, now_ms);
-            if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
+            if (!(gap_conn_slot_mask & slot_bit))
                 return;
 
             skipped++;
