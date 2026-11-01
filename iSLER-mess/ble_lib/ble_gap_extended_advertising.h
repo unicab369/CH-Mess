@@ -2913,15 +2913,11 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
     uint8_t address[6], address_type;
     uint16_t adv_data_info = gap_ext_aux.adv_data_info;
     gap_extended_adv_set *set;
-    uint8_t *primary = gap_ext_primary_frame;
-    uint8_t *frame = gap_ext_aux_frame;
-    uint8_t adv_header;
 
     if (resume_aux) {
         memcpy(address, gap_ext_aux.address, 6);
         address_type = gap_ext_aux.address_type;
         set = &gap_ext_adv[send_extended];
-        adv_header = ADV_EXT_IND | (address_type ? 0x40 : 0);
 
         // Scannable/connectable events resume by listening for requests.
         if (set->flags) {
@@ -2950,29 +2946,29 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         gap_local_addr_select(-1, address, &address_type);
         set = &gap_ext_adv[send_extended];
         adv_data_info = (uint16_t)(((set->sid & 0x0f) << 12) | (set->did & 0x0fff));
-        adv_header = ADV_EXT_IND | (address_type ? 0x40 : 0);
-        primary[0] = adv_header;
-        primary[1] = 7;
-        primary[2] = 6; // ExtHdrLen=6; mode bits are set below.
-        primary[3] = 0x18; // ADI and AuxPtr.
-        write_u16_le(primary + 4, adv_data_info);
-        gap_aux_ptr_write(primary + 6, 0, 480, set->aux_phy);
+        gap_ext_primary_frame[1] = 7;
+        gap_ext_primary_frame[2] = 6; // ExtHdrLen=6; mode bits are set below.
+        gap_ext_primary_frame[3] = 0x18; // ADI and AuxPtr.
+        write_u16_le(gap_ext_primary_frame + 4, adv_data_info);
+        gap_aux_ptr_write(gap_ext_primary_frame + 6, 0, 480, set->aux_phy);
     }
+
+    gap_ext_primary_frame[0] = ADV_EXT_IND | (address_type ? 0x40 : 0);
+    gap_ext_aux_frame[0] = gap_ext_primary_frame[0];
 
     if (set->flags & GAP_EXT_SCANNABLE) {
         // Scannable extended events carry no AdvData in AUX_ADV_IND. The data
         // is sent in AUX_SCAN_RSP after a scanner requests it.
-        primary[2] |= 0x80; // AdvMode=scannable.
-        frame[0] = adv_header;
-        frame[1] = 10;
-        frame[2] = 0x89; // AdvMode=scannable, ExtHdrLen=9.
-        frame[3] = 0x09; // AdvA and ADI.
-        memcpy(frame + 4, address, sizeof(address));
-        write_u16_le(frame + 10, adv_data_info);
+        gap_ext_primary_frame[2] |= 0x80; // AdvMode=scannable.
+        gap_ext_aux_frame[1] = 10;
+        gap_ext_aux_frame[2] = 0x89; // AdvMode=scannable, ExtHdrLen=9.
+        gap_ext_aux_frame[3] = 0x09; // AdvA and ADI.
+        memcpy(gap_ext_aux_frame + 4, address, sizeof(address));
+        write_u16_le(gap_ext_aux_frame + 10, adv_data_info);
 
         uint8_t payload_offset = 12;
         uint16_t first_chunk = set->scan_resp_len;
-        gap_ext_adv_frame[0] = adv_header;
+        gap_ext_adv_frame[0] = gap_ext_primary_frame[0];
         gap_ext_adv_frame[1] = (uint8_t)(10 + first_chunk);
         gap_ext_adv_frame[2] = 9;
         gap_ext_adv_frame[3] = 0x09;
@@ -3001,13 +2997,12 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
     }
 #if GAP_PERIPHERAL_SUPPORT
     else if (set->flags & GAP_EXT_CONNECTABLE) {
-        primary[2] |= 0x40; // AdvMode=connectable.
-        frame[0] = adv_header;
-        frame[1] = 10;
-        frame[2] = 0x49; // Connectable AUX_ADV_IND, AdvA and ADI.
-        frame[3] = 0x09;
-        memcpy(frame + 4, address, 6);
-        write_u16_le(frame + 10, adv_data_info);
+        gap_ext_primary_frame[2] |= 0x40; // AdvMode=connectable.
+        gap_ext_aux_frame[1] = 10;
+        gap_ext_aux_frame[2] = 0x49; // Connectable AUX_ADV_IND, AdvA and ADI.
+        gap_ext_aux_frame[3] = 0x09;
+        memcpy(gap_ext_aux_frame + 4, address, 6);
+        write_u16_le(gap_ext_aux_frame + 10, adv_data_info);
 
         gap_ext_aux_exchange.peer.type = address_type;
         memcpy(gap_ext_aux_exchange.peer.address, address, sizeof(gap_ext_aux_exchange.peer.address));
@@ -3037,31 +3032,30 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         uint8_t has_chain = remaining > first_chunk;
 
         // AUX_ADV_IND includes AdvA and the first part of the advertising data.
-        frame[0] = adv_header;
-        frame[1] = (uint8_t)(1 + ext_len + first_chunk);
-        frame[2] = ext_len;
-        frame[3] = ext_flags;
-        memcpy(frame + 4, address, sizeof(address));
-        write_u16_le(frame + 10, adv_data_info);
+        gap_ext_aux_frame[1] = (uint8_t)(1 + ext_len + first_chunk);
+        gap_ext_aux_frame[2] = ext_len;
+        gap_ext_aux_frame[3] = ext_flags;
+        memcpy(gap_ext_aux_frame + 4, address, sizeof(address));
+        write_u16_le(gap_ext_aux_frame + 10, adv_data_info);
         uint8_t *sync_info = NULL;
         uint8_t header_offset = 12;
 
         if (has_chain) {
-            frame[1] = (uint8_t)(1 + chain_ext_len + first_chunk);
-            frame[2] = chain_ext_len;
-            frame[3] |= 0x10; // AuxPtr.
-            gap_aux_ptr_write(frame + header_offset, 1,
-                ((gap_phy_airtime_us(frame[1], set->aux_phy) + 629) / 30) * 30, set->aux_phy);
+            gap_ext_aux_frame[1] = (uint8_t)(1 + chain_ext_len + first_chunk);
+            gap_ext_aux_frame[2] = chain_ext_len;
+            gap_ext_aux_frame[3] |= 0x10; // AuxPtr.
+            gap_aux_ptr_write(gap_ext_aux_frame + header_offset, 1,
+                ((gap_phy_airtime_us(gap_ext_aux_frame[1], set->aux_phy) + 629) / 30) * 30, set->aux_phy);
             header_offset += 3;
         }
 
         if (set->periodic.enabled) {
-            sync_info = frame + header_offset;
+            sync_info = gap_ext_aux_frame + header_offset;
             header_offset += 18;
         }
 
         if (set->pawr.enabled) {
-            uint8_t *timing = frame + header_offset;
+            uint8_t *timing = gap_ext_aux_frame + header_offset;
             timing[0] = 9; // AD length: type plus eight timing bytes.
             timing[1] = 0x32; // Periodic Advertising Response Timing Information.
             write_u32_le(timing + 2, set->periodic.response_access);
@@ -3072,7 +3066,8 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
             header_offset += 10;
         }
 
-        if (first_chunk) memcpy(frame + header_offset, set->data, first_chunk);
+        if (first_chunk)
+            memcpy(gap_ext_aux_frame + header_offset, set->data, first_chunk);
         remaining -= first_chunk;
         uint32_t primary_start_us = resume_aux ? gap_ext_aux.primary_start_us : now_us;
         uint32_t pdu_start_us = primary_start_us + 480;
@@ -3124,9 +3119,9 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
 
         if (has_chain) {
             uint32_t next_start_us = pdu_start_us +
-                            ((gap_phy_airtime_us(frame[1], set->aux_phy) + 629) / 30) * 30;
+                            ((gap_phy_airtime_us(gap_ext_aux_frame[1], set->aux_phy) + 629) / 30) * 30;
             int transmit_result = gap_ext_chain_send((uint8_t)send_extended,
-                remaining, adv_data_info, address_type, next_start_us);
+                                remaining, adv_data_info, address_type, next_start_us);
             if (!transmit_result) return -1;
             if (transmit_result == 2) return 1;
         }
