@@ -196,17 +196,14 @@ static struct {
 } gap_ext_chain;
 
 static struct {
-    volatile uint8_t waiting, response_started;
-    union {
-        uint32_t scan_response_us;
+    uint32_t timestamp_us;
 #if GAP_PERIPHERAL_SUPPORT
-        struct {
-            uint32_t request_us;
-            uint8_t request[36];
-            uint8_t phy;
-        } connect;
+    struct {
+        uint8_t request[36];
+        uint8_t phy;
+    } connect;
 #endif
-    } detail;
+    volatile uint8_t waiting, response_started;
 } gap_aux_exchange;
 
 // PAwR response and connection state
@@ -2678,7 +2675,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         gap_extended_adv_set *set = &gap_ext_adv[gap_ext_aux.set_id];
         if (gap_aux_exchange.response_started) {
             if (!RADIO_TX_DONE()) {
-                if ((int32_t)(now_us - (gap_aux_exchange.detail.scan_response_us + 1000)) < 0)
+                if ((int32_t)(now_us - (gap_aux_exchange.timestamp_us + 1000)) < 0)
                     return 1;
                 RADIO_STOP();
                 gap_aux_exchange.waiting = 0;
@@ -2690,7 +2687,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
             gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
             if (set->scan_resp_len > GAP_EXT_ADV_FINAL_DATA_MAX - 4) {
                 uint16_t remaining = set->scan_resp_len - GAP_EXT_ADV_FIRST_DATA_MAX;
-                uint32_t next_start_us = gap_aux_exchange.detail.scan_response_us +
+                uint32_t next_start_us = gap_aux_exchange.timestamp_us +
                     ((gap_phy_airtime_us(gap_ext_adv_frame[1], set->aux_phy) + 629) / 30) * 30;
                 if (!gap_ext_chain_send(gap_ext_aux.set_id, remaining, gap_ext_aux.adv_data_info,
                                         gap_ext_aux.advertiser.type, next_start_us)) return -1;
@@ -2720,8 +2717,8 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         gap_aux_exchange.waiting = 0;
         gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
         gap_conn_context *accepted = response_sent ? gap_conn_accept(
-            gap_aux_exchange.detail.connect.request,
-            gap_aux_exchange.detail.connect.request_us, 1250, 2500) : NULL;
+            gap_aux_exchange.connect.request,
+            gap_aux_exchange.timestamp_us, 1250, 2500) : NULL;
 
         if (accepted) {
             gap_conn_slot = (uint8_t)(accepted - gap_conn_ctx);
@@ -3038,7 +3035,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         memcpy(gap_ext_aux_frame + 4, advertiser.address, sizeof(advertiser.address));
         write_u16_le(gap_ext_aux_frame + 10, adv_data_info);
 
-        gap_aux_exchange.detail.connect.phy = set->aux_phy;
+        gap_aux_exchange.connect.phy = set->aux_phy;
         gap_aux_exchange.response_started = 0;
         gap_aux_exchange.waiting = 1;
         gap_ext_aux_primary_start((uint8_t)send_extended, &advertiser, adv_data_info);
