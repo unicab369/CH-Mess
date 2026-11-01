@@ -283,8 +283,8 @@ typedef struct {
     } payload;
 } gap_ext_fields;
 
-static uint8_t gap_ext_adv_next_set;
-static uint8_t gap_periodic_next_set;
+static uint8_t ext_adv_next_set;
+static uint8_t periodic_next_set;
 
 // -----------------------------------------------------------------------------
 // Extended advertising and periodic advertising control
@@ -2544,7 +2544,7 @@ static void gap_ext_adv_event_reschedule(uint8_t set_id, uint32_t now_ms) {
                            random % 11 : 0;
     gap_ext_adv[set_id].next_event_ms = now_ms + event_jitter +
                                         gap_ext_adv[set_id].interval_ms;
-    gap_ext_adv_next_set = (set_id + 1) % GAP_EXT_ADV_SET_COUNT;
+    ext_adv_next_set = (set_id + 1) % GAP_EXT_ADV_SET_COUNT;
 }
 
 static void gap_ext_aux_rx_start(uint32_t now_us) {
@@ -2820,7 +2820,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
 
         uint8_t periodic_target_valid = 0;
         for (uint8_t offset = 0; offset < GAP_EXT_ADV_SET_COUNT; offset++) {
-            uint8_t i = (gap_periodic_next_set + offset) % GAP_EXT_ADV_SET_COUNT;
+            uint8_t i = (periodic_next_set + offset) % GAP_EXT_ADV_SET_COUNT;
             gap_extended_adv_set *candidate = &gap_ext_adv[i];
             uint32_t launch_limit_us = now_us + (candidate->pawr.enabled ? 3000 : 0);
 
@@ -2840,33 +2840,39 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
             gap_extended_adv_set *set = &gap_ext_adv[periodic_set];
             uint32_t interval_us = (uint32_t)set->periodic.params.interval * 1250;
             uint32_t missed = 0;
+
             if ((int32_t)(now_us - set->periodic.next_us) > 0)
                 missed = (now_us - set->periodic.next_us) / interval_us;
             set->periodic.event_counter = (uint16_t)(set->periodic.event_counter + missed);
             set->periodic.next_us += missed * interval_us;
 
             if (connected_central) {
+                if (conn->link_state.rx_armed || conn->link_state.event_replied)
+                    return 1;
+            }
+
+            // Place after the connection-busy return, which leaves this event pending,
+            // but before overlap handling, which can skip this event and return.
+            periodic_next_set = (periodic_set + 1) % GAP_EXT_ADV_SET_COUNT;
+
+            if (connected_central) {
                 uint32_t event_us = gap_periodic_tx_us(set->periodic.data_len, set->aux_phy);
 
                 if (set->pawr.enabled) {
-                    uint32_t interval_us = (uint32_t)set->periodic.params.interval * 1250;
+                    uint32_t subevent_interval_us = interval_us;
                     if (set->pawr.subevents > 1)
-                        interval_us = (uint32_t)set->pawr.subevent_int * 1250;
+                        subevent_interval_us = (uint32_t)set->pawr.subevent_int * 1250;
 
-                    event_us = MAX(event_us, (uint32_t)(set->pawr.subevents - 1) * interval_us +
+                    event_us = MAX(event_us, (uint32_t)(set->pawr.subevents - 1) * subevent_interval_us +
                                             (uint32_t)set->pawr.resp_delay * 1250 +
                                             (uint32_t)set->pawr.resp_slots * set->pawr.resp_spacing * 125);
                 }
-
-                if (conn->link_state.rx_armed || conn->link_state.event_replied)
-                    return 1;
 
                 if (gap_sync_conn_overlap(set->periodic.next_us,
                         set->periodic.next_us + event_us + 400, now_ms, slot_bit)
                 ) {
                     set->periodic.event_counter++;
                     set->periodic.next_us += interval_us;
-                    gap_periodic_next_set = (periodic_set + 1) % GAP_EXT_ADV_SET_COUNT;
                     return 1;
                 }
             }
@@ -2887,7 +2893,6 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
                 // the state machine handles its subevents and response windows.
                 set->periodic.event_counter++;
                 set->periodic.next_us += interval_us;
-                gap_periodic_next_set = (periodic_set + 1) % GAP_EXT_ADV_SET_COUNT;
                 (void)gap_pawr_advertiser_poll(now_us, slot_bit);
                 return 1;
             }
@@ -2903,7 +2908,6 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
             int transmitted = gap_periodic_tx_arm(set->periodic.next_us, 1, now_us);
             set->periodic.event_counter++;
             set->periodic.next_us += interval_us;
-            gap_periodic_next_set = (periodic_set + 1) % GAP_EXT_ADV_SET_COUNT;
             if (!transmitted) return -1;
             return 1;
         }
@@ -2927,7 +2931,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
     } else {
         send_extended = -1;
         for (uint8_t offset = 0; offset < GAP_EXT_ADV_SET_COUNT; offset++) {
-            uint8_t set_id = (gap_ext_adv_next_set + offset) % GAP_EXT_ADV_SET_COUNT;
+            uint8_t set_id = (ext_adv_next_set + offset) % GAP_EXT_ADV_SET_COUNT;
 
             if (gap_ext_adv[set_id].enabled &&
                 (int32_t)(now_ms - gap_ext_adv[set_id].next_event_ms) >= 0

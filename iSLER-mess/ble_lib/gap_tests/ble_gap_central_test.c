@@ -1572,7 +1572,7 @@ static void test_pawr_interleaved_advertising_sets(void) {
     fake_radio_ticks = base_ticks;
     fake_radio_ticks_enabled = 1;
     fake_radio_tick_autoincrement = 1;
-    gap_periodic_next_set = 0;
+    periodic_next_set = 0;
     captured_extended_count = 0;
 
     assert(gap_ext_adv_start_phy(0, advertising_data,
@@ -2226,7 +2226,7 @@ static void test_extended_advertising_multiple_sets(void) {
     fake_radio_ticks_enabled = 1;
     fake_radio_tick_autoincrement = 1;
     captured_extended_count = 0;
-    gap_ext_adv_next_set = 0;
+    ext_adv_next_set = 0;
 
     assert(gap_ext_adv_start_phy(0, data0,
         sizeof(data0), 3, 100, GAP_PHY_1M));
@@ -2250,7 +2250,7 @@ static void test_extended_advertising_multiple_sets(void) {
            !memcmp(captured_extended_pdus[1] + 12, data0, sizeof(data0)));
     assert((captured_extended_pdus[3][11] >> 4) == 8 &&
            !memcmp(captured_extended_pdus[3] + 12, data1, sizeof(data1)));
-    assert(gap_ext_adv_next_set == 0);
+    assert(ext_adv_next_set == 0);
 
     assert(gap_ext_adv_stop(0));
     assert(!gap_ext_adv[0].enabled && gap_ext_adv[1].enabled);
