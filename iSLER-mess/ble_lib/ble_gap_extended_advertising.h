@@ -207,7 +207,7 @@ static struct {
         } connect;
 #endif
     } detail;
-} gap_ext_aux_exchange;
+} gap_aux_exchange;
 
 // PAwR response and connection state
 enum {
@@ -702,8 +702,8 @@ int gap_ext_adv_stop(uint8_t set_id) {
         gap_ext_aux.set_id == set_id
     ) {
         RADIO_STOP();
-        gap_ext_aux_exchange.waiting = 0;
-        gap_ext_aux_exchange.response_started = 0;
+        gap_aux_exchange.waiting = 0;
+        gap_aux_exchange.response_started = 0;
         gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
     }
     if (gap_ext_chain.phase != GAP_EXT_CHAIN_IDLE &&
@@ -2678,33 +2678,33 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
     //! TODO REVIEW
     if (gap_ext_aux.phase == GAP_EXT_AUX_SCAN_WINDOW) {
         gap_extended_adv_set *set = &gap_ext_adv[gap_ext_aux.set_id];
-        if (gap_ext_aux_exchange.response_started) {
+        if (gap_aux_exchange.response_started) {
             if (!RADIO_TX_DONE()) {
-                if ((int32_t)(now_us - (gap_ext_aux_exchange.detail.scan_response_us + 1000)) < 0)
+                if ((int32_t)(now_us - (gap_aux_exchange.detail.scan_response_us + 1000)) < 0)
                     return 1;
                 RADIO_STOP();
-                gap_ext_aux_exchange.waiting = 0;
+                gap_aux_exchange.waiting = 0;
                 gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
                 return -1;
             }
             RADIO_STOP();
-            gap_ext_aux_exchange.waiting = 0;
+            gap_aux_exchange.waiting = 0;
             gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
             if (set->scan_resp_len > GAP_EXT_ADV_FINAL_DATA_MAX - 4) {
                 uint16_t remaining = set->scan_resp_len - GAP_EXT_ADV_FIRST_DATA_MAX;
-                uint32_t next_start_us = gap_ext_aux_exchange.detail.scan_response_us +
+                uint32_t next_start_us = gap_aux_exchange.detail.scan_response_us +
                     ((gap_phy_airtime_us(gap_ext_adv_frame[1], set->aux_phy) + 629) / 30) * 30;
                 if (!gap_ext_chain_send(gap_ext_aux.set_id, remaining, gap_ext_aux.adv_data_info,
                                         gap_ext_aux.address_type, next_start_us)) return -1;
                 return 1;
             }
         } else {
-            if (gap_ext_aux_exchange.waiting &&
+            if (gap_aux_exchange.waiting &&
                 (int32_t)(now_us - gap_ext_aux.window_deadline_us) < 0
             )
                 return 1;
             RADIO_STOP();
-            gap_ext_aux_exchange.waiting = 0;
+            gap_aux_exchange.waiting = 0;
             gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
         }
         gap_ext_adv_event_reschedule(gap_ext_aux.set_id, now_ms);
@@ -2712,18 +2712,18 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
     }
 #if GAP_PERIPHERAL_SUPPORT
     if (gap_ext_aux.phase == GAP_EXT_AUX_CONNECT_WINDOW) {
-        if (gap_ext_aux_exchange.waiting &&
+        if (gap_aux_exchange.waiting &&
             (int32_t)(now_us - gap_ext_aux.window_deadline_us) < 0
         )
             return 1;
 
-        uint8_t response_sent = gap_ext_aux_exchange.response_started && RADIO_TX_DONE();
+        uint8_t response_sent = gap_aux_exchange.response_started && RADIO_TX_DONE();
         RADIO_STOP();
-        gap_ext_aux_exchange.waiting = 0;
+        gap_aux_exchange.waiting = 0;
         gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
         gap_conn_context *accepted = response_sent ? gap_conn_accept(
-            gap_ext_aux_exchange.detail.connect.request,
-            gap_ext_aux_exchange.detail.connect.request_us, 1250, 2500) : NULL;
+            gap_aux_exchange.detail.connect.request,
+            gap_aux_exchange.detail.connect.request_us, 1250, 2500) : NULL;
 
         if (accepted) {
             gap_conn_slot = (uint8_t)(accepted - gap_conn_ctx);
@@ -3025,10 +3025,10 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         }
 
         memcpy(gap_ext_adv_frame + payload_offset, set->data, first_chunk);
-        gap_ext_aux_exchange.response_started = 0;
-        gap_ext_aux_exchange.peer.type = address_type;
-        memcpy(gap_ext_aux_exchange.peer.address, address, sizeof(gap_ext_aux_exchange.peer.address));
-        gap_ext_aux_exchange.waiting = 1;
+        gap_aux_exchange.response_started = 0;
+        gap_aux_exchange.peer.type = address_type;
+        memcpy(gap_aux_exchange.peer.address, address, sizeof(gap_aux_exchange.peer.address));
+        gap_aux_exchange.waiting = 1;
         // The TX completion callback schedules AUX using this frame, so
         // both packets must be ready before starting primary TX.
         gap_ext_aux_primary_start((uint8_t)send_extended, address, address_type, adv_data_info);
@@ -3043,11 +3043,11 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         memcpy(gap_ext_aux_frame + 4, address, 6);
         write_u16_le(gap_ext_aux_frame + 10, adv_data_info);
 
-        gap_ext_aux_exchange.peer.type = address_type;
-        memcpy(gap_ext_aux_exchange.peer.address, address, sizeof(gap_ext_aux_exchange.peer.address));
-        gap_ext_aux_exchange.detail.connect.phy = set->aux_phy;
-        gap_ext_aux_exchange.response_started = 0;
-        gap_ext_aux_exchange.waiting = 1;
+        gap_aux_exchange.peer.type = address_type;
+        memcpy(gap_aux_exchange.peer.address, address, sizeof(gap_aux_exchange.peer.address));
+        gap_aux_exchange.detail.connect.phy = set->aux_phy;
+        gap_aux_exchange.response_started = 0;
+        gap_aux_exchange.waiting = 1;
         gap_ext_aux_primary_start((uint8_t)send_extended, address, address_type, adv_data_info);
         return 1;
     }
