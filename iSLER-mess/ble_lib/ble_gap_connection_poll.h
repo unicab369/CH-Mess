@@ -1893,7 +1893,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
             }
             else {
                 if (connected && window_started) {
-                    if (gap_sync_conn_overlap(sync->start_us, sync->end_us, now_ms)) {
+                    if (gap_sync_conn_overlap(sync->start_us, sync->end_us, now_ms, slot_bit)) {
                         gap_sync_window_missed((uint8_t)sync_slot);
                         sync_slot = -1;
                     }

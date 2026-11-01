@@ -1567,7 +1567,7 @@ static void gap_aux_ptr_write(
 // Advance a PAwR advertising event without holding the caller through TX or
 // response-slot windows. The scheduled TX timer starts each PDU; polling owns
 // the receive-window boundaries and report extraction.
-static int gap_pawr_advertiser_poll(uint32_t now_us) {
+static int gap_pawr_advertiser_poll(uint32_t now_us, uint8_t slot_bit) {
     if (gap_ext_pawr.advertiser.phase == GAP_PAWR_ADV_IDLE) return 0;
 
     for (;;) {
@@ -1594,7 +1594,7 @@ static int gap_pawr_advertiser_poll(uint32_t now_us) {
                 gap_ext_pawr.advertiser.phase = GAP_PAWR_ADV_IDLE;
                 do {
                     if (gap_ext_pawr.connect.phase != GAP_PAWR_CONNECT_IDLE ||
-                        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
+                        (gap_conn_slot_mask & slot_bit) ||
                         RADIO_DATA_MAX < 27
                     ) break;
 
@@ -2502,9 +2502,11 @@ static void gap_sync_window_missed(uint8_t slot) {
 }
 
 // Check whether a radio window intersects a guarded connection event.
-static int gap_sync_conn_overlap(uint32_t start_us, uint32_t end_us, uint32_t now_ms) {
+static int gap_sync_conn_overlap(
+    uint32_t start_us, uint32_t end_us, uint32_t now_ms, uint8_t slot_bit
+) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
+    if (!(gap_conn_slot_mask & slot_bit) ||
         !conn->link_layer.next_us ||
         !conn->schedule.interval_125us
     ) return 0;
@@ -2576,6 +2578,7 @@ static void gap_ext_aux_primary_start(
 
 static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    uint8_t slot_bit = GAP_CONN_SLOT_BIT(gap_conn_slot);
     if (gap_ext_scan.pawr_resp_tx_pending) return 1;
     if (gap_periodic_train.failed) {
         gap_periodic_train.failed = 0;
@@ -2610,7 +2613,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
         return 1;
     }
     if (gap_ext_pawr.advertiser.phase != GAP_PAWR_ADV_IDLE) {
-        (void)gap_pawr_advertiser_poll(now_us);
+        (void)gap_pawr_advertiser_poll(now_us, slot_bit);
         return 1;
     }
     if (gap_ext_chain.phase != GAP_EXT_CHAIN_IDLE) {
@@ -2806,7 +2809,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
     // Periodic events use microseconds so their interval does not inherit
     // millisecond scheduler jitter. Advance the event counter across missed
     // intervals as required by the periodic channel selection algorithm.
-    uint8_t connected_central = (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central;
+    uint8_t connected_central = (gap_conn_slot_mask & slot_bit) && conn->is_central;
 
     if (!resume_aux && (gap_conn_slot_mask == 0 || connected_central) &&
         gap_scan.active_address.type == GAP_ADDR_NONE &&
@@ -2861,7 +2864,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
                     return 1;
 
                 if (gap_sync_conn_overlap(set->periodic.next_us,
-                        set->periodic.next_us + event_us + 400, now_ms)
+                        set->periodic.next_us + event_us + 400, now_ms, slot_bit)
                 ) {
                     set->periodic.event_counter++;
                     set->periodic.next_us += interval_us;
@@ -2888,7 +2891,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
                 set->periodic.next_us += interval_us;
                 gap_periodic_advertising_next_set =
                     (periodic_set + 1) % GAP_EXT_ADV_SET_COUNT;
-                (void)gap_pawr_advertiser_poll(now_us);
+                (void)gap_pawr_advertiser_poll(now_us, slot_bit);
                 return 1;
             }
 
