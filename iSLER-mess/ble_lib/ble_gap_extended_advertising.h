@@ -284,7 +284,7 @@ typedef struct {
 } gap_ext_fields;
 
 static uint8_t gap_ext_adv_next_set;
-static uint8_t gap_periodic_advertising_next_set;
+static uint8_t gap_periodic_next_set;
 
 // -----------------------------------------------------------------------------
 // Extended advertising and periodic advertising control
@@ -2820,7 +2820,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
 
         uint8_t periodic_target_valid = 0;
         for (uint8_t offset = 0; offset < GAP_EXT_ADV_SET_COUNT; offset++) {
-            uint8_t i = (gap_periodic_advertising_next_set + offset) % GAP_EXT_ADV_SET_COUNT;
+            uint8_t i = (gap_periodic_next_set + offset) % GAP_EXT_ADV_SET_COUNT;
             gap_extended_adv_set *candidate = &gap_ext_adv[i];
             uint32_t launch_limit_us = now_us + (candidate->pawr.enabled ? 3000 : 0);
 
@@ -2866,7 +2866,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
                 ) {
                     set->periodic.event_counter++;
                     set->periodic.next_us += interval_us;
-                    gap_periodic_advertising_next_set = (periodic_set + 1) % GAP_EXT_ADV_SET_COUNT;
+                    gap_periodic_next_set = (periodic_set + 1) % GAP_EXT_ADV_SET_COUNT;
                     return 1;
                 }
             }
@@ -2887,8 +2887,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
                 // the state machine handles its subevents and response windows.
                 set->periodic.event_counter++;
                 set->periodic.next_us += interval_us;
-                gap_periodic_advertising_next_set =
-                    (periodic_set + 1) % GAP_EXT_ADV_SET_COUNT;
+                gap_periodic_next_set = (periodic_set + 1) % GAP_EXT_ADV_SET_COUNT;
                 (void)gap_pawr_advertiser_poll(now_us, slot_bit);
                 return 1;
             }
@@ -2900,11 +2899,11 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
                                                   (set->periodic.did & 0x0fff));
             gap_periodic_train.channel = gap_sync_channel(&set->periodic.params,
                                                           set->periodic.event_counter);
-            // Reserve the event now_ms; later polls finish its PDU chain.
+            // Reserve the event; later polls finish its PDU chain.
             int transmitted = gap_periodic_tx_arm(set->periodic.next_us, 1, now_us);
             set->periodic.event_counter++;
             set->periodic.next_us += interval_us;
-            gap_periodic_advertising_next_set = (periodic_set + 1) % GAP_EXT_ADV_SET_COUNT;
+            gap_periodic_next_set = (periodic_set + 1) % GAP_EXT_ADV_SET_COUNT;
             if (!transmitted) return -1;
             return 1;
         }

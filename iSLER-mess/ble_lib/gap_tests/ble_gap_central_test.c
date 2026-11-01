@@ -1572,7 +1572,7 @@ static void test_pawr_interleaved_advertising_sets(void) {
     fake_radio_ticks = base_ticks;
     fake_radio_ticks_enabled = 1;
     fake_radio_tick_autoincrement = 1;
-    gap_periodic_advertising_next_set = 0;
+    gap_periodic_next_set = 0;
     captured_extended_count = 0;
 
     assert(gap_ext_adv_start_phy(0, advertising_data,
