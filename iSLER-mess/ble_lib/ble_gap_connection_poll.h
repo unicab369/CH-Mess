@@ -7,7 +7,7 @@
 #endif // GAP_EXT_ADV_SUPPORT
 
 // Stage the next queued LL control PDU for transmission, giving security priority.
-static void gap_conn_send_queued(void) {
+static void gap_conn_send_queued(uint32_t now_ms) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
 #if GAP_SECURITY_SUPPORT >= 1
@@ -26,7 +26,7 @@ static void gap_conn_send_queued(void) {
             memcpy(conn->tx_frame + 13, conn->security.skd, 8);
             memcpy(conn->tx_frame + 21, conn->security.iv, 4);
             conn->security.phase = GAP_ENC_WAIT_RSP;
-            conn->security.started_ms = GET_MILLIS();
+            conn->security.started_ms = now_ms;
         }
         else if (phase == GAP_ENC_START_QUEUED) {
             conn->tx_frame[0] = 3;
@@ -58,7 +58,7 @@ static void gap_conn_send_queued(void) {
             conn->tx_frame[1] = 1;
             conn->tx_frame[2] = LL_PAUSE_ENC_REQ;
             conn->security.phase = GAP_ENC_WAIT_PAUSE;
-            conn->security.started_ms = GET_MILLIS();
+            conn->security.started_ms = now_ms;
         }
     }
 #endif // GAP_SECURITY_SUPPORT >= 1
@@ -110,7 +110,7 @@ static void gap_conn_send_queued(void) {
         // Confirm channel-reporting support before sending the queued indication.
         if (conn->central.channel_report_queued) {
             if (!conn->c_features.known) {
-                gap_send_feature_request(conn);
+                gap_feature_request(conn, now_ms);
                 return;
             }
             else if (!(conn->c_features.peer_feature_4 & GAP_LL_FEATURES_CH_CLASS)) {
@@ -139,14 +139,14 @@ static void gap_conn_send_queued(void) {
 
     //! Length
     if (conn->queued_action == GAP_QUEUED_LENGTH) {
-        gap_send_data_length(conn, LL_LENGTH_REQ);
+        gap_send_data_length(conn, LL_LENGTH_REQ, now_ms);
     }
     //! PHY
     else if (conn->queued_action == GAP_QUEUED_PHY) {
         // Encode local preferences once earlier TX has been acknowledged.
         conn->queued_action = GAP_QUEUED_NONE;
         conn->procedure_state.phy_request = 1;
-        conn->phy_state.started_ms = GET_MILLIS();
+        conn->phy_state.started_ms = now_ms;
 
         conn->tx_frame[0] = 3;
         conn->tx_frame[1] = 3;
@@ -156,7 +156,7 @@ static void gap_conn_send_queued(void) {
     }
     // Queued timing actions need the peer's base feature set.
     else if (!conn->c_features.known) {
-        gap_send_feature_request(conn);
+        gap_feature_request(conn, now_ms);
     }
     //! params
     else if (conn->queued_action & GAP_QUEUED_PARAMS_MASK) {
@@ -165,7 +165,7 @@ static void gap_conn_send_queued(void) {
             conn->connection_status = LL_ERR_REMOTE_FEATURE;
         }
         else {
-            conn->params_started_ms = GET_MILLIS();
+            conn->params_started_ms = now_ms;
             conn->queued_action = GAP_QUEUED_NONE;
             conn->procedure_state.params_state = GAP_CONN_PARAMS_LOCAL;
             conn->tx_frame[0] = 3;
@@ -195,7 +195,7 @@ static void gap_conn_send_queued(void) {
 #if GAP_CENTRAL_SUPPORT
         else if (conn->is_central) {
             if (conn->queued_action == GAP_QUEUED_SUBRATE_UPDATE) {
-                gap_send_subrate_update(conn);
+                gap_subrate_update(conn, now_ms);
             }
         }
 #endif // GAP_CENTRAL_SUPPORT
@@ -204,7 +204,7 @@ static void gap_conn_send_queued(void) {
         else if (conn->queued_action == GAP_QUEUED_SUBRATE_REQUEST) {
             conn->queued_action = GAP_QUEUED_NONE;
             conn->c_subrate.procedure_state = GAP_SUBRATE_REQUEST_PENDING;
-            conn->c_subrate.started_ms = GET_MILLIS();
+            conn->c_subrate.started_ms = now_ms;
 
             conn->tx_frame[0] = 0x03;
             conn->tx_frame[1] = 11;
@@ -226,7 +226,7 @@ static void gap_conn_send_queued(void) {
         else if (!conn->c_features.page1_known) {
             // Exchange page 1 after the legacy page advertised extended features.
             conn->c_features.ext_pending = 1;
-            conn->params_started_ms = GET_MILLIS();
+            conn->params_started_ms = now_ms;
 
             conn->tx_frame[0] = 0x03;
             conn->tx_frame[1] = 11;
@@ -248,7 +248,7 @@ static void gap_conn_send_queued(void) {
                                             6 * (uint32_t)conn->next_schedule.factor *
                                             (conn->next_schedule.latency + 1) + 1);
                 conn->next_schedule.win_offset = 0;
-                gap_send_rate_ind(conn);
+                gap_rate_indication(conn, now_ms);
             }
         }
 #endif // GAP_CENTRAL_SUPPORT
@@ -275,7 +275,7 @@ static void gap_conn_send_queued(void) {
             }
             conn->queued_action = GAP_QUEUED_NONE;
             conn->peripheral.rate_req_pending = 1;
-            conn->params_started_ms = GET_MILLIS();
+            conn->params_started_ms = now_ms;
         }
 #endif // GAP_PERIPHERAL_SUPPORT
     }
@@ -305,6 +305,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     RADIO_TX_TIMER_BEGIN();
     uint8_t pdu_type = frame[0] & 0x0f;
     uint32_t receive_us = GET_MICROS();
+    uint32_t now_ms = GET_MILLIS();
     uint32_t conn_anchor_us = 0;
 
     uint8_t previous_slot = gap_conn_slot;
@@ -464,7 +465,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         conn->link_layer.next_us = conn_anchor_us +
                         (uint32_t)conn->schedule.interval_125us * 125;
 
-        conn->link_layer.last_rx_ms = GET_MILLIS();
+        conn->link_layer.last_rx_ms = now_ms;
         conn->link_state.rx_armed = 0;
         conn->link_layer.first_event = 0;
         conn->link_state.channel_selected = 0;
@@ -621,7 +622,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
                 conn->tx_frame[0] = 0x03;
 
                 if (gap_conn_control(frame, authenticated, conn_anchor_us,
-                                     conn->link_layer.event_counter)
+                                     conn->link_layer.event_counter, now_ms)
                 ) {
                     gap_conn_slot = previous_slot;
                     return;
@@ -639,7 +640,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
                     conn->link_state.terminate_sent = 1;
                     conn->queue_state.tx_queued = 0;
                 }
-                gap_conn_send_queued();
+                gap_conn_send_queued(now_ms);
 
 #if GAP_EXT_ADV_SUPPORT
                 if (!conn->tx_frame[1] &&
@@ -670,8 +671,6 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
                     conn->channel_report.enabled &&
                     conn->peripheral.status_queued
                 ) {
-                    uint32_t now_ms = GET_MILLIS();
-
                     if (!conn->tx_frame[1] &&
                                 (uint32_t)(now_ms - conn->peripheral.status_changed_ms) >=
                                 (uint32_t)conn->channel_report.max_delay_200ms * 200 &&
@@ -1017,7 +1016,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         if (RADIO_CONNECT_TX_TIMER_ARM(request, sizeof(adv_tx.connect_request), channel)) {
             gap_connect_tx.peer_slot = peer_slot;
             gap_connect_tx.advertiser_type = advertiser_type;
-            gap_connect_tx.deadline_ms = GET_MILLIS() + 5;
+            gap_connect_tx.deadline_ms = now_ms + 5;
             gap_connect_tx.phase = GAP_CONNECT_TX_ARMED;
         }
 
@@ -1054,7 +1053,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             memcpy(gap_scan.active_address.address, frame + 2, 6);
 
             // Allow 2 ms for the request/response exchange, including T_IFS.
-            gap_scan.resp_deadline_ms = GET_MILLIS() + 2;
+            gap_scan.resp_deadline_ms = now_ms + 2;
             // Store 1/2 for public/random; zero means no response is pending.
             gap_scan.active_address.type = advertiser_type + 1;
             gap_scan.pending_adv.rssi = RADIO_RSSI();
@@ -1541,7 +1540,7 @@ static void gap_conn_poll(uint32_t now_us) {
             conn->tx_frame[1] = 0;
 
             if (!conn->link_state.terminate_queued && !conn->link_state.terminate_sent) {
-                gap_conn_send_queued();
+                gap_conn_send_queued(now_ms);
             }
 
             conn->link_layer.tx_pending = 1;

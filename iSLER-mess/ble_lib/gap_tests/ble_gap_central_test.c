@@ -4056,7 +4056,7 @@ static void test_extended_feature_page(void) {
     assert(gap_conn_rate_set(80, 2, 0, 1, 100));
     conn->c_features.known = 1;
     conn->c_features.peer_feature_7 = GAP_LL_FEATURES_EXTENDED;
-    gap_conn_send_queued();
+    gap_conn_send_queued(GET_MILLIS());
     assert(conn->tx_frame[1] == 11 && conn->tx_frame[2] == 0x2b);
     assert(conn->tx_frame[3] == 1 && conn->tx_frame[4] == 1);
     uint8_t page_response[10] = {1, 1, 0, 3};
@@ -4150,7 +4150,7 @@ static void test_channel_classification_reporting(void) {
     conn->c_features.peer_feature_4 = GAP_LL_FEATURES_CH_CLASS;
     assert(gap_channel_reporting_set(1, 5, 10));
     conn->central.channel_report_queued = 1;
-    gap_conn_send_queued();
+    gap_conn_send_queued(GET_MILLIS());
     assert(conn->tx_frame[2] == 0x28 && conn->tx_frame[1] == 4 &&
            conn->tx_frame[3] == 1 && conn->tx_frame[4] == 5 &&
            conn->tx_frame[5] == 10);

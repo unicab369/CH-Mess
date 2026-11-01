@@ -467,12 +467,12 @@ static uint8_t gap_phy_preferred(uint8_t mask) {
 
 // Exchange the full feature octets so Connection Subrating and Host Support
 // are visible to the peer that is deciding whether to start the procedure.
-static void gap_send_feature_request(gap_conn_context *conn) {
+static void gap_feature_request(gap_conn_context *conn, uint32_t now_ms) {
     if (conn->tx_frame[1]) return;
 
     uint8_t supported_phys = RADIO_PHY_MASK();
     conn->c_features.request_pending = 1;
-    conn->params_started_ms = GET_MILLIS();
+    conn->params_started_ms = now_ms;
 
     conn->tx_frame[0] = 0x03;
     conn->tx_frame[1] = 9;
@@ -488,14 +488,14 @@ static void gap_send_feature_request(gap_conn_context *conn) {
 
 // Queue the Central's update. The new schedule takes effect locally only
 // after the peer acknowledges this PDU; until then both event phases are used.
-static void gap_send_subrate_update(gap_conn_context *conn) {
+static void gap_subrate_update(gap_conn_context *conn, uint32_t now_ms) {
     if (conn->tx_frame[1]) return;
 
     conn->next_schedule.base_event = conn->link_layer.event_counter;
     if (conn->queued_action == GAP_QUEUED_SUBRATE_UPDATE)
         conn->queued_action = GAP_QUEUED_NONE;
     conn->c_subrate.procedure_state = GAP_SUBRATE_UPDATE_PENDING;
-    conn->c_subrate.started_ms = GET_MILLIS();
+    conn->c_subrate.started_ms = now_ms;
 
     conn->tx_frame[0] = 0x03;
     conn->tx_frame[1] = 11;
@@ -507,14 +507,14 @@ static void gap_send_subrate_update(gap_conn_context *conn) {
     write_u16_le(conn->tx_frame + 11, conn->next_schedule.timeout_10ms);
 }
 
-static void gap_send_rate_ind(gap_conn_context *conn) {
+static void gap_rate_indication(gap_conn_context *conn, uint32_t now_ms) {
     if (conn->tx_frame[1]) return;
 
     conn->c_rate.update_pending = 1;
     if (conn->queued_action & GAP_QUEUED_RATE_MASK)
         conn->queued_action = GAP_QUEUED_NONE;
     conn->connection_status = GAP_CONNECTION_PENDING;
-    conn->params_started_ms = GET_MILLIS();
+    conn->params_started_ms = now_ms;
 
     conn->tx_frame[0] = 0x03;
     conn->tx_frame[1] = 15;
@@ -529,14 +529,16 @@ static void gap_send_rate_ind(gap_conn_context *conn) {
 }
 
 // Encode our LE 1M limits for both local requests and peer-request responses.
-static void gap_send_data_length(gap_conn_context *conn, uint8_t opcode) {
+static void gap_send_data_length(
+    gap_conn_context *conn, uint8_t opcode, uint32_t now_ms
+) {
     if (conn->tx_frame[1]) return;
 
     if (opcode == LL_LENGTH_REQ) {
         if (conn->queued_action == GAP_QUEUED_LENGTH)
             conn->queued_action = GAP_QUEUED_NONE;
         conn->procedure_state.length = 1;
-        conn->length_started_ms = GET_MILLIS();
+        conn->length_started_ms = now_ms;
     }
 
     conn->tx_frame[0] = 3;
@@ -551,7 +553,7 @@ static void gap_send_data_length(gap_conn_context *conn, uint8_t opcode) {
 // Rotate between radio exchanges; preserve addresses throughout initiation,
 // established connections, and an outstanding active-scan request.
 #if GAP_PRIVACY_SUPPORT
-static void gap_privacy_poll(uint32_t now) {
+static void gap_privacy_poll(uint32_t now_ms) {
 #if GAP_CENTRAL_SUPPORT
     if (gap_initiator.active) return;
 #endif
@@ -563,7 +565,7 @@ static void gap_privacy_poll(uint32_t now) {
     if (!gap_privacy_timeout_15s ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         gap_scan.active_address.type ||
-        (int32_t)(now - gap_privacy_next_rotation_ms) < 0
+        (int32_t)(now_ms - gap_privacy_next_rotation_ms) < 0
     ) return;
 
     if (gap_rx_armed) {
@@ -613,7 +615,7 @@ static void gap_privacy_poll(uint32_t now) {
 #endif // GAP_LEGACY_ADV_SET_COUNT > 0
 
     gap_privacy_timeout_15s = next_timeout_15s;
-    gap_privacy_next_rotation_ms = now + (uint32_t)next_timeout_15s * 15000;
+    gap_privacy_next_rotation_ms = now_ms + (uint32_t)next_timeout_15s * 15000;
 }
 #endif
 
@@ -700,7 +702,7 @@ static uint8_t gap_conn_reject_resp(
 static uint8_t gap_conn_control(
     const uint8_t *frame,
     uint8_t authenticated, uint32_t connection_anchor_us,
-    uint16_t conn_event_counter
+    uint16_t conn_event_counter, uint32_t now_ms
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 #if GAP_SECURITY_SUPPORT < 1
@@ -1533,7 +1535,7 @@ static uint8_t gap_conn_control(
                             conn->next_schedule.interval_125us);
                     }
 
-                    gap_send_rate_ind(conn);
+                    gap_rate_indication(conn, now_ms);
                 }
                 break;
             }
@@ -1653,7 +1655,7 @@ static uint8_t gap_conn_control(
                     conn->next_schedule.continuation = continuation;
                     conn->next_schedule.timeout_10ms = timeout;
                     conn->c_subrate.status = GAP_CONNECTION_PENDING;
-                    gap_send_subrate_update(conn);
+                    gap_subrate_update(conn, now_ms);
                     break;
                 }
             }
@@ -1794,7 +1796,7 @@ static uint8_t gap_conn_control(
                         (MIN(RADIO_DATA_MAX, GAP_CONN_DATA_MAX) + 14) * 8), remote.tx_time);
 
             if (frame[2] == LL_LENGTH_REQ) {
-                gap_send_data_length(conn, LL_LENGTH_RSP);
+                gap_send_data_length(conn, LL_LENGTH_RSP, now_ms);
 
                 // A queued local change is advertised in this response.
                 if (conn->queued_action == GAP_QUEUED_LENGTH) {

@@ -200,8 +200,7 @@ int BLE_MESH_QUEUE_TX(const uint8_t *adv_data, size_t len) {
 }
 
 int BLE_MESH_QUEUE_RELAY_TX(
-    const uint8_t *adv_data, size_t len,
-                            uint8_t relay_retransmit
+    const uint8_t *adv_data, size_t len, uint8_t relay_retransmit
 ) {
     if (reset_slot >= 0) return -1;
     return mesh_adv_queue_add(adv_data, len, GET_MILLIS(), relay_retransmit);
