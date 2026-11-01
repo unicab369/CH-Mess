@@ -369,9 +369,10 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 #endif // GAP_EXT_ADV_SUPPORT
 
     uint8_t radio_slot = gap_poll.slot_valid ? gap_poll.slot : gap_conn_slot;
+    uint8_t radio_slot_bit = GAP_CONN_SLOT_BIT(radio_slot);
     gap_conn_context *conn = &gap_conn_ctx[radio_slot];
 
-    if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(radio_slot)) &&
+    if ((gap_conn_slot_mask & radio_slot_bit) &&
         conn->link_state.rx_armed
     ) {
         // Anchor Central timing to its scheduled event and Peripheral timing
@@ -695,14 +696,14 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         if (conn->tx_frame[1]) conn->c_subrate.event_activity = 1;
 
         // Each update stage can close the slot, so check before continuing.
-        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(radio_slot))) {
+        if (!(gap_conn_slot_mask & radio_slot_bit)) {
             return;
         }
 
         gap_conn_event_advance(conn);
         gap_conn_update_apply(conn, 0, now_ms);
         // This stage can also close the slot, so it needs a separate check.
-        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(radio_slot))) {
+        if (!(gap_conn_slot_mask & radio_slot_bit)) {
             return;
         }
 
