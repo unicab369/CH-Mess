@@ -319,13 +319,12 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         }
 
         const uint8_t *request = gap_scan.request;
-        uint8_t peer_matches =
-            response.identity.peer.type == GAP_ADDR_NONE ||
-            (response.identity.peer.type == ((request[0] >> 7) & 1) &&
-             memcmp(response.identity.peer.address, request + 8, 6) == 0);
-        uint8_t target_matches = !response.has_target ||
-            (response.target.type == ((request[0] >> 6) & 1) &&
-             memcmp(response.target.address, request + 2, 6) == 0);
+        uint8_t peer_matches = response.identity.peer.type == GAP_ADDR_NONE ||
+                            (response.identity.peer.type == ((request[0] >> 7) & 1) &&
+                            memcmp(response.identity.peer.address, request + 8, 6) == 0);
+        uint8_t target_matches = response.target.type == GAP_ADDR_NONE ||
+                            (response.target.type == ((request[0] >> 6) & 1) &&
+                            memcmp(response.target.address, request + 2, 6) == 0);
 
         if (peer_matches && target_matches) {
             memcpy(gap_ext_scan.frame, frame, (size_t)frame[1] + 2);
@@ -338,7 +337,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         return;
     }
 #if GAP_CENTRAL_SUPPORT
-    if (gap_ext_scan.request_phase == GAP_EXT_REQ_CONNECT_RX) {
+    else if (gap_ext_scan.request_phase == GAP_EXT_REQ_CONNECT_RX) {
         const uint8_t *request = adv_tx.connect_request;
 
         if (pdu_type == ADV_EXT_IND && frame[1] == 14 &&
@@ -791,7 +790,8 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             gap_ext_aux_exchange.response_started = 1;
 
             if (!RADIO_IFS_TX_TIMER_ARM(gap_ext_adv_frame, BLE_ADV_ACCESS_ADDRESS, 0, 0,
-                                    gap_ext_aux_exchange.detail.connect.phy, gap_ext_aux_exchange.detail.connect.phy, 0x555555)
+                                    gap_ext_aux_exchange.detail.connect.phy,
+                                    gap_ext_aux_exchange.detail.connect.phy, 0x555555)
             ) {
                 gap_ext_aux_exchange.response_started = 0;
                 gap_ext_aux_exchange.waiting = 0;
@@ -1735,6 +1735,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
         }
         else
 #endif // GAP_CENTRAL_SUPPORT
+        // Time out only requests still waiting for a response; CONNECT_DONE is handled above.
         if ((int32_t)(now_ms - gap_ext_scan.request_deadline_ms) < 0)
             return;
         else {

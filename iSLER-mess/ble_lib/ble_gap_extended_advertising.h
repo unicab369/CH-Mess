@@ -258,7 +258,6 @@ typedef struct {
     // Common extended header and advertiser identity.
     uint8_t mode, flags;
     gap_ext_identity identity;
-    uint8_t has_target;
     gap_address target;
 
     // AuxPtr scheduling information.
@@ -705,6 +704,7 @@ static int gap_ext_adv_decode(
     // Optional fields must stay zero when they are absent from the packet.
     memset(fields, 0, sizeof(*fields));
     fields->identity.peer.type = GAP_ADDR_NONE;
+    fields->target.type = GAP_ADDR_NONE;
     fields->mode = pdu[2] >> 6;
     uint8_t ext_len = pdu[2] & 0x3f;
 
@@ -733,7 +733,6 @@ static int gap_ext_adv_decode(
 
     if (fields->flags & 0x02) {
         if (header_end - cursor < 6) return 0;
-        fields->has_target = 1;
         fields->target.type = (pdu[0] >> 7) & 1;
         memcpy(fields->target.address, pdu + cursor, 6);
         cursor += 6;
@@ -887,9 +886,9 @@ static int gap_aux_request_start(const uint8_t *frame, uint32_t now_ms) {
 
     uint8_t local_address[6], local_type;
     gap_local_addr_select(peer_slot, local_address, &local_type);
-    if (fields.has_target &&
-        (fields.target.type != local_type ||
-         memcmp(fields.target.address, local_address, 6) != 0)
+
+    if (fields.target.type != GAP_ADDR_NONE &&
+        (fields.target.type != local_type || memcmp(fields.target.address, local_address, 6) != 0)
     ) return 0;
 
     uint8_t *request;
