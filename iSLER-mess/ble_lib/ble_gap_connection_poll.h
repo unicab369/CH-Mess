@@ -1035,7 +1035,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 #if GAP_CENTRAL_SUPPORT
             (gap_initiator.mode != GAP_CONN_MODE_SELECTIVE || peer_matches) &&
 #endif // GAP_CENTRAL_SUPPORT
-            !gap_scan.active_address.type
+            gap_scan.active_address.type == GAP_ADDR_NONE
         ) {
 
 #if GAP_PRIVACY_SUPPORT
@@ -1052,7 +1052,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             // Allow 2 ms for the request/response exchange, including T_IFS.
             gap_scan.resp_deadline_ms = now_ms + 2;
             // Store 1/2 for public/random; zero means no response is pending.
-            gap_scan.active_address.type = advertiser_type + 1;
+            gap_scan.active_address.type = advertiser_type;
             gap_scan.pending_adv.rssi = RADIO_RSSI();
             gap_scan.pending_adv.ready = 1;
 
@@ -1067,19 +1067,21 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
 
             if (!RADIO_IFS_TX_TIMER_ARM(gap_scan.request, BLE_ADV_ACCESS_ADDRESS,
                             37 + gap_scan.channel_index, 1, GAP_PHY_1M, GAP_PHY_1M, 0x555555)
-            ) gap_scan.active_address.type = 0;
+            ) gap_scan.active_address.type = GAP_ADDR_NONE;
 
             gap_conn_slot = previous_slot;
             return;
         }
 
+        // Accept a scan response only from the advertiser we just scanned.
         if (pdu_type == SCAN_RSP &&
-            (((frame[0] >> 6) & 1) + 1) == gap_scan.active_address.type &&
+            ((frame[0] >> 6) & 1) == gap_scan.active_address.type &&
             memcmp(frame + 2, gap_scan.active_address.address, 6) == 0
         ) {
             memcpy(gap_rx_packet.frame, frame, (size_t)frame[1] + 2);
             gap_rx_packet.rssi = RADIO_RSSI();
-            gap_scan.active_address.type = 0;
+            // Zero marks that no scan response is pending.
+            gap_scan.active_address.type = GAP_ADDR_NONE;
             gap_rx_packet.ready = 1;
             gap_conn_slot = previous_slot;
             return;
@@ -1185,7 +1187,7 @@ void gap_hw_init(void) {
     gap_scan.channel_index = 0;
     gap_scan.applied_generation = gap_scanner.generation - 1;
     gap_scan.interval_start_ms = 0;
-    gap_scan.active_address.type = 0;
+    gap_scan.active_address.type = GAP_ADDR_NONE;
     gap_rx_packet.ready = 0;
     gap_rx_packet.rssi = 127;
     gap_scan.pending_adv.ready = 0;
@@ -1838,7 +1840,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
     if (reset_scan) {
         if (gap_rx_armed) RADIO_STOP();
         gap_rx_armed = 0;
-        gap_scan.active_address.type = 0;
+        gap_scan.active_address.type = GAP_ADDR_NONE;
         gap_scan.channel_index = 0;
         gap_scan.interval_start_ms = now_ms;
         gap_scan.applied_generation = gap_scanner.generation;
@@ -1879,7 +1881,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
         request->active = 0;
     }
 
-    if (!gap_scan.active_address.type) {
+    if (gap_scan.active_address.type == GAP_ADDR_NONE) {
         int slot = -1;
 
         for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
@@ -1992,10 +1994,10 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
 #endif // GAP_EXT_ADV_SUPPORT
 
     // Keep after extended-scan processing so a buffered packet is handled first.
-    if (gap_scan.active_address.type) {
+    if (gap_scan.active_address.type != GAP_ADDR_NONE) {
         if ((int32_t)(now_ms - gap_scan.resp_deadline_ms) < 0)
             return;
-        gap_scan.active_address.type = 0;
+        gap_scan.active_address.type = GAP_ADDR_NONE;
     }
 
     uint16_t interval_ms, window_ms;
@@ -2085,7 +2087,7 @@ int gap_send_due(
 #endif
                 gap_rx_packet.ready = 0;
                 gap_scan.pending_adv.ready = 0;
-                gap_scan.active_address.type = 0;
+                gap_scan.active_address.type = GAP_ADDR_NONE;
                 gap_rx_armed = 0;
                 gap_scanner.scanning = 0;
                 gap_scanner.active = 0;

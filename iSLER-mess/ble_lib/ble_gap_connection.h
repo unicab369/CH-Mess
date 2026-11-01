@@ -564,7 +564,7 @@ static void gap_privacy_poll(uint32_t now_ms) {
 
     if (!gap_privacy_timeout_15s ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        gap_scan.active_address.type ||
+        gap_scan.active_address.type != GAP_ADDR_NONE ||
         (int32_t)(now_ms - gap_privacy_next_rotation_ms) < 0
     ) return;
 

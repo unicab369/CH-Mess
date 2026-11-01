@@ -2804,7 +2804,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
     // intervals as required by the periodic channel selection algorithm.
     if (!resume_aux && (gap_conn_slot_mask == 0 ||
          ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central)) &&
-        !gap_scan.active_address.type &&
+        gap_scan.active_address.type == GAP_ADDR_NONE &&
 #if GAP_CENTRAL_SUPPORT
         !gap_initiator.active
 #endif
@@ -2924,7 +2924,7 @@ static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
             }
         }
         if (send_extended < 0) return 0;
-        if (gap_scan.active_address.type) return 1;
+        if (gap_scan.active_address.type != GAP_ADDR_NONE) return 1;
 
         if (gap_rx_armed) {
             RADIO_STOP();

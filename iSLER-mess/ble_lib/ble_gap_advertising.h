@@ -51,6 +51,12 @@ typedef struct {
 
 static gap_scan_report gap_scan_reports[GAP_SCAN_REPORT_COUNT];
 
+enum {
+    GAP_ADDR_PUBLIC,
+    GAP_ADDR_RANDOM,
+    GAP_ADDR_NONE
+};
+
 static struct {
     uint8_t kind; // 0=public adv, 1=random adv, 2=public scan rsp, 3=random scan rsp; 4 unused.
     uint8_t address[6];
@@ -69,7 +75,7 @@ static struct {
 
     // Active-scan and channel state.
     struct {
-        volatile uint8_t type; // Encoded: 0=none, 1=public, 2=random.
+        volatile uint8_t type;
         uint8_t address[6];
     } active_address;
     uint8_t channel_index, applied_generation;
@@ -913,7 +919,7 @@ int gap_scan_take_ad(
     int8_t packet_rssi = gap_rx_packet.rssi;
     uint8_t payload_len = frame[1];
 
-    if (!gap_scan.active_address.type)
+    if (gap_scan.active_address.type == GAP_ADDR_NONE)
         gap_rx_armed = 0;
 
     gap_rx_packet.ready = 0;
