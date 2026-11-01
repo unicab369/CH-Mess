@@ -727,7 +727,7 @@ static int test_ext_scan_receive(uint8_t kind, const uint8_t *pdu,
         ? GAP_EXT_SCAN_AUX : GAP_EXT_SCAN_NONE;
     gap_ext_scan.rssi = rssi;
     gap_ext_scan.received_us = GET_MICROS();
-    gap_ext_scan.ready = 1;
+    gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
     gap_rx_armed = 1;
     if (kind == GAP_EXT_PDU_AUX) {
         gap_ext_scan.slot = gap_aux_request[0].active ? 0 : 1;
@@ -786,7 +786,8 @@ static void test_extended_immediate_requests(void) {
     write_u16_le(rx_frame + 10, 0x1234);
     rx_frame[12] = 2; rx_frame[13] = 1; rx_frame[14] = 6;
     gap_hw_received();
-    assert(gap_ext_scan.ready && gap_ext_scan.request_phase == GAP_EXT_REQ_NONE);
+    assert(gap_ext_scan.scan_state == GAP_EXT_SCAN_RX &&
+           gap_ext_scan.request_phase == GAP_EXT_REQ_NONE);
     gap_hw_scan_poll(GET_MICROS(), now_ms);
     gap_ext_report report;
     assert(gap_ext_scan_poll(&report) && report.data_len == 3);
@@ -1767,10 +1768,11 @@ static void test_pawr_connection_accept(void) {
     memcpy(rx_frame, request, sizeof(request));
     gap_ext_scan.listen_state = GAP_EXT_SCAN_PERIODIC;
     gap_ext_scan.slot = 0;
-    gap_ext_scan.ready = 0;
+    gap_ext_scan.scan_state = GAP_EXT_SCAN_IDLE;
     gap_rx_armed = 1;
     gap_hw_received();
-    assert(gap_ext_pawr.connect.reply_armed && gap_ext_scan.ready);
+    assert(gap_ext_pawr.connect.reply_armed &&
+           gap_ext_scan.scan_state == GAP_EXT_SCAN_RX);
     gap_ext_scan_process(now_ms);
 
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !conn->is_central && sync->used &&
@@ -1867,7 +1869,7 @@ static void test_pawr_observer_response(void) {
     gap_ext_scan.slot = 0;
     gap_ext_scan.received_us = (uint32_t)(fake_radio_ticks);
     gap_ext_scan.rssi = -42;
-    gap_ext_scan.ready = 1;
+    gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
     fake_tx_done = 0;
     gap_ext_scan_process(now_ms);
     assert(captured_extended_count == 1 &&
@@ -1890,12 +1892,12 @@ static void test_pawr_observer_response(void) {
     assert(gap_report_poll(&report) && report.slot == 0 &&
            report.event_counter == 12 && report.data_len == 3 &&
            !memcmp(report.data, (uint8_t[]){2, 0x01, 0x06}, 3));
-    assert(gap_ext_scan.pawr_resp_tx_pending);
+    assert(gap_ext_scan.scan_state == GAP_EXT_SCAN_PAWR_TX);
     gap_hw_scan_poll(GET_MICROS(), now_ms);
-    assert(gap_ext_scan.pawr_resp_tx_pending);
+    assert(gap_ext_scan.scan_state == GAP_EXT_SCAN_PAWR_TX);
     fake_tx_done = 1;
     gap_hw_scan_poll(GET_MICROS(), now_ms);
-    assert(!gap_ext_scan.pawr_resp_tx_pending);
+    assert(gap_ext_scan.scan_state != GAP_EXT_SCAN_PAWR_TX);
 
     // Repeating mode sends the configured response at each selected subevent.
     memcpy(gap_ext_scan.frame, subevent_pdu, sizeof(subevent_pdu));
@@ -1904,11 +1906,11 @@ static void test_pawr_observer_response(void) {
     gap_ext_scan.slot = 0;
     gap_ext_scan.received_us = (uint32_t)(fake_radio_ticks);
     gap_ext_scan.rssi = -42;
-    gap_ext_scan.ready = 1;
+    gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
     gap_ext_scan_process(now_ms);
     assert(captured_extended_count == 2 && sync->pawr.pending &&
            sync->event_counter == 14);
-    assert(gap_ext_scan.pawr_resp_tx_pending);
+    assert(gap_ext_scan.scan_state == GAP_EXT_SCAN_PAWR_TX);
     gap_hw_scan_poll(GET_MICROS(), now_ms);
 
     // Disabling repeat leaves one final transmission, then consumes the data.
@@ -1919,15 +1921,15 @@ static void test_pawr_observer_response(void) {
     gap_ext_scan.slot = 0;
     gap_ext_scan.received_us = (uint32_t)(fake_radio_ticks);
     gap_ext_scan.rssi = -42;
-    gap_ext_scan.ready = 1;
+    gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
     fake_tx_done = 0;
     gap_ext_scan_process(now_ms);
     assert(captured_extended_count == 3 && !sync->pawr.pending &&
            sync->event_counter == 15);
-    assert(gap_ext_scan.pawr_resp_tx_pending);
+    assert(gap_ext_scan.scan_state == GAP_EXT_SCAN_PAWR_TX);
     fake_radio_ticks = gap_ext_scan.pawr_resp_deadline_us;
     gap_hw_scan_poll(GET_MICROS(), now_ms);
-    assert(!gap_ext_scan.pawr_resp_tx_pending);
+    assert(gap_ext_scan.scan_state != GAP_EXT_SCAN_PAWR_TX);
     fake_tx_done = 1;
     gap_sync_reports.head = gap_sync_reports.count = 0;
     fake_radio_tick_autoincrement = 0;
@@ -1988,7 +1990,7 @@ static void test_periodic_advertising_sync(void) {
     gap_ext_scan.received_us = (uint32_t)(fake_radio_ticks -
         160000); // SyncInfo is already more than six events old.
     gap_ext_scan.rssi = -35;
-    gap_ext_scan.ready = 1;
+    gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
     gap_hw_scan_poll(GET_MICROS(), now_ms);
     assert(!gap_syncs[0].window_active);
 
@@ -2004,7 +2006,7 @@ static void test_periodic_advertising_sync(void) {
     gap_ext_scan.listen_state = GAP_EXT_SCAN_AUX;
     gap_ext_scan.received_us = (uint32_t)(fake_radio_ticks);
     gap_ext_scan.rssi = -35;
-    gap_ext_scan.ready = 1;
+    gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
     gap_hw_scan_poll(GET_MICROS(), now_ms);
     assert(gap_syncs[0].window_active &&
            !gap_syncs[0].established &&
@@ -2076,7 +2078,7 @@ static void test_periodic_advertising_sync(void) {
     gap_ext_scan.listen_state = GAP_EXT_SCAN_AUX;
     gap_ext_scan.received_us = (uint32_t)(fake_radio_ticks);
     gap_ext_scan.rssi = -35;
-    gap_ext_scan.ready = 1;
+    gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
     gap_hw_scan_poll(GET_MICROS(), now_ms);
     for (uint8_t missed = 0; missed < 6; missed++) {
         assert(gap_syncs[0].used);
@@ -2152,7 +2154,7 @@ static void test_periodic_sync_connection_arbitration(void) {
     gap_rx_armed = 0;
     gap_scan.active_address.type = GAP_ADDR_NONE;
     gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
-    gap_ext_scan.ready = 0;
+    gap_ext_scan.scan_state = GAP_EXT_SCAN_IDLE;
     gap_scan.applied_generation = gap_scanner.generation;
     gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(gap_conn_slot);
     conn->schedule.interval_125us = 240;
@@ -3251,7 +3253,7 @@ static void test_periodic_sync_transfer_receive(void) {
     gap_ext_scan.received_us = (uint32_t)(
         first_event + 152);
     gap_ext_scan.rssi = -40;
-    gap_ext_scan.ready = 1;
+    gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
     gap_ext_scan_process(now_ms);
     assert(gap_syncs[0].established);
     assert(gap_sync_event_poll(&event) &&

@@ -102,6 +102,12 @@ typedef struct {
     gap_address peer;
 } gap_sync_event;
 
+enum {
+    GAP_EXT_SCAN_IDLE = 0,
+    GAP_EXT_SCAN_RX = 2,
+    GAP_EXT_SCAN_PAWR_TX = 4
+};
+
 static struct {
     gap_sync_event items[GAP_PERIODIC_SYNC_EVENT_COUNT];
     uint8_t head, count;
@@ -150,17 +156,16 @@ typedef struct {
 static gap_aux_request_context gap_aux_request[GAP_EXT_ADV_CONTEXT_COUNT];
 
 static struct {
-    uint8_t frame[2 + 255];
-    volatile uint8_t ready;
-    volatile int8_t rssi;
     uint32_t received_us;
-    volatile uint8_t listen_state;
-    uint8_t slot, rx_phy;
-    volatile uint8_t request_phase;
-    uint32_t request_deadline_ms;
     uint32_t request_end_us;
-    uint8_t pawr_resp_tx_pending;
+    uint32_t request_deadline_ms;
     uint32_t pawr_resp_deadline_us;
+    volatile int8_t rssi;
+    volatile uint8_t scan_state;
+    volatile uint8_t listen_state;
+    volatile uint8_t request_phase;
+    uint8_t slot, rx_phy;
+    uint8_t frame[2 + 255];
 } gap_ext_scan;
 
 // Extended advertising scan-response state
@@ -2021,8 +2026,9 @@ static void gap_ext_report_process(
 
 // Handle a received extended scan PDU, including follow-on AuxPtr and sync work.
 static void gap_ext_scan_process(uint32_t now_ms) {
-    if (gap_ext_scan.pawr_resp_tx_pending) return;
-    if (!gap_ext_scan.ready) return;
+    if (!(gap_ext_scan.scan_state & GAP_EXT_SCAN_RX) ||
+        (gap_ext_scan.scan_state & GAP_EXT_SCAN_PAWR_TX)
+    ) return;
 
     int slot = -1;
     // The listener state identifies AUX/periodic packets; NONE means primary.
@@ -2030,7 +2036,7 @@ static void gap_ext_scan_process(uint32_t now_ms) {
     uint8_t periodic = (listen_state == GAP_EXT_SCAN_PERIODIC);
     uint8_t kind = periodic ? GAP_EXT_PDU_PERIODIC :
                    listen_state == GAP_EXT_SCAN_AUX ? GAP_EXT_PDU_AUX :
-                   GAP_EXT_PDU_PRIMARY;
+                                                    GAP_EXT_PDU_PRIMARY;
     uint8_t packet_phy = GAP_PHY_1M;
     gap_sync_context *sync = NULL;
 
@@ -2053,7 +2059,7 @@ static void gap_ext_scan_process(uint32_t now_ms) {
 
     // Clear the receive state before discarding a periodic packet with no live sync.
     gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
-    gap_ext_scan.ready = 0;
+    gap_ext_scan.scan_state = GAP_EXT_SCAN_IDLE;
 
     if (gap_rx_armed) RADIO_STOP();
     gap_rx_armed = 0;
@@ -2279,7 +2285,7 @@ static void gap_ext_scan_process(uint32_t now_ms) {
                                  response_channel, 0, sync->phy, sync->phy, sync->params.crc_init)
             ) {
                 gap_ext_scan.pawr_resp_deadline_us = response_start_us + 1000;
-                gap_ext_scan.pawr_resp_tx_pending = 1;
+                gap_ext_scan.scan_state = GAP_EXT_SCAN_PAWR_TX;
             }
         }
 
@@ -2609,7 +2615,7 @@ static void gap_ext_aux_primary_start(
 static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t slot_bit = GAP_CONN_SLOT_BIT(gap_conn_slot);
-    if (gap_ext_scan.pawr_resp_tx_pending) return 1;
+    if (gap_ext_scan.scan_state == GAP_EXT_SCAN_PAWR_TX) return 1;
     if (gap_periodic_train.failed) {
         gap_periodic_train.failed = 0;
         return -1;

@@ -328,7 +328,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
             memcpy(gap_ext_scan.frame, frame, (size_t)frame[1] + 2);
             gap_ext_scan.rssi = RADIO_RSSI();
             gap_ext_scan.received_us = receive_us;
-            gap_ext_scan.ready = 1;
+            gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
             gap_ext_scan.request_phase = GAP_EXT_REQ_NONE;
         }
 
@@ -797,14 +797,14 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     }
 
     if (periodic_scan && pdu_type == CONNECT_IND && frame[1] == 34 &&
-        !gap_ext_scan.ready &&
+        gap_ext_scan.scan_state != GAP_EXT_SCAN_RX &&
         gap_pawr_conn_req_start(gap_ext_scan.slot, frame, 36, receive_us)
     ) {
         gap_ext_scan.rssi = RADIO_RSSI();
         memcpy(gap_ext_scan.frame, frame, 36);
         gap_ext_scan.received_us = receive_us;
         gap_ext_pawr.connect.reply_received_us = receive_us;
-        gap_ext_scan.ready = 1;
+        gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
         gap_rx_armed = 0;
         return;
     }
@@ -860,7 +860,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
     }
 
     if ((gap_scanner.scanning || periodic_scan) &&
-        !gap_ext_scan.ready &&
+        gap_ext_scan.scan_state != GAP_EXT_SCAN_RX &&
         ((pdu_type == ADV_EXT_IND) || (pdu_type == CONNECT_IND && periodic_scan && frame[1] == 34))
     ) {
 
@@ -870,7 +870,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
         gap_ext_scan.rssi = RADIO_RSSI();
         memcpy(gap_ext_scan.frame, frame, (size_t)frame[1] + 2);
         gap_ext_scan.received_us = receive_us;
-        gap_ext_scan.ready = 1;
+        gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
         return;
     }
 
@@ -1120,7 +1120,7 @@ void gap_hw_init(void) {
 #if GAP_PERIPHERAL_SUPPORT
     gap_ext_pawr.connect.reply_armed = 0;
 #endif
-    gap_ext_scan.ready = 0;
+    gap_ext_scan.scan_state = GAP_EXT_SCAN_IDLE;
     gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
     gap_ext_scan.request_phase = GAP_EXT_REQ_NONE;
     memset(gap_aux_request, 0, sizeof(gap_aux_request));
@@ -1547,7 +1547,7 @@ static inline void gap_conn_poll_all(uint32_t now_us, uint32_t now_ms) {
     if (gap_connect_tx.phase != GAP_CONNECT_TX_IDLE) return;
 #endif
 #if GAP_EXT_ADV_SUPPORT
-    if (gap_ext_scan.pawr_resp_tx_pending) return;
+    if (gap_ext_scan.scan_state == GAP_EXT_SCAN_PAWR_TX) return;
     if (gap_periodic_train.active) return;
     if (gap_ext_pawr.advertiser.phase != GAP_PAWR_ADV_IDLE) return;
     if (gap_ext_aux.phase != GAP_EXT_AUX_IDLE) return;
@@ -1612,14 +1612,14 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
 #endif // GAP_LEGACY_ADV_SET_COUNT > 0
 
 #if GAP_EXT_ADV_SUPPORT
-    if (gap_ext_scan.pawr_resp_tx_pending) {
+    if (gap_ext_scan.scan_state == GAP_EXT_SCAN_PAWR_TX) {
         if (!RADIO_TX_DONE() &&
             (int32_t)(now_us - gap_ext_scan.pawr_resp_deadline_us) < 0
         )
             return;
 
         RADIO_STOP();
-        gap_ext_scan.pawr_resp_tx_pending = 0;
+        gap_ext_scan.scan_state = GAP_EXT_SCAN_IDLE;
     }
     if (gap_periodic_train.active) return;
     // Leave the periodic-channel receiver active until the PAwR Central
@@ -1638,7 +1638,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
             if ((int32_t)(now_us - gap_ext_pawr.connect.reply_deadline_us) < 0)
                 return;
             gap_ext_pawr.connect.reply_armed = 0;
-            gap_ext_scan.ready = 0;
+            gap_ext_scan.scan_state = GAP_EXT_SCAN_IDLE;
             RADIO_STOP();
         }
     }
@@ -1798,7 +1798,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
 
 #if GAP_EXT_ADV_SUPPORT
     if (reset_scan) {
-        gap_ext_scan.ready = 0;
+        gap_ext_scan.scan_state = GAP_EXT_SCAN_IDLE;
         gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
         memset(gap_aux_request, 0, sizeof(gap_aux_request));
     }
