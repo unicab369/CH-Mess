@@ -254,6 +254,12 @@ static struct {
 // -----------------------------------------------------------------------------
 // Extended advertising decode and scan report assembly
 // -----------------------------------------------------------------------------
+enum {
+    GAP_AUX_PTR_ABSENT,
+    GAP_AUX_PTR_VALID,
+    GAP_AUX_PTR_ZERO_OFFSET
+};
+
 typedef struct {
     // Common extended header and advertiser identity.
     uint8_t mode, flags;
@@ -261,7 +267,7 @@ typedef struct {
     gap_address target;
 
     // AuxPtr scheduling information.
-    uint8_t has_aux_ptr, aux_offset_zero;
+    uint8_t aux_ptr_state;
     uint8_t aux_channel, aux_ca, aux_offset_unit, aux_phy;
     uint32_t aux_offset_us;
 
@@ -760,8 +766,8 @@ static int gap_ext_adv_decode(
         if (channel > 36 || phy > 2) return 0;
 
         uint16_t offset = read_u16_le(pdu + cursor + 1) & 0x1fff;
-        fields->aux_offset_zero = (offset == 0);
-        fields->has_aux_ptr = 1;
+        fields->aux_ptr_state = offset == 0 ? GAP_AUX_PTR_ZERO_OFFSET :
+                                               GAP_AUX_PTR_VALID;
         fields->aux_channel = channel;
         fields->aux_phy = phy;
         fields->aux_ca = (pdu[cursor] >> 6) & 1;
@@ -1448,7 +1454,7 @@ static void gap_pawr_report_push(
                 gap_ext_adv_decode(pdu, gap_ext_pawr.response.len, &fields) &&
                 gap_ext_data_valid(fields.payload.data, fields.payload.len) &&
                 fields.mode == 0 &&
-                !fields.has_aux_ptr &&
+                fields.aux_ptr_state == GAP_AUX_PTR_ABSENT &&
                 !fields.sync.has_info &&
                 fields.payload.len <= GAP_PAWR_RESPONSE_DATA_MAX
             ) {
@@ -1846,7 +1852,7 @@ static int gap_periodic_tx_arm(uint32_t start_us, uint8_t first, uint32_t now_us
 // Extended scan radio processing and periodic sync transfer
 // -----------------------------------------------------------------------------
 // Reassemble primary and auxiliary extended advertising reports.
-static void gap_ext_scan_report_process(
+static void gap_ext_report_process(
     uint8_t kind, gap_ext_fields *fields, uint32_t now
 ) {
     if (!gap_scanner.scanning || kind > GAP_EXT_PDU_AUX)
@@ -1865,8 +1871,9 @@ static void gap_ext_scan_report_process(
     uint16_t adv_data_info = fields->identity.adv_data_info;
 
     if (kind == GAP_EXT_PDU_PRIMARY) {
-        if (fields->has_aux_ptr) {
-            if (!fields->identity.has_adi || fields->aux_offset_zero)
+        if (fields->aux_ptr_state != GAP_AUX_PTR_ABSENT) {
+            if (!fields->identity.has_adi ||
+                fields->aux_ptr_state == GAP_AUX_PTR_ZERO_OFFSET)
                 return;
         }
         else {
@@ -1956,8 +1963,8 @@ static void gap_ext_scan_report_process(
         context->data_len += fields->payload.len;
     }
 
-    if (fields->has_aux_ptr) {
-        if (fields->aux_offset_zero) {
+    if (fields->aux_ptr_state != GAP_AUX_PTR_ABSENT) {
+        if (fields->aux_ptr_state == GAP_AUX_PTR_ZERO_OFFSET) {
             gap_wipe(context, sizeof(*context));
             return;
         }
@@ -2058,12 +2065,12 @@ static void gap_ext_scan_process(uint32_t now_ms) {
     if (!gap_ext_adv_decode(pdu, pdu_len, &fields)) return;
 
     if (!periodic) {
-        gap_ext_scan_report_process(kind, &fields, now_ms);
+        gap_ext_report_process(kind, &fields, now_ms);
 
         if (kind == GAP_EXT_PDU_AUX && fields.sync.has_info)
             (void)gap_sync_info_accept(&fields, pdu[1], packet_phy, gap_ext_scan.received_us);
 
-        if (fields.has_aux_ptr && !fields.aux_offset_zero &&
+        if (fields.aux_ptr_state == GAP_AUX_PTR_VALID &&
             fields.aux_offset_us != 0
         ) {
             uint8_t aux_phy = GAP_PHY_1M << fields.aux_phy;
@@ -2158,7 +2165,7 @@ static void gap_ext_scan_process(uint32_t now_ms) {
 
     sync->phy = packet_phy;
 
-    if (fields.has_aux_ptr && !fields.aux_offset_zero) {
+    if (fields.aux_ptr_state == GAP_AUX_PTR_VALID) {
         sync->event_data_active = 1;
         uint8_t aux_phy = GAP_PHY_1M << fields.aux_phy;
 
@@ -2211,7 +2218,8 @@ static void gap_ext_scan_process(uint32_t now_ms) {
     gap_sync_reports.count++;
     sync->data_len = 0;
 
-    if (!fields.has_aux_ptr && !fields.sync.has_info &&
+    if (fields.aux_ptr_state == GAP_AUX_PTR_ABSENT &&
+        !fields.sync.has_info &&
         fields.identity.has_adi && sync->pawr.pending
     ) {
         // This received PAwR subevent PDU anchors the response slot.
