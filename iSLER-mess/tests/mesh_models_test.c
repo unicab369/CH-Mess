@@ -151,8 +151,9 @@ static int mesh_access_queue_virtual(uint16_t src,
                                  app_key_index, opcode, params, len, mic_64);
 }
 static int mesh_access_poll(mesh_access_message *message,
-                                mesh_access_pdu *access) {
+                                mesh_access_pdu *access, uint32_t now_ms) {
     (void)message;
+    (void)now_ms;
     if (!poll_ready) return 0;
     *access = polled_access;
     poll_ready = 0;
@@ -893,7 +894,7 @@ static void receive_heartbeat(const mesh_net_message *hb) {
         NULL, 0, plain, sizeof(plain), pdu + 7, pdu + 13, 8) == CCM_OK);
     mesh_obfuscate(&mesh_network.old_key, pdu, iv);
     mesh_net_message received;
-    assert(mesh_net_receive(pdu, sizeof(pdu), &received) == 0);
+    assert(mesh_net_receive(pdu, sizeof(pdu), &received, now_ms) == 0);
 }
 
 static void test_health(void) {
@@ -1133,7 +1134,7 @@ static void test_heartbeat_configuration(void) {
     assert(saved_network.heartbeat.dst == 0xc001 && saved_network.heartbeat.features == 0);
     assert(mesh_network.heartbeat.remaining == 4);
     mesh_net_message net;
-    mesh_net_poll(&net); assert(mesh_network.heartbeat.remaining == 3);
+    mesh_net_poll(&net, now_ms); assert(mesh_network.heartbeat.remaining == 3);
     assert(mesh_get_heartbeat_pub(0x1201) && config_request() && last_params[3] == 3);
     mesh_network.heartbeat.remaining = 2;
     assert(mesh_get_heartbeat_pub(0x1201) && config_request() && last_params[3] == 2);

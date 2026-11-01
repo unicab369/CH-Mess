@@ -78,18 +78,18 @@ static void test_heartbeat(void) {
     mesh_network.heartbeat.remaining = 2;
     int count = sent_count;
     queue_fails = 1;
-    mesh_net_poll(&message); assert(sent_count == count && mesh_network.heartbeat.remaining == 2);
+    mesh_net_poll(&message, current_ms); assert(sent_count == count && mesh_network.heartbeat.remaining == 2);
     queue_fails = 0;
-    mesh_net_poll(&message); assert(sent_count == count + 1 && mesh_network.heartbeat.remaining == 1);
+    mesh_net_poll(&message, current_ms); assert(sent_count == count + 1 && mesh_network.heartbeat.remaining == 1);
     assert(sent_len == 23 && sent[1] == MESH_NETWORK_AD_TYPE);
     uint8_t packet[31]; size_t packet_len = sent_len;
     memcpy(packet, sent, packet_len);
     current_ms = 999;
-    mesh_net_poll(&message); assert(sent_count == count + 1);
+    mesh_net_poll(&message, current_ms); assert(sent_count == count + 1);
     current_ms = 1000;
-    mesh_net_poll(&message); assert(sent_count == count + 2 && mesh_network.heartbeat.remaining == 0);
+    mesh_net_poll(&message, current_ms); assert(sent_count == count + 2 && mesh_network.heartbeat.remaining == 0);
     current_ms = 3000;
-    mesh_net_poll(&message); assert(sent_count == count + 2);
+    mesh_net_poll(&message, current_ms); assert(sent_count == count + 2);
 
     state.unicast_address = 0x1202;
     memset(&state.heartbeat, 0, sizeof(state.heartbeat));
@@ -123,11 +123,11 @@ static void test_heartbeat(void) {
         .ttl = 1, .period_log = 0x11, .count_log = 0xff};
     assert(mesh_network_init(&state, current_ms));
     count = sent_count;
-    mesh_net_poll(&message); assert(sent_count == count + 1 && mesh_network.heartbeat.remaining == 0xffff);
+    mesh_net_poll(&message, current_ms); assert(sent_count == count + 1 && mesh_network.heartbeat.remaining == 0xffff);
     current_ms += 65535999;
-    mesh_net_poll(&message); assert(sent_count == count + 1);
+    mesh_net_poll(&message, current_ms); assert(sent_count == count + 1);
     current_ms++;
-    mesh_net_poll(&message); assert(sent_count == count + 2 && mesh_network.heartbeat.remaining == 0xffff);
+    mesh_net_poll(&message, current_ms); assert(sent_count == count + 2 && mesh_network.heartbeat.remaining == 0xffff);
     state.heartbeat.dst = 0x8000; assert(!mesh_network_init(&state, current_ms));
     state.heartbeat.dst = 0xc001; state.heartbeat.period_log = 0x12; assert(!mesh_network_init(&state, current_ms));
     state.heartbeat.period_log = 1; state.heartbeat.count_log = 0x12; assert(!mesh_network_init(&state, current_ms));
@@ -142,24 +142,24 @@ static void test_beacon_schedule(void) {
     assert(mesh_network_init(&state, current_ms));
     mesh_net_message message;
     int count = sent_count;
-    current_ms = 9999; assert(!mesh_net_poll(&message) && sent_count == count);
-    current_ms = 10000; assert(!mesh_net_poll(&message) && sent_count == count + 1);
+    current_ms = 9999; assert(!mesh_net_poll(&message, current_ms) && sent_count == count);
+    current_ms = 10000; assert(!mesh_net_poll(&message, current_ms) && sent_count == count + 1);
     assert(sent_len == 24 && sent[1] == MESH_NETWORK_BEACON_AD_TYPE && sent[2] == 1);
-    assert(!mesh_net_poll(&message) && sent_count == count + 1);
-    current_ms = 20000; assert(!mesh_net_poll(&message) && sent_count == count + 2);
+    assert(!mesh_net_poll(&message, current_ms) && sent_count == count + 1);
+    current_ms = 20000; assert(!mesh_net_poll(&message, current_ms) && sent_count == count + 2);
     uint8_t beacon[24]; memcpy(beacon, sent, sizeof(beacon));
     current_ms = 20001;
     assert(mesh_handle_net_beacon(beacon, sizeof(beacon), current_ms) == 1);
     assert(mesh_handle_net_beacon(beacon, sizeof(beacon), current_ms) == 1);
-    current_ms = 30000; assert(!mesh_net_poll(&message) && sent_count == count + 2);
-    current_ms = 39999; assert(!mesh_net_poll(&message) && sent_count == count + 2);
-    current_ms = 40000; assert(!mesh_net_poll(&message) && sent_count == count + 3);
+    current_ms = 30000; assert(!mesh_net_poll(&message, current_ms) && sent_count == count + 2);
+    current_ms = 39999; assert(!mesh_net_poll(&message, current_ms) && sent_count == count + 2);
+    current_ms = 40000; assert(!mesh_net_poll(&message, current_ms) && sent_count == count + 3);
 
     queue_fails = 1;
-    current_ms = 50000; assert(!mesh_net_poll(&message) && sent_count == count + 3);
+    current_ms = 50000; assert(!mesh_net_poll(&message, current_ms) && sent_count == count + 3);
     assert(mesh_network.beacon.last_sent_ms == 40000);
     queue_fails = 0;
-    current_ms = 50001; assert(!mesh_net_poll(&message) && sent_count == count + 4);
+    current_ms = 50001; assert(!mesh_net_poll(&message, current_ms) && sent_count == count + 4);
     beacon[23] ^= 1;
     assert(!mesh_handle_net_beacon(beacon, sizeof(beacon), current_ms));
     assert(mesh_network.beacon.observed[0] == 0 && mesh_network.beacon.observed[1] == 0);
@@ -168,26 +168,26 @@ static void test_beacon_schedule(void) {
     // Manual sends also postpone automatic sends by the minimum interval.
     current_ms = 59999; assert(mesh_net_beacon_queue(current_ms));
     count = sent_count;
-    current_ms = 60001; assert(!mesh_net_poll(&message) && sent_count == count);
-    current_ms = 69999; assert(!mesh_net_poll(&message) && sent_count == count + 1);
+    current_ms = 60001; assert(!mesh_net_poll(&message, current_ms) && sent_count == count);
+    current_ms = 69999; assert(!mesh_net_poll(&message, current_ms) && sent_count == count + 1);
     state = mesh_network.state; state.beacon = 0;
     assert(mesh_commit(&state));
     count = sent_count;
     assert(!mesh_net_beacon_queue(current_ms));
-    current_ms += 1000000; assert(!mesh_net_poll(&message) && sent_count == count);
+    current_ms += 1000000; assert(!mesh_net_poll(&message, current_ms) && sent_count == count);
     assert(mesh_handle_net_beacon(beacon, sizeof(beacon), current_ms) == 1); // Disabled TX still authenticates RX.
     state.beacon = 1; assert(mesh_commit(&state));
     count = sent_count;
-    assert(!mesh_net_poll(&message) && sent_count == count);
-    current_ms += 10000; assert(!mesh_net_poll(&message) && sent_count == count);
-    current_ms += 10000; assert(!mesh_net_poll(&message) && sent_count == count + 1);
+    assert(!mesh_net_poll(&message, current_ms) && sent_count == count);
+    current_ms += 10000; assert(!mesh_net_poll(&message, current_ms) && sent_count == count);
+    current_ms += 10000; assert(!mesh_net_poll(&message, current_ms) && sent_count == count + 1);
 
     // Timers use unsigned elapsed time across the millisecond counter wrap.
     current_ms = UINT32_MAX - 5000;
     assert(mesh_network_init(&state, current_ms));
     count = sent_count;
-    current_ms = 4998; assert(!mesh_net_poll(&message) && sent_count == count);
-    current_ms = 4999; assert(!mesh_net_poll(&message) && sent_count == count + 1);
+    current_ms = 4998; assert(!mesh_net_poll(&message, current_ms) && sent_count == count);
+    current_ms = 4999; assert(!mesh_net_poll(&message, current_ms) && sent_count == count + 1);
     state.beacon = 2;
     assert(!mesh_network_init(&state, current_ms));
 }

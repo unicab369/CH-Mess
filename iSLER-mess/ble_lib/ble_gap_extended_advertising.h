@@ -2575,7 +2575,7 @@ static void gap_ext_aux_primary_start(
                   GAP_PHY_1M, GAP_PHY_1M, 0x555555);
 }
 
-static int gap_ext_send_due(uint32_t now, uint32_t now_us) {
+static int gap_ext_send_due(uint32_t now_ms, uint32_t now_us) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_ext_scan.pawr_resp_tx_pending) return 1;
     if (gap_periodic_train.failed) {
@@ -2626,7 +2626,7 @@ static int gap_ext_send_due(uint32_t now, uint32_t now_us) {
         if (!gap_ext_chain.remaining) {
             uint8_t set_id = gap_ext_chain.set_id;
             gap_ext_chain.phase = GAP_EXT_CHAIN_IDLE;
-            gap_ext_adv_event_reschedule(set_id, now);
+            gap_ext_adv_event_reschedule(set_id, now_ms);
             return 1;
         }
 
@@ -2670,7 +2670,7 @@ static int gap_ext_send_due(uint32_t now, uint32_t now_us) {
             gap_ext_aux_exchange.waiting = 0;
             gap_ext_aux.phase = GAP_EXT_AUX_IDLE;
         }
-        gap_ext_adv_event_reschedule(gap_ext_aux.set_id, now);
+        gap_ext_adv_event_reschedule(gap_ext_aux.set_id, now_ms);
         return 1;
     }
 #if GAP_PERIPHERAL_SUPPORT
@@ -2697,7 +2697,7 @@ static int gap_ext_send_due(uint32_t now, uint32_t now_us) {
             gap_scanner.generation++;
             return 2;
         }
-        gap_ext_adv_event_reschedule(gap_ext_aux.set_id, now);
+        gap_ext_adv_event_reschedule(gap_ext_aux.set_id, now_ms);
         return 1;
     }
 #endif
@@ -2856,7 +2856,7 @@ static int gap_ext_send_due(uint32_t now, uint32_t now_us) {
                     return 1;
 
                 if (gap_sync_conn_overlap(set->periodic.next_us,
-                        set->periodic.next_us + event_us + 400, now)
+                        set->periodic.next_us + event_us + 400, now_ms)
                 ) {
                     set->periodic.event_counter++;
                     set->periodic.next_us += interval_us;
@@ -2894,7 +2894,7 @@ static int gap_ext_send_due(uint32_t now, uint32_t now_us) {
                                                   (set->periodic.did & 0x0fff));
             gap_periodic_train.channel = gap_sync_channel(&set->periodic.params,
                                                           set->periodic.event_counter);
-            // Reserve the event now; later polls finish its PDU chain.
+            // Reserve the event now_ms; later polls finish its PDU chain.
             int transmitted = gap_periodic_tx_arm(set->periodic.next_us, 1, now_us);
             set->periodic.event_counter++;
             set->periodic.next_us += interval_us;
@@ -2917,7 +2917,7 @@ static int gap_ext_send_due(uint32_t now, uint32_t now_us) {
             uint8_t set_id = (gap_ext_adv_next_set + offset) % GAP_EXT_ADV_SET_COUNT;
 
             if (gap_ext_adv[set_id].enabled &&
-                (int32_t)(now - gap_ext_adv[set_id].next_event_ms) >= 0
+                (int32_t)(now_ms - gap_ext_adv[set_id].next_event_ms) >= 0
             ) {
                 send_extended = set_id;
                 break;
@@ -3131,7 +3131,7 @@ static int gap_ext_send_due(uint32_t now, uint32_t now_us) {
         }
     }
 
-    gap_ext_adv_event_reschedule((uint8_t)send_extended, now);
+    gap_ext_adv_event_reschedule((uint8_t)send_extended, now_ms);
     return 1;
 }
 #endif // BLE_GAP_EXTENSION_H

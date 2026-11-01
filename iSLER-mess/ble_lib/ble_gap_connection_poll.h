@@ -2057,7 +2057,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
 // =============================================================================
 int gap_send_due(
     const uint8_t *fallback_ad, uint8_t fallback_len,
-    uint32_t now, uint32_t *sent_at, uint8_t *jitter
+    uint32_t now_ms, uint32_t *sent_at, uint8_t *jitter
 ) {
     uint32_t now_us = GET_MICROS();
     if (gap_poll.slot_valid) return 0;
@@ -2177,13 +2177,13 @@ int gap_send_due(
 // Keep this after the legacy advertising block: finish active legacy advertising
 // before privacy rotation or starting another procedure on the shared radio.
 #if GAP_PRIVACY_SUPPORT
-    gap_privacy_poll(now);
+    gap_privacy_poll(now_ms);
 #endif // GAP_PRIVACY_SUPPORT
 
 // Keep extended advertising after GAP_PRIVACY_SUPPORT because address rotation
 // may stop or reconfigure the shared radio.
 #if GAP_EXT_ADV_SUPPORT
-    int result = gap_ext_send_due(now, GET_MICROS());
+    int result = gap_ext_send_due(now_ms, now_us);
     // Result: 0 = none due, 1 = handled, -1 = failure, 2 = retry.
     // A handled extended event does not mean the fallback packet was sent.
     if (result == 1) return 0;
@@ -2200,7 +2200,7 @@ int gap_send_due(
         uint8_t set_id = (gap_adv_next_set + offset) % GAP_LEGACY_ADV_SET_COUNT;
 
         if (gap_adv_sets[set_id].enabled &&
-            (int32_t)(now - gap_adv_sets[set_id].next_event_ms) >= 0
+            (int32_t)(now_ms - gap_adv_sets[set_id].next_event_ms) >= 0
         ) {
             selected_legacy_set = set_id;
             break;
@@ -2282,7 +2282,7 @@ int gap_send_due(
 #else
     (void)fallback_ad;
     (void)fallback_len;
-    (void)now;
+    (void)now_ms;
     (void)sent_at;
     (void)jitter;
     return 0;

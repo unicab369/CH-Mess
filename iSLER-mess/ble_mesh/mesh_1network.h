@@ -1382,7 +1382,7 @@ static inline int mesh_net_poll(mesh_net_message *message, uint32_t now_ms) {
                                pub->ttl, control, sizeof(control))) {
             if (mesh_network.heartbeat.remaining != 0xffff)
                 mesh_network.heartbeat.remaining--;
-            mesh_network.heartbeat.publish_at_ms = millis + (1u << (pub->period_log - 1)) * 1000u;
+            mesh_network.heartbeat.publish_at_ms = now_ms + (1u << (pub->period_log - 1)) * 1000u;
         }
     }
 
