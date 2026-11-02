@@ -1852,7 +1852,7 @@ static void test_pawr_observer_response(void) {
     fake_radio_tick_autoincrement = 0;
     captured_extended_count = 0;
     gap_hw_scan_poll(GET_MICROS(), now_ms); // Calculate the selected subevent receive window.
-    assert(sync->window_active &&
+    assert(sync->window_state != GAP_SYNC_WINDOW_NONE &&
            (int32_t)(sync->end_us - sync->start_us) >= 0);
     fake_radio_ticks = sync->start_us;
     assert(fake_radio_ticks >= sync->start_us &&
@@ -1992,7 +1992,7 @@ static void test_periodic_advertising_sync(void) {
     gap_ext_scan.rssi = -35;
     gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
     gap_hw_scan_poll(GET_MICROS(), now_ms);
-    assert(!gap_syncs[0].window_active);
+    assert(gap_syncs[0].window_state == GAP_SYNC_WINDOW_NONE);
 
     gap_ext_fields decoded_sync_info;
     sync_info_pdu[13] = 0x20; // 300 us units are invalid for this short offset.
@@ -2008,7 +2008,7 @@ static void test_periodic_advertising_sync(void) {
     gap_ext_scan.rssi = -35;
     gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
     gap_hw_scan_poll(GET_MICROS(), now_ms);
-    assert(gap_syncs[0].window_active &&
+    assert(gap_syncs[0].window_state != GAP_SYNC_WINDOW_NONE &&
            !gap_syncs[0].established &&
            gap_syncs[0].event_counter == 5 &&
            gap_syncs[0].params.access_address == 0x12345678 &&
@@ -2035,7 +2035,7 @@ static void test_periodic_advertising_sync(void) {
     assert(gap_syncs[0].established &&
            gap_syncs[0].event_counter == 6 &&
            gap_syncs[0].event_data_active &&
-           gap_syncs[0].window_chain);
+           gap_syncs[0].window_state == GAP_SYNC_WINDOW_CHAIN);
     assert(gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_ESTABLISHED &&
            event.slot == slot && event.sid == 6);
@@ -2201,7 +2201,7 @@ static void test_periodic_sync_connection_arbitration(void) {
     conn->link_state.rx_armed = 0;
     gap_poll.slot_valid = 0;
     sync->next_us = (uint32_t)(fake_radio_ticks + 1000);
-    sync->window_active = 0;
+    sync->window_state = GAP_SYNC_WINDOW_NONE;
     conn->link_layer.next_us = fake_radio_ticks + 2200;
     gap_hw_scan_poll(GET_MICROS(), now_ms);
     fake_radio_ticks = sync->start_us;
@@ -3242,7 +3242,7 @@ static void test_periodic_sync_transfer_receive(void) {
            gap_syncs[0].phy == GAP_PHY_1M &&
            gap_syncs[0].event_counter == 5 &&
            gap_syncs[0].widening_ppm == 1500 &&
-           gap_syncs[0].window_active &&
+           gap_syncs[0].window_state != GAP_SYNC_WINDOW_NONE &&
            !memcmp(gap_syncs[0].peer.address, advertiser, 6));
 
     uint64_t first_event = gap_syncs[0].next_us;

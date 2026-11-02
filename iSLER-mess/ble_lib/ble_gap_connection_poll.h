@@ -1437,7 +1437,7 @@ static void gap_conn_poll(uint32_t now_us) {
             gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
 
             if (slot < GAP_PERIODIC_SYNC_COUNT && gap_syncs[slot].used &&
-                gap_syncs[slot].window_active
+                gap_syncs[slot].window_state != GAP_SYNC_WINDOW_NONE
             ) gap_sync_window_missed(slot);
         }
         else if (gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX) {
@@ -1814,7 +1814,8 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
 
         gap_rx_armed = 0;
         gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
-        if (gap_syncs[slot].used && gap_syncs[slot].window_active)
+        if (gap_syncs[slot].used &&
+            gap_syncs[slot].window_state != GAP_SYNC_WINDOW_NONE)
             gap_sync_window_missed(slot);
     }
 
@@ -1837,7 +1838,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
         for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
             if (!gap_syncs[i].used ||
                 !gap_syncs[i].timing_valid ||
-                gap_syncs[i].window_active
+                gap_syncs[i].window_state != GAP_SYNC_WINDOW_NONE
             ) continue;
 
             uint32_t target_us = gap_syncs[i].next_us;
@@ -1851,8 +1852,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
 
             gap_syncs[i].start_us = target_us - widen_us;
             gap_syncs[i].end_us = target_us + 1250 + widen_us;
-            gap_syncs[i].window_active = 1;
-            gap_syncs[i].window_chain = 0;
+            gap_syncs[i].window_state = GAP_SYNC_WINDOW_EVENT;
         }
 
         for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
@@ -1867,7 +1867,8 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
         int sync_slot = -1;
 
         for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
-            if (!gap_syncs[i].used || !gap_syncs[i].window_active)
+            if (!gap_syncs[i].used ||
+                gap_syncs[i].window_state == GAP_SYNC_WINDOW_NONE)
                 continue;
 
             if (sync_slot < 0 || (int32_t)(gap_syncs[i].start_us -
@@ -1902,7 +1903,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
                         uint8_t channel;
                         uint8_t phy = sync->phy;
 
-                        if (sync->window_chain) {
+                        if (sync->window_state == GAP_SYNC_WINDOW_CHAIN) {
                             channel = sync->aux_channel;
                             phy = sync->aux_phy;
                         }

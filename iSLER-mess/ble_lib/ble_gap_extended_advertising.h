@@ -65,26 +65,17 @@ typedef struct {
     uint32_t resp_access_addr;
 } gap_pawr_timing;
 
-typedef struct {
-    // Synchronization identity and radio parameters.
-    uint8_t used, established, sid;
-    gap_address peer;
-    // Once established, phy comes from a configured RX PHY or validated PAST.
-    uint8_t phy;
-    gap_periodic_params params;
+enum {
+    GAP_SYNC_WINDOW_NONE,
+    GAP_SYNC_WINDOW_EVENT,
+    GAP_SYNC_WINDOW_CHAIN
+};
 
-    // Event counters, receive windows, and clock tracking.
-    uint8_t missed_events, window_active, window_chain, timing_valid;
-    uint8_t aux_channel, aux_phy;
-    uint16_t event_counter, last_event_counter, widening_ppm;
+typedef struct {
     uint32_t anchor_us, next_us;
     uint32_t start_us, end_us;
     uint32_t timeout_ms, last_event_ms;
-
-    // Most recently received periodic event data.
-    uint8_t event_data_active;
-    uint16_t did, data_len;
-    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+    gap_periodic_params params;
 
     // PAwR configuration and queued response state.
     struct {
@@ -93,6 +84,18 @@ typedef struct {
         uint16_t response_data_len;
         uint8_t response_data[GAP_PAWR_RESPONSE_DATA_MAX];
     } pawr;
+
+    gap_address peer;
+    uint16_t event_counter, last_event_counter, widening_ppm;
+    uint16_t did, data_len;
+    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+
+    // Synchronization identity, receive windows, and event state.
+    uint8_t used, established, sid;
+    uint8_t phy;
+    uint8_t missed_events, window_state, timing_valid;
+    uint8_t aux_channel, aux_phy;
+    uint8_t event_data_active;
 } gap_sync_context;
 
 static gap_sync_context gap_syncs[GAP_PERIODIC_SYNC_COUNT];
@@ -1220,7 +1223,7 @@ int gap_sync_pawr_respond(
     if (len) memcpy(sync->pawr.response_data, data, len);
     sync->pawr.pending = 1;
 
-    if (!sync->window_active)
+    if (sync->window_state == GAP_SYNC_WINDOW_NONE)
         sync->next_us = sync->anchor_us + (uint32_t)sync->params.interval * 1250 +
                             (uint32_t)subevent * sync->pawr.timing.subevent_interval * 1250;
     sync->timing_valid = 1;
@@ -1425,8 +1428,7 @@ static int gap_sync_info_accept(
     sync->end_us = window_end_us;
     sync->timing_valid = 1;
     sync->missed_events = skipped;
-    sync->window_active = 1;
-    sync->window_chain = 0;
+    sync->window_state = GAP_SYNC_WINDOW_EVENT;
     return 1;
 }
 
@@ -2047,7 +2049,7 @@ static void gap_ext_scan_process(uint32_t now_ms) {
 
         if (slot >= 0 && slot < GAP_PERIODIC_SYNC_COUNT) {
             sync = &gap_syncs[slot];
-            sync->window_active = 0;
+            sync->window_state = GAP_SYNC_WINDOW_NONE;
         }
     }
     else if (kind == GAP_EXT_PDU_AUX) {
@@ -2218,8 +2220,7 @@ static void gap_ext_scan_process(uint32_t now_ms) {
 
                 sync->aux_channel = fields.aux_channel;
                 sync->aux_phy = aux_phy;
-                sync->window_active = 1;
-                sync->window_chain = 1;
+                sync->window_state = GAP_SYNC_WINDOW_CHAIN;
                 sync->end_us = received_us + after_packet_us + unit_us + widen_us;
                 sync->start_us = received_us + subtract_clamp0_32(after_packet_us, widen_us);
             }
@@ -2413,7 +2414,7 @@ static int gap_past_receive(
     sync->start_us = (uint32_t)(target_us - (uint32_t)widen_us);
     sync->end_us = (uint32_t)window_end_us;
     sync->timing_valid = 1;
-    sync->window_active = 1;
+    sync->window_state = GAP_SYNC_WINDOW_EVENT;
     sync->timeout_ms = gap_past.timeout_ms;
     sync->last_event_ms = GET_MILLIS();
     return 1;
@@ -2516,7 +2517,7 @@ static void gap_sync_window_missed(uint8_t slot) {
     gap_sync_context *sync = &gap_syncs[slot];
     if (!sync->used) return;
 
-    if (sync->window_chain) {
+    if (sync->window_state == GAP_SYNC_WINDOW_CHAIN) {
         sync->event_data_active = 0;
         sync->data_len = 0;
     }
@@ -2536,8 +2537,7 @@ static void gap_sync_window_missed(uint8_t slot) {
             return;
         }
     }
-    sync->window_active = 0;
-    sync->window_chain = 0;
+    sync->window_state = GAP_SYNC_WINDOW_NONE;
 }
 
 // Check whether a radio window intersects a guarded connection event.
