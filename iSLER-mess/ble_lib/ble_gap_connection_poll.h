@@ -1946,7 +1946,8 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
 
 #endif // GAP_EXT_ADV_SUPPORT
 
-    // Keep after extended-scan processing so a buffered packet is handled first.
+    //! Keep after GAP_EXT_ADV_SUPPORT processing; it may need the active address
+    // to handle a buffered packet before this response timeout clears it.
     if (gap_scan.active_address.type != GAP_ADDR_NONE) {
         if ((int32_t)(now_ms - gap_scan.resp_deadline_ms) < 0)
             return;
@@ -1973,38 +1974,32 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
 
     uint32_t elapsed = now_ms - gap_scan.interval_start_ms;
 
-    if (elapsed >= interval_ms) {
+    uint8_t interval_elapsed = elapsed >= interval_ms;
+    if (interval_elapsed) {
         uint32_t intervals = elapsed / interval_ms;
         gap_scan.interval_start_ms += intervals * interval_ms;
-        gap_scan.channel_index = (gap_scan.channel_index + intervals % 3) % 3;
+        gap_scan.channel_index = (gap_scan.channel_index + intervals) % 3;
         elapsed -= intervals * interval_ms;
-
-        if (gap_rx_armed) {
-            RADIO_STOP();
-            gap_rx_armed = 0;
-        }
     }
 
-    if (elapsed >= window_ms) {
-        if (gap_rx_armed) {
-            RADIO_STOP();
-            gap_rx_armed = 0;
-        }
-
-        return;
+    uint8_t window_ended = elapsed >= window_ms;
+    if ((interval_elapsed || window_ended) && gap_rx_armed) {
+        RADIO_STOP();
+        gap_rx_armed = 0;
     }
 
-    if (!gap_rx_armed) {
-        uint8_t channel = 37 + gap_scan.channel_index;
+    if (window_ended) return;
+    if (gap_rx_armed) return;
 
-        if (gap_scanner.active) {
-            RADIO_LINK_RX(BLE_ADV_ACCESS_ADDRESS, channel, GAP_PHY_1M, 0x555555);
-        }
-        else {
-            RADIO_SCAN_RX(channel);
-        }
-        gap_rx_armed = 1;
+    uint8_t channel = 37 + gap_scan.channel_index;
+
+    if (gap_scanner.active) {
+        RADIO_LINK_RX(BLE_ADV_ACCESS_ADDRESS, channel, GAP_PHY_1M, 0x555555);
     }
+    else {
+        RADIO_SCAN_RX(channel);
+    }
+    gap_rx_armed = 1;
 }
 
 // =============================================================================
