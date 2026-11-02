@@ -611,6 +611,8 @@ void gap_scan_stop(void) {
     gap_scanner.scanning = 0;
     gap_scanner.active = 0;
     gap_scanner.generation++;
+    gap_scan.active_address.type = GAP_ADDR_NONE;
+    gap_scan.pending_adv.ready = 0;
 }
 
 // Application facing

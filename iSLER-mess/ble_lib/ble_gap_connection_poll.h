@@ -1913,7 +1913,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
                         }
                         else {
                             channel = gap_sync_channel(&sync->params, sync->event_counter ^
-                                        (sync->pawr.timing.has_timing ? sync->pawr.subevent : 0));
+                                        (sync->pawr_timing.subevents ? sync->pawr.subevent : 0));
                         }
                         gap_ext_scan.rx_phy = phy;
 
