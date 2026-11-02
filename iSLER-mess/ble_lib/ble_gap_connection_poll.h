@@ -2027,7 +2027,7 @@ int gap_send_due(
             adv_evt.conn_req_ready = 0;
 
             gap_conn_context *conn = gap_conn_accept(adv_evt.conn_req_frame,
-                                    adv_evt.conn_req_us, 1250, 1250);
+                                                    adv_evt.conn_req_us, 1250, 1250);
 
             if (conn) {
                 // Select the accepted link for the immediate first-event poll.
@@ -2053,9 +2053,11 @@ int gap_send_due(
         }
 #endif // GAP_PERIPHERAL_SUPPORT
 
+        uint8_t before_deadline = (int32_t)(now_us - adv_evt.deadline_us) < 0;
+
         if (adv_evt.phase == GAP_LEGACY_ADV_TX) {
             if (!RADIO_TX_DONE()) {
-                if ((int32_t)(now_us - adv_evt.deadline_us) < 0)
+                if (before_deadline)
                     return 0;
                 RADIO_STOP();
                 adv_evt.rx_event = 0;
@@ -2070,23 +2072,29 @@ int gap_send_due(
             } else {
                 adv_evt.phase = GAP_LEGACY_ADV_RX;
                 adv_evt.deadline_us = now_us + 800;
+                before_deadline = 1;
             }
         }
 
+        // Check separately: TX can transition to RX here, and RX can persist
+        // across polls while waiting for a scan request or its deadline.
         if (adv_evt.phase == GAP_LEGACY_ADV_RX) {
             if (adv_evt.scan_resp_started) {
                 adv_evt.phase = GAP_LEGACY_ADV_SCAN_RESPONSE_TX;
                 adv_evt.deadline_us = now_us + 1000;
+                before_deadline = 1;
             }
             else if (gap_rx_packet.ready)
                 adv_evt.channel = 39;
-            else if ((int32_t)(now_us - adv_evt.deadline_us) < 0)
+            else if (before_deadline)
                 return 0;
         }
 
+        // Check separately: this TX phase can persist across polls after
+        // scan_resp_started has already been handled.
         if (adv_evt.phase == GAP_LEGACY_ADV_SCAN_RESPONSE_TX) {
             if (!RADIO_TX_DONE()) {
-                if ((int32_t)(now_us - adv_evt.deadline_us) < 0)
+                if (before_deadline)
                     return 0;
                 RADIO_STOP();
                 adv_evt.rx_event = adv_evt.phase = 0;
