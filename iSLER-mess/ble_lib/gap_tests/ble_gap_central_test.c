@@ -1721,7 +1721,7 @@ static void test_pawr_connection_accept(void) {
     gap_privacy.connection_filter = 0;
     gap_scanner.scanning = 0;
     gap_scanner.active = 0;
-    sync->used = sync->established = 1;
+    sync->sync_state = GAP_SYNC_ESTABLISHED;
     sync->peer.type = 0;
     memcpy(sync->peer.address, advertiser, sizeof(advertiser));
     sync->sid = 4;
@@ -1775,7 +1775,8 @@ static void test_pawr_connection_accept(void) {
            gap_ext_scan.scan_state == GAP_EXT_SCAN_RX);
     gap_ext_scan_process(now_ms);
 
-    assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !conn->is_central && sync->used &&
+    assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !conn->is_central &&
+           sync->sync_state == GAP_SYNC_ESTABLISHED &&
            !gap_scanner.scanning && captured_extended_count == 1);
     const uint8_t *response = captured_extended_pdus[0];
     assert((response[0] & 0x0f) == 0x07 && response[1] == 14 &&
@@ -1817,7 +1818,7 @@ static void test_pawr_observer_response(void) {
     memset(gap_syncs, 0, sizeof(gap_syncs));
     gap_sync_reports.head = gap_sync_reports.count = 0;
     memset(sync, 0, sizeof(*sync));
-    sync->used = sync->established = 1;
+    sync->sync_state = GAP_SYNC_ESTABLISHED;
     sync->sid = 6;
     sync->params.interval = 24;
     sync->event_counter = 12;
@@ -2009,7 +2010,7 @@ static void test_periodic_advertising_sync(void) {
     gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
     gap_hw_scan_poll(GET_MICROS(), now_ms);
     assert(gap_syncs[0].window_state != GAP_SYNC_WINDOW_NONE &&
-           !gap_syncs[0].established &&
+           gap_syncs[0].sync_state != GAP_SYNC_ESTABLISHED &&
            gap_syncs[0].event_counter == 5 &&
            gap_syncs[0].params.access_address == 0x12345678 &&
            gap_syncs[0].pawr.timing.has_timing &&
@@ -2032,7 +2033,7 @@ static void test_periodic_advertising_sync(void) {
     memcpy(rx_frame, sync_ind, sizeof(sync_ind));
     gap_hw_received();
     gap_hw_scan_poll(GET_MICROS(), now_ms);
-    assert(gap_syncs[0].established &&
+    assert(gap_syncs[0].sync_state == GAP_SYNC_ESTABLISHED &&
            gap_syncs[0].event_counter == 6 &&
            gap_syncs[0].event_data_active &&
            gap_syncs[0].window_state == GAP_SYNC_WINDOW_CHAIN);
@@ -2058,7 +2059,7 @@ static void test_periodic_advertising_sync(void) {
     assert(gap_sync_stop((uint8_t)slot, 1));
     assert(gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_TERMINATED &&
-           event.slot == slot && !gap_syncs[0].used);
+           event.slot == slot && gap_syncs[0].sync_state == GAP_SYNC_FREE);
     assert(!gap_scanner.scanning);
 
     int pending_slot = gap_sync_start(test_address(advertiser, 0), 7, 1000);
@@ -2081,14 +2082,14 @@ static void test_periodic_advertising_sync(void) {
     gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
     gap_hw_scan_poll(GET_MICROS(), now_ms);
     for (uint8_t missed = 0; missed < 6; missed++) {
-        assert(gap_syncs[0].used);
+        assert(gap_syncs[0].sync_state != GAP_SYNC_FREE);
         fake_radio_ticks = gap_syncs[0].start_us;
         gap_hw_scan_poll(GET_MICROS(), now_ms);
         assert(gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC);
         fake_radio_ticks = gap_syncs[0].end_us + 1;
         gap_hw_scan_poll(GET_MICROS(), now_ms);
     }
-    assert(!gap_syncs[0].used &&
+    assert(gap_syncs[0].sync_state == GAP_SYNC_FREE &&
            gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_LOST &&
            event.slot == missed_slot);
@@ -2169,7 +2170,7 @@ static void test_periodic_sync_connection_arbitration(void) {
     conn->link_layer.next_us = fake_radio_ticks + 20000;
 
     gap_sync_context *sync = &gap_syncs[0];
-    sync->used = sync->established = 1;
+    sync->sync_state = GAP_SYNC_ESTABLISHED;
     sync->params.interval = 8;
     sync->event_counter = 3;
     sync->timeout_ms = 10000;
@@ -3236,8 +3237,8 @@ static void test_periodic_sync_transfer_receive(void) {
     conn->link_state.rx_armed = 1;
     gap_hw_received();
     memcpy(valid_transfer, rx_frame, sizeof(valid_transfer));
-    assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_syncs[0].used &&
-           !gap_syncs[0].established &&
+    assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
+           gap_syncs[0].sync_state == GAP_SYNC_PENDING &&
            gap_syncs[0].sid == 6 &&
            gap_syncs[0].phy == GAP_PHY_1M &&
            gap_syncs[0].event_counter == 5 &&
@@ -3255,7 +3256,7 @@ static void test_periodic_sync_transfer_receive(void) {
     gap_ext_scan.rssi = -40;
     gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
     gap_ext_scan_process(now_ms);
-    assert(gap_syncs[0].established);
+    assert(gap_syncs[0].sync_state == GAP_SYNC_ESTABLISHED);
     assert(gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_ESTABLISHED &&
            event.slot == 0 && event.sid == 6);
@@ -3295,13 +3296,15 @@ static void test_periodic_sync_transfer_receive(void) {
     rx_frame[28] = 3; // Reserved periodic PHY encoding.
     conn->link_state.rx_armed = 1;
     gap_hw_received();
-    assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !gap_syncs[0].used);
+    assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
+           gap_syncs[0].sync_state == GAP_SYNC_FREE);
     rx_frame[0] = 3 | (conn->link_layer.expected_rx_sn << 3) |
         ((conn->link_layer.tx_sn ^ 1) << 2);
     rx_frame[28] = 1;
     conn->link_state.rx_armed = 1;
     gap_hw_received();
-    assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !gap_syncs[0].used);
+    assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
+           gap_syncs[0].sync_state == GAP_SYNC_FREE);
 
     // An accepted transfer that never receives its first PA event times out.
     assert(gap_past_enable(1, 100));
@@ -3315,10 +3318,10 @@ static void test_periodic_sync_transfer_receive(void) {
     rx_frame[36] = (uint8_t)(timeout_event >> 8);
     conn->link_state.rx_armed = 1;
     gap_hw_received();
-    assert(gap_syncs[0].used && !gap_syncs[0].established);
+    assert(gap_syncs[0].sync_state == GAP_SYNC_PENDING);
     now_ms += 100;
     gap_hw_scan_poll(GET_MICROS(), now_ms);
-    assert(!gap_syncs[0].used &&
+    assert(gap_syncs[0].sync_state == GAP_SYNC_FREE &&
            gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_LOST);
     gap_conn_end(&gap_conn_ctx[gap_conn_slot]);

@@ -635,7 +635,7 @@ void __attribute__((noinline)) iSLER_Rx_Received_Cb(void) {
                 ) {
                     uint8_t slot = conn->sync_transfer_slot;
 
-                    if (slot < GAP_PERIODIC_SYNC_COUNT && gap_syncs[slot].used) {
+                    if (slot < GAP_PERIODIC_SYNC_COUNT && gap_syncs[slot].sync_state != GAP_SYNC_FREE) {
                         gap_past_encode(conn->tx_frame, conn->sync_transfer_id,
                                         (uint8_t)slot, conn_anchor_us,
                                         conn->link_layer.event_counter);
@@ -1436,7 +1436,8 @@ static void gap_conn_poll(uint32_t now_us) {
             uint8_t slot = gap_ext_scan.slot;
             gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
 
-            if (slot < GAP_PERIODIC_SYNC_COUNT && gap_syncs[slot].used &&
+            if (slot < GAP_PERIODIC_SYNC_COUNT &&
+                gap_syncs[slot].sync_state != GAP_SYNC_FREE &&
                 gap_syncs[slot].window_state != GAP_SYNC_WINDOW_NONE
             ) gap_sync_window_missed(slot);
         }
@@ -1757,7 +1758,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
 
 #if GAP_EXT_ADV_SUPPORT
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
-        if (!gap_syncs[i].used ||
+        if (gap_syncs[i].sync_state == GAP_SYNC_FREE ||
             (uint32_t)(now_ms - gap_syncs[i].last_event_ms) < gap_syncs[i].timeout_ms
         ) continue;
 
@@ -1814,7 +1815,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
 
         gap_rx_armed = 0;
         gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
-        if (gap_syncs[slot].used &&
+        if (gap_syncs[slot].sync_state != GAP_SYNC_FREE &&
             gap_syncs[slot].window_state != GAP_SYNC_WINDOW_NONE)
             gap_sync_window_missed(slot);
     }
@@ -1836,7 +1837,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
         int slot = -1;
 
         for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
-            if (!gap_syncs[i].used ||
+            if (gap_syncs[i].sync_state == GAP_SYNC_FREE ||
                 !gap_syncs[i].timing_valid ||
                 gap_syncs[i].window_state != GAP_SYNC_WINDOW_NONE
             ) continue;
@@ -1867,7 +1868,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
         int sync_slot = -1;
 
         for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
-            if (!gap_syncs[i].used ||
+            if (gap_syncs[i].sync_state == GAP_SYNC_FREE ||
                 gap_syncs[i].window_state == GAP_SYNC_WINDOW_NONE)
                 continue;
 

@@ -71,6 +71,12 @@ enum {
     GAP_SYNC_WINDOW_CHAIN
 };
 
+enum {
+    GAP_SYNC_FREE,
+    GAP_SYNC_PENDING,
+    GAP_SYNC_ESTABLISHED
+};
+
 typedef struct {
     uint32_t anchor_us, next_us;
     uint32_t start_us, end_us;
@@ -91,7 +97,7 @@ typedef struct {
     uint8_t data[GAP_EXT_ADV_DATA_MAX];
 
     // Synchronization identity, receive windows, and event state.
-    uint8_t used, established, sid;
+    uint8_t sync_state, sid;
     uint8_t phy;
     uint8_t missed_events, window_state, timing_valid;
     uint8_t aux_channel, aux_phy;
@@ -1140,14 +1146,14 @@ int gap_sync_start(const gap_address *peer, uint8_t sid, uint32_t timeout_ms) {
     ) return -1;
 
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
-        if (gap_syncs[i].used &&
+        if (gap_syncs[i].sync_state != GAP_SYNC_FREE &&
             gap_syncs[i].sid == sid &&
             GAP_ADDRESS_EQUAL(gap_syncs[i].peer, *peer)
         ) return -1;
 
     int slot = -1;
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
-        if (!gap_syncs[i].used) {
+        if (gap_syncs[i].sync_state == GAP_SYNC_FREE) {
             slot = i; break;
         }
 
@@ -1160,7 +1166,7 @@ int gap_sync_start(const gap_address *peer, uint8_t sid, uint32_t timeout_ms) {
     }
 
     memset(sync, 0, sizeof(*sync));
-    sync->used = 1;
+    sync->sync_state = GAP_SYNC_PENDING;
     sync->sid = sid;
     sync->peer = *peer;
     sync->timeout_ms = timeout_ms;
@@ -1181,7 +1187,7 @@ int gap_past_enable(uint8_t enabled, uint32_t timeout_ms) {
 static void gap_sync_scan_finish(void) {
     if (!gap_sync_started_scan) return;
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
-        if (gap_syncs[i].used) return;
+        if (gap_syncs[i].sync_state != GAP_SYNC_FREE) return;
 
     gap_sync_started_scan = 0;
     if (gap_scanner.scanning) gap_scan_stop();
@@ -1195,10 +1201,13 @@ int gap_sync_pawr_respond(
     uint8_t slot, uint8_t subevent,
     uint8_t response_slot, const uint8_t *data, size_t len
 ) {
-    if (slot >= GAP_PERIODIC_SYNC_COUNT || !gap_syncs[slot].used) return 0;
+    if (slot >= GAP_PERIODIC_SYNC_COUNT ||
+        gap_syncs[slot].sync_state == GAP_SYNC_FREE
+    ) return 0;
+
     gap_sync_context *sync = &gap_syncs[slot];
 
-    if (!sync->established || !sync->pawr.timing.has_timing ||
+    if (sync->sync_state != GAP_SYNC_ESTABLISHED || !sync->pawr.timing.has_timing ||
         subevent >= sync->pawr.timing.subevents ||
         len > GAP_PAWR_RESPONSE_DATA_MAX ||
         !gap_ext_data_valid(data, len) ||
@@ -1236,8 +1245,7 @@ int gap_sync_pawr_respond(
 // existing response after it is sent once more.
 int gap_sync_pawr_repeat(uint8_t slot, uint8_t enabled) {
     if (enabled > 1 || slot >= GAP_PERIODIC_SYNC_COUNT ||
-        !gap_syncs[slot].used ||
-        !gap_syncs[slot].established ||
+        gap_syncs[slot].sync_state != GAP_SYNC_ESTABLISHED ||
         !gap_syncs[slot].pawr.timing.has_timing
     ) return 0;
 
@@ -1253,8 +1261,7 @@ int gap_sync_pawr_accept(uint8_t slot, uint8_t enabled) {
 #endif
 
     if (enabled > 1 || slot >= GAP_PERIODIC_SYNC_COUNT ||
-        !gap_syncs[slot].used ||
-        !gap_syncs[slot].established ||
+        gap_syncs[slot].sync_state != GAP_SYNC_ESTABLISHED ||
         !gap_syncs[slot].pawr.timing.has_timing ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))
     ) return 0;
@@ -1290,8 +1297,9 @@ int gap_sync_stop(uint8_t slot, uint8_t terminate) {
     if (slot >= GAP_PERIODIC_SYNC_COUNT) return 0;
     // Validate before comparing against established; otherwise an invalid value could match it.
     if (terminate > 1) return 0;
-    if (!gap_syncs[slot].used || gap_syncs[slot].established != terminate)
-        return 0;
+    if (gap_syncs[slot].sync_state == GAP_SYNC_FREE ||
+        (gap_syncs[slot].sync_state == GAP_SYNC_ESTABLISHED) != terminate
+    ) return 0;
 
     gap_sync_event_post((uint8_t)slot, terminate ? GAP_PERIODIC_SYNC_TERMINATED
                                                 : GAP_PERIODIC_SYNC_CANCELLED);
@@ -1369,9 +1377,8 @@ static int gap_sync_info_accept(
 
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
         const gap_sync_context *sync = &gap_syncs[i];
-        if (!sync->used || sync->established ||
-            sync->sid != fields->identity.sid
-        ) continue;
+        if (sync->sync_state != GAP_SYNC_PENDING || sync->sid != fields->identity.sid)
+            continue;
 
         if (GAP_ADDRESS_EQUAL(sync->peer, *peer) ||
             (resolved_peer && GAP_ADDRESS_EQUAL(sync->peer, *resolved_peer))
@@ -2157,7 +2164,8 @@ static void gap_ext_scan_process(uint32_t now_ms) {
         return;
     }
 
-    if (!sync->used || fields.adv_mode != GAP_ADV_MODE_NONCONNECTABLE ||
+    if (sync->sync_state == GAP_SYNC_FREE ||
+        fields.adv_mode != GAP_ADV_MODE_NONCONNECTABLE ||
         (fields.identity.has_adi && fields.identity.sid != sync->sid)
     ) return;
 
@@ -2184,8 +2192,8 @@ static void gap_ext_scan_process(uint32_t now_ms) {
         if (fields.identity.has_adi)
             sync->did = fields.identity.adv_data_info & 0x0fff;
 
-        if (!sync->established) {
-            sync->established = 1;
+        if (sync->sync_state != GAP_SYNC_ESTABLISHED) {
+            sync->sync_state = GAP_SYNC_ESTABLISHED;
             gap_sync_event_post((uint8_t)slot, GAP_PERIODIC_SYNC_ESTABLISHED);
         }
     }
@@ -2386,13 +2394,13 @@ static int gap_past_receive(
 
     int free_slot = -1;
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
-        if (gap_syncs[i].used &&
+        if (gap_syncs[i].sync_state != GAP_SYNC_FREE &&
             gap_syncs[i].sid == fields.identity.sid &&
             gap_syncs[i].peer.type == address_type &&
             !memcmp(gap_syncs[i].peer.address, frame + 29, 6)
         ) return 0;
 
-        if (!gap_syncs[i].used && free_slot < 0)
+        if (gap_syncs[i].sync_state == GAP_SYNC_FREE && free_slot < 0)
             free_slot = i;
     }
 
@@ -2400,7 +2408,7 @@ static int gap_past_receive(
 
     gap_sync_context *sync = &gap_syncs[free_slot];
     memset(sync, 0, sizeof(*sync));
-    sync->used = 1;
+    sync->sync_state = GAP_SYNC_PENDING;
     sync->sid = fields.identity.sid;
     sync->peer.type = address_type;
     memcpy(sync->peer.address, frame + 29, 6);
@@ -2428,7 +2436,7 @@ static int gap_past_encode(
 ) {
     if (!frame || sync_slot >= GAP_PERIODIC_SYNC_COUNT) return 0;
     const gap_sync_context *sync = &gap_syncs[sync_slot];
-    if (!sync->used || !sync->established) return 0;
+    if (sync->sync_state != GAP_SYNC_ESTABLISHED) return 0;
 
     if (!gap_access_address_valid(sync->params.access_address) ||
         sync->params.interval < 6
@@ -2500,8 +2508,7 @@ int gap_periodic_sync_transfer(uint8_t slot, uint16_t id) {
 
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         slot >= GAP_PERIODIC_SYNC_COUNT ||
-        !gap_syncs[slot].used ||
-        !gap_syncs[slot].established ||
+        gap_syncs[slot].sync_state != GAP_SYNC_ESTABLISHED ||
         conn->sync_transfer_queued ||
         conn->data_length.tx_octets < 35 ||
         conn->data_length.tx_time < 392
@@ -2515,7 +2522,7 @@ int gap_periodic_sync_transfer(uint8_t slot, uint16_t id) {
 
 static void gap_sync_window_missed(uint8_t slot) {
     gap_sync_context *sync = &gap_syncs[slot];
-    if (!sync->used) return;
+    if (sync->sync_state == GAP_SYNC_FREE) return;
 
     if (sync->window_state == GAP_SYNC_WINDOW_CHAIN) {
         sync->event_data_active = 0;
@@ -2528,9 +2535,7 @@ static void gap_sync_window_missed(uint8_t slot) {
         if (sync->missed_events < 255)
             sync->missed_events++;
 
-        if (!sync->established &&
-            sync->missed_events >= 6
-        ) {
+        if (sync->sync_state != GAP_SYNC_ESTABLISHED && sync->missed_events >= 6) {
             gap_sync_event_post(slot, GAP_PERIODIC_SYNC_LOST);
             memset(sync, 0, sizeof(*sync));
             gap_sync_scan_finish();
