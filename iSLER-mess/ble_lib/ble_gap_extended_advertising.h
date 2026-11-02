@@ -60,9 +60,9 @@ static const uint16_t gap_sca_ppm[8] = {
 };
 
 typedef struct {
+    uint32_t resp_access_addr;
     uint8_t has_timing, subevents;
     uint8_t subevent_interval, resp_delay, resp_spacing;
-    uint32_t resp_access_addr;
 } gap_pawr_timing;
 
 enum {
@@ -88,7 +88,7 @@ typedef struct {
     struct {
         gap_pawr_timing timing;
         uint8_t subevent, slot, pending, repeat, connect_accept;
-        uint16_t response_data_len;
+        uint16_t resp_len;
         uint8_t response_data[GAP_PAWR_RESPONSE_DATA_MAX];
     } pawr;
 
@@ -1228,7 +1228,7 @@ int gap_sync_pawr_respond(
 
     sync->pawr.subevent = subevent;
     sync->pawr.slot = response_slot;
-    sync->pawr.response_data_len = (uint16_t)len;
+    sync->pawr.resp_len = (uint16_t)len;
 
     if (len) memcpy(sync->pawr.response_data, data, len);
     sync->pawr.pending = 1;
@@ -2283,12 +2283,12 @@ static void gap_ext_scan_process(uint32_t now_ms) {
             uint8_t *response = gap_ext_adv_frame;
             // AUX_SYNC_SUBEVENT_RSP uses the extended advertising PDU format.
             response[0] = ADV_EXT_IND;
-            response[1] = (uint8_t)(2 + sync->pawr.response_data_len);
+            response[1] = (uint8_t)(2 + sync->pawr.resp_len);
             response[2] = 1; // No AdvA or ADI.
             response[3] = 0;
 
-            if (sync->pawr.response_data_len)
-                memcpy(response + 4, sync->pawr.response_data, sync->pawr.response_data_len);
+            if (sync->pawr.resp_len)
+                memcpy(response + 4, sync->pawr.response_data, sync->pawr.resp_len);
             RADIO_TX_CLEAR_DONE();
 
             uint8_t response_channel = gap_sync_channel(&sync->params,
@@ -2303,7 +2303,7 @@ static void gap_ext_scan_process(uint32_t now_ms) {
 
         if (!sync->pawr.repeat) {
             sync->pawr.pending = 0;
-            sync->pawr.response_data_len = 0;
+            sync->pawr.resp_len = 0;
         }
     }
 

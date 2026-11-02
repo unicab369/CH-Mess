@@ -1846,11 +1846,12 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
             uint32_t target_us = gap_syncs[i].next_us;
             uint32_t elapsed_us = target_us - gap_syncs[i].anchor_us;
             uint16_t widening_ppm = gap_syncs[i].widening_ppm;
+
             if (!widening_ppm)
                 widening_ppm = (uint16_t)(gap_sca_ppm[gap_syncs[i].params.clk_accuracy] + 500);
 
             uint32_t widen_us = (uint32_t)(((uint64_t)widening_ppm *
-                elapsed_us + 999999) / 1000000) + 2;
+                                elapsed_us + 999999) / 1000000) + 2;
 
             gap_syncs[i].start_us = target_us - widen_us;
             gap_syncs[i].end_us = target_us + 1250 + widen_us;
