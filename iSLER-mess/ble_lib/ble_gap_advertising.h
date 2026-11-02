@@ -625,6 +625,7 @@ void gap_scan_start(uint8_t active) {
     gap_initiator.mode = mode;
 #endif
     memset(&gap_scan, 0, sizeof(gap_scan));
+    gap_scan.active_address.type = GAP_ADDR_NONE;
     gap_scanner.scanning = 1;
     gap_scanner.active = active;
 }
@@ -650,6 +651,7 @@ int gap_scan_configure(
     gap_scanner.discovery_mode = discovery_mode;
     gap_scanner.filter_duplicates = filter_duplicates;
     memset(&gap_scan, 0, sizeof(gap_scan));
+    gap_scan.active_address.type = GAP_ADDR_NONE;
     gap_scanner.generation++;
     return 1;
 }
@@ -732,6 +734,7 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
         gap_scanner.scanning = 1;
         gap_scanner.active = active_scan;
         memset(&gap_scan, 0, sizeof(gap_scan));
+        gap_scan.active_address.type = GAP_ADDR_NONE;
         gap_scanner.generation++;
     }
 

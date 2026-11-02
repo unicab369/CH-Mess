@@ -1632,9 +1632,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
 #if GAP_CENTRAL_SUPPORT
     if (gap_ext_pawr.connect.phase != GAP_PAWR_CONNECT_IDLE) return;
 #endif
-#endif
-
-#if GAP_EXT_ADV_SUPPORT && GAP_PERIPHERAL_SUPPORT
+#if GAP_PERIPHERAL_SUPPORT
     if (gap_ext_pawr.connect.reply_armed) {
         if (!RADIO_TX_DONE()) {
             if ((int32_t)(now_us - gap_ext_pawr.connect.reply_deadline_us) < 0)
@@ -1645,6 +1643,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
         }
     }
 #endif
+#endif // GAP_EXT_ADV_SUPPORT
 
 #if GAP_CENTRAL_SUPPORT
     if (gap_connect_tx.phase == GAP_CONNECT_TX_DONE) {
@@ -1686,7 +1685,8 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
     }
 #endif
 
-// Newly added
+//! Keep after GAP_CENTRAL_SUPPORT: a pending extended request can return early,
+// so process a completed legacy connection TX before handling it.
 #if GAP_EXT_ADV_SUPPORT
     if (gap_ext_scan.request_phase != GAP_EXT_REQ_NONE) {
         uint8_t phase = gap_ext_scan.request_phase;
@@ -1757,6 +1757,8 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
     }
 #endif // GAP_CENTRAL_SUPPORT
 
+//! Keep before the gap_poll.slot_valid return so sync timeouts still run
+// while a connection event owns the radio.
 #if GAP_EXT_ADV_SUPPORT
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
         if (gap_syncs[i].sync_state == GAP_SYNC_FREE ||
@@ -1840,8 +1842,8 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
 
         for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
             if (gap_syncs[i].sync_state == GAP_SYNC_FREE ||
-                gap_syncs[i].timing_state != GAP_SYNC_READY)
-                continue;
+                gap_syncs[i].timing_state != GAP_SYNC_READY
+            ) continue;
 
             uint32_t target_us = gap_syncs[i].next_us;
             uint32_t elapsed_us = target_us - gap_syncs[i].anchor_us;
@@ -1884,45 +1886,41 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
             gap_sync_context *sync = &gap_syncs[sync_slot];
             uint8_t window_started = (int32_t)(now_us - sync->start_us) >= 0;
             uint8_t window_ended = (int32_t)(sync->end_us - now_us) < 0;
-            uint8_t connected = gap_conn_slot_mask & slot_bit;
 
-            if (window_ended) {
+            if (window_ended ||
+                (window_started && (gap_conn_slot_mask & slot_bit) &&
+                 gap_sync_conn_overlap(sync->start_us, sync->end_us, now_ms, slot_bit))
+            ) {
                 gap_sync_window_missed((uint8_t)sync_slot);
                 sync_slot = -1;
             }
-            else {
-                if (connected && window_started) {
-                    if (gap_sync_conn_overlap(sync->start_us, sync->end_us, now_ms, slot_bit)) {
-                        gap_sync_window_missed((uint8_t)sync_slot);
-                        sync_slot = -1;
+
+            if (sync_slot >= 0 && (slot < 0 ||
+                (int32_t)(sync->start_us - gap_aux_request[slot].start_us) <= 0)
+            ) {
+                slot = -1;
+
+                if (window_started) {
+                    if (gap_rx_armed) RADIO_STOP();
+                    gap_ext_scan.slot = (uint8_t)sync_slot;
+                    uint8_t channel;
+                    uint8_t phy = sync->phy;
+
+                    if (sync->timing_state == GAP_SYNC_CHAIN_WINDOW) {
+                        channel = sync->aux_channel;
+                        phy = sync->aux_phy;
                     }
-                }
-
-                if (sync_slot >= 0 && (slot < 0 ||
-                    (int32_t)(sync->start_us - gap_aux_request[slot].start_us) <= 0)) {
-                    slot = -1;
-                    if (window_started && !window_ended) {
-                        if (gap_rx_armed) RADIO_STOP();
-                        gap_ext_scan.slot = (uint8_t)sync_slot;
-                        uint8_t channel;
-                        uint8_t phy = sync->phy;
-
-                        if (sync->timing_state == GAP_SYNC_CHAIN_WINDOW) {
-                            channel = sync->aux_channel;
-                            phy = sync->aux_phy;
-                        }
-                        else {
-                            channel = gap_sync_channel(&sync->params, sync->event_counter ^
-                                        (sync->pawr_timing.subevents ? sync->pawr.subevent : 0));
-                        }
-                        gap_ext_scan.rx_phy = phy;
-
-                        // Set listener state before RX can trigger its interrupt.
-                        gap_ext_scan.listen_state = GAP_EXT_SCAN_PERIODIC;
-                        RADIO_LINK_RX(sync->params.access_address, channel, phy, sync->params.crc_init);
-                        gap_rx_armed = 1;
-                        return;
+                    else {
+                        channel = gap_sync_channel(&sync->params, sync->event_counter ^
+                                    (sync->pawr_timing.subevents ? sync->pawr.subevent : 0));
                     }
+                    gap_ext_scan.rx_phy = phy;
+
+                    // Set listener state before RX can trigger its interrupt.
+                    gap_ext_scan.listen_state = GAP_EXT_SCAN_PERIODIC;
+                    RADIO_LINK_RX(sync->params.access_address, channel, phy, sync->params.crc_init);
+                    gap_rx_armed = 1;
+                    return;
                 }
             }
         }
