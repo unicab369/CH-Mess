@@ -4993,7 +4993,7 @@ static void test_smp_keypress_notifications(void) {
         SMP_PAIRING_REQUEST, GAP_IO_DISPLAY_ONLY, 0, 0x14, 16, 0, 0
     };
     receive_test_smp(display_request, sizeof(display_request), 0);
-    assert(smp->pairing.keypress_active &&
+    assert((smp->pairing.auth_flags & SMP_AUTH_KEYPRESS) &&
            smp->pairing.response[3] == 0x14 &&
            smp->pairing.passkey_action == SMP_USER_PASSKEY_INPUT);
     conn->queue_state.tx_queued = conn->link_layer.tx_pending = 0;
@@ -5016,7 +5016,7 @@ static void test_smp_keypress_notifications(void) {
         SMP_PAIRING_RESPONSE, GAP_IO_KEYBOARD_ONLY, 0, 0x14, 16, 0, 0
     };
     receive_test_smp(keyboard_response, sizeof(keyboard_response), 0);
-    assert(smp->pairing.keypress_active);
+    assert((smp->pairing.auth_flags & SMP_AUTH_KEYPRESS));
     const uint8_t entered[2] = {
         SMP_KEYPRESS_NOTIFICATION, SMP_KEYPRESS_DIGIT_ENTERED
     };
