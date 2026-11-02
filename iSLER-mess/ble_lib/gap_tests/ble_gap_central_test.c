@@ -4848,7 +4848,7 @@ static void test_passkey_pairing(void) {
                     (local_io == 4 && (peer_io < 2 || (peer_io == 4 && !central)));
                 uint32_t passkey = 19655;
                 assert(gap_passkey(&passkey) ==
-                       (input ? GAP_PASSKEY_INPUT : GAP_PASSKEY_DISPLAY));
+                       (input ? SMP_USER_PASSKEY_INPUT : SMP_USER_PASSKEY_DISPLAY));
                 assert(ui.calls && ui.action == (input ?
                     SMP_USER_PASSKEY_INPUT : SMP_USER_PASSKEY_DISPLAY) &&
                     ui.value == (input ? 0 : passkey));
@@ -4995,7 +4995,7 @@ static void test_smp_keypress_notifications(void) {
     receive_test_smp(display_request, sizeof(display_request), 0);
     assert(smp->pairing.keypress_active &&
            smp->pairing.response[3] == 0x14 &&
-           smp->pairing.passkey_action == GAP_PASSKEY_INPUT);
+           smp->pairing.passkey_action == SMP_USER_PASSKEY_INPUT);
     conn->queue_state.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll_context(&gap_conn_ctx[gap_conn_slot], now_ms); // Complete the Pairing Response transmission.
     assert(gap_passkey_keypress(SMP_KEYPRESS_STARTED));
@@ -5635,7 +5635,7 @@ static void test_secure_connections_passkey(void) {
     };
     receive_test_smp(response, sizeof(response), 0);
     assert(smp->secure.passkey_required &&
-           smp->pairing.passkey_action == GAP_PASSKEY_INPUT);
+           smp->pairing.passkey_action == SMP_USER_PASSKEY_INPUT);
     assert(gap_passkey_reply(123456));
     for (uint8_t fragment = 0; fragment < 3; fragment++) {
         conn->queue_state.tx_queued = conn->link_layer.tx_pending = 0;
@@ -5701,7 +5701,7 @@ static void test_secure_connections_passkey(void) {
     receive_test_smp(request, sizeof(request), 0);
     uint32_t passkey;
     assert(smp->secure.passkey_required &&
-           gap_passkey(&passkey) == GAP_PASSKEY_DISPLAY &&
+           gap_passkey(&passkey) == SMP_USER_PASSKEY_DISPLAY &&
            passkey < 1000000);
     conn->queue_state.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll_context(&gap_conn_ctx[gap_conn_slot], now_ms);
@@ -5774,7 +5774,7 @@ static void test_secure_connections_passkey(void) {
         gap_smp_poll_context(&gap_conn_ctx[gap_conn_slot], now_ms);
     }
     assert(smp->pairing.phase == SMP_PHASE_SC_PASSKEY &&
-           smp->pairing.passkey_action == GAP_PASSKEY_INPUT);
+           smp->pairing.passkey_action == SMP_USER_PASSKEY_INPUT);
     uint8_t input_nonce[17] = {4}, input_confirm[17] = {3};
     for (uint8_t i = 1; i < sizeof(input_nonce); i++) input_nonce[i] = i + 40;
     gap_sc_confirm_value(&conn->smp, central_public, smp->secure.public_key,

@@ -45,9 +45,6 @@ typedef enum {
     GAP_IO_KEYBOARD_DISPLAY = 4
 } gap_io_capability;
 
-#define GAP_PASSKEY_DISPLAY 1
-#define GAP_PASSKEY_INPUT 2
-
 #ifndef SMP_PDU_MAX
 #define SMP_PDU_MAX 65
 #endif
@@ -97,6 +94,7 @@ enum {
 };
 
 enum {
+    SMP_USER_NONE = 0,
     SMP_USER_PASSKEY_DISPLAY = 1,
     SMP_USER_PASSKEY_INPUT = 2,
     SMP_USER_NUMERIC_COMPARISON = 3,
@@ -134,13 +132,6 @@ enum {
     SMP_KEY_DIST_SIGNING = 0x04,
     SMP_KEY_DIST_LINK = 0x08,
     SMP_KEY_DIST_MASK = 0x0f
-};
-
-enum {
-    SMP_MODEL_NONE,
-    SMP_MODEL_PASSKEY_DISPLAY,
-    SMP_MODEL_PASSKEY_INPUT,
-    SMP_MODEL_NUMERIC_COMPARISON
 };
 
 typedef struct {
@@ -1070,7 +1061,7 @@ int gap_sc_oob_set_peer(const gap_oob_data *peer) {
 // value must point to writable storage when DISPLAY is returned.
 uint8_t gap_passkey(uint32_t *value) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (conn->smp.pairing.passkey_action == GAP_PASSKEY_DISPLAY && value) {
+    if (conn->smp.pairing.passkey_action == SMP_USER_PASSKEY_DISPLAY && value) {
         *value = read_u32_le(conn->smp.pairing.tk);
     }
     return conn->smp.pairing.passkey_action;
@@ -1089,7 +1080,7 @@ int gap_passkey_reply(uint32_t value) {
 
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->link_layer.first_event) || !passkey_input_phase ||
-        conn->smp.pairing.passkey_action != GAP_PASSKEY_INPUT || value > 999999
+        conn->smp.pairing.passkey_action != SMP_USER_PASSKEY_INPUT || value > 999999
     ) {
         GAP_CRITICAL_EXIT(irq_state);
         return 0;
@@ -1507,14 +1498,14 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
     }
 
     if ((pairing->phase == SMP_PHASE_PASSKEY ||
-         (pairing->phase == SMP_PHASE_CONFIRM && pairing->passkey_action == GAP_PASSKEY_DISPLAY) ||
+         (pairing->phase == SMP_PHASE_CONFIRM && pairing->passkey_action == SMP_USER_PASSKEY_DISPLAY) ||
          (pairing->secure_conn && conn->smp.secure.passkey_required &&
           (pairing->phase == SMP_PHASE_SC_PUBLIC_KEY || pairing->phase == SMP_PHASE_SC_PASSKEY))) &&
         pairing->passkey_action &&
         !pairing->user_notified &&
         gap_smp_user_cb
     ) {
-        uint8_t action = (pairing->passkey_action == GAP_PASSKEY_DISPLAY) ? SMP_USER_PASSKEY_DISPLAY
+        uint8_t action = (pairing->passkey_action == SMP_USER_PASSKEY_DISPLAY) ? SMP_USER_PASSKEY_DISPLAY
                                                                         : SMP_USER_PASSKEY_INPUT;
         uint32_t passkey = read_u32_le(conn->smp.pairing.tk);
         uint32_t value = (action == SMP_USER_PASSKEY_DISPLAY ? passkey : 0);
@@ -1726,7 +1717,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
         }
     }
     else if (pairing->phase == SMP_PHASE_SC_PASSKEY &&
-        pairing->passkey_action != GAP_PASSKEY_INPUT &&
+        pairing->passkey_action != SMP_USER_PASSKEY_INPUT &&
         (pairing->confirm_received || conn->is_central) &&
         !conn->smp.tx_queue->length &&
         !conn->tx_l2cap_remaining &&
@@ -2310,7 +2301,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
         pairing->authenticated = 0;
         conn->smp.secure.numeric_required = 0;
         conn->smp.secure.passkey_required = 0;
-        uint8_t model = SMP_MODEL_NONE;
+        uint8_t model = SMP_USER_NONE;
 
         if (pairing->secure_conn && conn->smp.secure.oob_active) {
             pairing->authenticated = 1;
@@ -2328,23 +2319,23 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
                     return;
                 }
 
-                model = SMP_MODEL_PASSKEY_DISPLAY;
+                model = SMP_USER_PASSKEY_DISPLAY;
 
                 if (pairing->secure_conn) {
                     if ((gap_pair_cfg.io == GAP_IO_DISPLAY_YES_NO ||
                          gap_pair_cfg.io == GAP_IO_KEYBOARD_DISPLAY) &&
                         (pdu[1] == GAP_IO_DISPLAY_YES_NO || pdu[1] == GAP_IO_KEYBOARD_DISPLAY)
                     ) {
-                        model = SMP_MODEL_NUMERIC_COMPARISON;
+                        model = SMP_USER_NUMERIC_COMPARISON;
                     }
                     else if (gap_pair_cfg.io == GAP_IO_KEYBOARD_ONLY ||
                              (gap_pair_cfg.io == GAP_IO_KEYBOARD_DISPLAY && pdu[1] < GAP_IO_KEYBOARD_ONLY)
                     ) {
-                        model = SMP_MODEL_PASSKEY_INPUT;
+                        model = SMP_USER_PASSKEY_INPUT;
                     }
-                    conn->smp.secure.numeric_required = model == SMP_MODEL_NUMERIC_COMPARISON;
-                    conn->smp.secure.passkey_required = model == SMP_MODEL_PASSKEY_INPUT ||
-                                                        model == SMP_MODEL_PASSKEY_DISPLAY;
+                    conn->smp.secure.numeric_required = model == SMP_USER_NUMERIC_COMPARISON;
+                    conn->smp.secure.passkey_required = model == SMP_USER_PASSKEY_INPUT ||
+                                                        model == SMP_USER_PASSKEY_DISPLAY;
                 }
                 else {
                     if (gap_pair_cfg.io < GAP_IO_KEYBOARD_ONLY && pdu[1] < GAP_IO_KEYBOARD_ONLY ) {
@@ -2356,17 +2347,15 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
                         (gap_pair_cfg.io == GAP_IO_KEYBOARD_DISPLAY && (pdu[1] < GAP_IO_KEYBOARD_ONLY ||
                                             (pdu[1] == GAP_IO_KEYBOARD_DISPLAY && !conn->is_central)))
                     ) {
-                        model = SMP_MODEL_PASSKEY_INPUT;
+                        model = SMP_USER_PASSKEY_INPUT;
                     }
                     pairing->authenticated = 1;
                 }
             }
         }
 
-        if (model == SMP_MODEL_PASSKEY_INPUT)
-            pairing->passkey_action = GAP_PASSKEY_INPUT;
-        else if (model == SMP_MODEL_PASSKEY_DISPLAY)
-            pairing->passkey_action = GAP_PASSKEY_DISPLAY;
+        if (model == SMP_USER_PASSKEY_INPUT || model == SMP_USER_PASSKEY_DISPLAY)
+            pairing->passkey_action = model;
 
         pairing->key_size = key_size;
         memset(pairing->tk, 0, sizeof(pairing->tk));
@@ -2419,7 +2408,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
             }
         }
 
-        if (pairing->passkey_action == GAP_PASSKEY_DISPLAY) {
+        if (pairing->passkey_action == SMP_USER_PASSKEY_DISPLAY) {
             // Rejection sampling avoids modulo bias in the six-digit passkey.
             uint8_t bytes[4], attempts = 0;
             uint32_t value;
@@ -2489,7 +2478,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
                 }
                 gap_smp_queue(&conn->smp, SMP_PAIRING_PUBLIC_KEY, public_key, sizeof(public_key));
             }
-            else if (pairing->passkey_action != GAP_PASSKEY_INPUT) {
+            else if (pairing->passkey_action != SMP_USER_PASSKEY_INPUT) {
                 uint8_t confirm[16];
                 gap_smp_confirm(&conn->smp, conn, conn->smp.random, confirm);
                 gap_smp_queue(&conn->smp, SMP_PAIRING_CONFIRM, confirm, 16);
@@ -2508,7 +2497,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
             gap_smp_queue(&conn->smp, SMP_PAIRING_RESPONSE, pairing->response + 1, 6);
 
         pairing->phase = pairing->secure_conn ? SMP_PHASE_SC_PUBLIC_KEY
-                                            : pairing->passkey_action == GAP_PASSKEY_INPUT
+                                            : pairing->passkey_action == SMP_USER_PASSKEY_INPUT
                                             ? SMP_PHASE_PASSKEY
                                             : SMP_PHASE_CONFIRM;
         return;
