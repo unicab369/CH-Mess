@@ -66,10 +66,10 @@ typedef struct {
 } gap_pawr_timing;
 
 enum {
-    GAP_SYNC_TIMING_UNSYNCED = 0,
-    GAP_SYNC_TIMING_READY = 1,
-    GAP_SYNC_TIMING_EVENT_WINDOW = 2,
-    GAP_SYNC_TIMING_CHAIN_WINDOW = 3
+    GAP_SYNC_UNSYNCED = 0,
+    GAP_SYNC_READY = 1,
+    GAP_SYNC_EVENT_WINDOW = 2,
+    GAP_SYNC_CHAIN_WINDOW = 3
 };
 
 enum {
@@ -1233,12 +1233,12 @@ int gap_sync_pawr_respond(
     if (len) memcpy(sync->pawr.response_data, data, len);
     sync->pawr.pending = 1;
 
-    if (sync->timing_state != GAP_SYNC_TIMING_EVENT_WINDOW &&
-        sync->timing_state != GAP_SYNC_TIMING_CHAIN_WINDOW
+    if (sync->timing_state != GAP_SYNC_EVENT_WINDOW &&
+        sync->timing_state != GAP_SYNC_CHAIN_WINDOW
     ) {
         sync->next_us = sync->anchor_us + (uint32_t)sync->params.interval * 1250 +
                             (uint32_t)subevent * sync->pawr.timing.subevent_interval * 1250;
-        sync->timing_state = GAP_SYNC_TIMING_READY;
+        sync->timing_state = GAP_SYNC_READY;
     }
     return 1;
 }
@@ -1438,7 +1438,7 @@ static int gap_sync_info_accept(
     sync->start_us = window_start_us;
     sync->end_us = window_end_us;
     sync->missed_events = skipped;
-    sync->timing_state = GAP_SYNC_TIMING_EVENT_WINDOW;
+    sync->timing_state = GAP_SYNC_EVENT_WINDOW;
     return 1;
 }
 
@@ -2059,7 +2059,7 @@ static void gap_ext_scan_process(uint32_t now_ms) {
 
         if (slot >= 0 && slot < GAP_PERIODIC_SYNC_COUNT) {
             sync = &gap_syncs[slot];
-            sync->timing_state = GAP_SYNC_TIMING_READY;
+            sync->timing_state = GAP_SYNC_READY;
         }
     }
     else if (kind == GAP_EXT_PDU_AUX) {
@@ -2183,7 +2183,7 @@ static void gap_ext_scan_process(uint32_t now_ms) {
         // do not add the selection offset to the schedule a second time.
         sync->anchor_us = packet_start_us - offset_us;
         sync->next_us = packet_start_us + (uint32_t)sync->params.interval * 1250;
-        sync->timing_state = GAP_SYNC_TIMING_READY;
+        sync->timing_state = GAP_SYNC_READY;
 
         sync->last_event_counter = sync->event_counter;
         sync->event_counter++;
@@ -2231,7 +2231,7 @@ static void gap_ext_scan_process(uint32_t now_ms) {
 
                 sync->aux_channel = fields.aux_channel;
                 sync->aux_phy = aux_phy;
-                sync->timing_state = GAP_SYNC_TIMING_CHAIN_WINDOW;
+                sync->timing_state = GAP_SYNC_CHAIN_WINDOW;
                 sync->end_us = received_us + after_packet_us + unit_us + widen_us;
                 sync->start_us = received_us + subtract_clamp0_32(after_packet_us, widen_us);
             }
@@ -2424,7 +2424,7 @@ static int gap_past_receive(
     sync->next_us = (uint32_t)target_us;
     sync->start_us = (uint32_t)(target_us - (uint32_t)widen_us);
     sync->end_us = (uint32_t)window_end_us;
-    sync->timing_state = GAP_SYNC_TIMING_EVENT_WINDOW;
+    sync->timing_state = GAP_SYNC_EVENT_WINDOW;
     sync->timeout_ms = gap_past.timeout_ms;
     sync->last_event_ms = GET_MILLIS();
     return 1;
@@ -2526,7 +2526,7 @@ static void gap_sync_window_missed(uint8_t slot) {
     gap_sync_context *sync = &gap_syncs[slot];
     if (sync->sync_state == GAP_SYNC_FREE) return;
 
-    if (sync->timing_state == GAP_SYNC_TIMING_CHAIN_WINDOW) {
+    if (sync->timing_state == GAP_SYNC_CHAIN_WINDOW) {
         sync->event_data_active = 0;
         sync->data_len = 0;
     }
@@ -2544,7 +2544,7 @@ static void gap_sync_window_missed(uint8_t slot) {
             return;
         }
     }
-    sync->timing_state = GAP_SYNC_TIMING_READY;
+    sync->timing_state = GAP_SYNC_READY;
 }
 
 // Check whether a radio window intersects a guarded connection event.

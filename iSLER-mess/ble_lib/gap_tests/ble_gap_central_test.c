@@ -1853,7 +1853,7 @@ static void test_pawr_observer_response(void) {
     fake_radio_tick_autoincrement = 0;
     captured_extended_count = 0;
     gap_hw_scan_poll(GET_MICROS(), now_ms); // Calculate the selected subevent receive window.
-    assert(sync->timing_state == GAP_SYNC_TIMING_EVENT_WINDOW &&
+    assert(sync->timing_state == GAP_SYNC_EVENT_WINDOW &&
            (int32_t)(sync->end_us - sync->start_us) >= 0);
     fake_radio_ticks = sync->start_us;
     assert(fake_radio_ticks >= sync->start_us &&
@@ -1993,7 +1993,7 @@ static void test_periodic_advertising_sync(void) {
     gap_ext_scan.rssi = -35;
     gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
     gap_hw_scan_poll(GET_MICROS(), now_ms);
-    assert(gap_syncs[0].timing_state == GAP_SYNC_TIMING_UNSYNCED);
+    assert(gap_syncs[0].timing_state == GAP_SYNC_UNSYNCED);
 
     gap_ext_fields decoded_sync_info;
     sync_info_pdu[13] = 0x20; // 300 us units are invalid for this short offset.
@@ -2009,7 +2009,7 @@ static void test_periodic_advertising_sync(void) {
     gap_ext_scan.rssi = -35;
     gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
     gap_hw_scan_poll(GET_MICROS(), now_ms);
-    assert(gap_syncs[0].timing_state == GAP_SYNC_TIMING_EVENT_WINDOW &&
+    assert(gap_syncs[0].timing_state == GAP_SYNC_EVENT_WINDOW &&
            gap_syncs[0].sync_state != GAP_SYNC_ESTABLISHED &&
            gap_syncs[0].event_counter == 5 &&
            gap_syncs[0].params.access_address == 0x12345678 &&
@@ -2036,7 +2036,7 @@ static void test_periodic_advertising_sync(void) {
     assert(gap_syncs[0].sync_state == GAP_SYNC_ESTABLISHED &&
            gap_syncs[0].event_counter == 6 &&
            gap_syncs[0].event_data_active &&
-           gap_syncs[0].timing_state == GAP_SYNC_TIMING_CHAIN_WINDOW);
+           gap_syncs[0].timing_state == GAP_SYNC_CHAIN_WINDOW);
     assert(gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_ESTABLISHED &&
            event.slot == slot && event.sid == 6);
@@ -2182,7 +2182,7 @@ static void test_periodic_sync_connection_arbitration(void) {
     sync->params.channel_map[4] = 0x1f;
     sync->anchor_us = (uint32_t)(fake_radio_ticks);
     sync->next_us = (uint32_t)(fake_radio_ticks + 1000);
-    sync->timing_state = GAP_SYNC_TIMING_READY;
+    sync->timing_state = GAP_SYNC_READY;
 
     // A periodic event outside the connection guard window can use the radio.
     gap_hw_scan_poll(GET_MICROS(), now_ms);
@@ -2202,7 +2202,7 @@ static void test_periodic_sync_connection_arbitration(void) {
     conn->link_state.rx_armed = 0;
     gap_poll.slot_valid = 0;
     sync->next_us = (uint32_t)(fake_radio_ticks + 1000);
-    sync->timing_state = GAP_SYNC_TIMING_READY;
+    sync->timing_state = GAP_SYNC_READY;
     conn->link_layer.next_us = fake_radio_ticks + 2200;
     gap_hw_scan_poll(GET_MICROS(), now_ms);
     fake_radio_ticks = sync->start_us;
@@ -3243,7 +3243,7 @@ static void test_periodic_sync_transfer_receive(void) {
            gap_syncs[0].phy == GAP_PHY_1M &&
            gap_syncs[0].event_counter == 5 &&
            gap_syncs[0].widening_ppm == 1500 &&
-           gap_syncs[0].timing_state == GAP_SYNC_TIMING_EVENT_WINDOW &&
+           gap_syncs[0].timing_state == GAP_SYNC_EVENT_WINDOW &&
            !memcmp(gap_syncs[0].peer.address, advertiser, 6));
 
     uint64_t first_event = gap_syncs[0].next_us;
