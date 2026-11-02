@@ -1532,8 +1532,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
 
         pairing->user_notified = 1;
     }
-
-    if (pairing->phase == SMP_PHASE_SC_USER) {
+    else if (pairing->phase == SMP_PHASE_SC_USER) {
         if (!pairing->numeric_notified && gap_smp_user_cb) {
             int decision = gap_smp_user_cb( gap_smp_user_request_context,
                                 SMP_USER_NUMERIC_COMPARISON, conn->smp.secure.numeric_value);
@@ -1698,8 +1697,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
         }
         return;
     }
-
-    if (smp_tx_pending(&conn->smp)) {
+    else if (smp_tx_pending(&conn->smp)) {
         if (conn->tx_l2cap_remaining && !conn->smp.tx_queue->offset)
             return;
 
@@ -1733,8 +1731,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
             return;
         }
     }
-
-    if (pairing->phase == SMP_PHASE_SC_PASSKEY &&
+    else if (pairing->phase == SMP_PHASE_SC_PASSKEY &&
         pairing->passkey_action != GAP_PASSKEY_INPUT &&
         (pairing->confirm_received || conn->is_central) &&
         !conn->smp.tx_queue->length &&
@@ -1821,8 +1818,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
         }
         return;
     }
-
-    if (pairing->phase == SMP_PHASE_ENCRYPT) {
+    else if (pairing->phase == SMP_PHASE_ENCRYPT) {
         if (gap_encrypted()) {
             if (!conn->smp.encryption_started) {
                 gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED); return;
@@ -1887,9 +1883,8 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
                 smp_bond_rx_complete(conn);
             return;
         }
-
         // Completed encryption returns above; handle failure or start it here.
-        if (conn->smp.encryption_started) {
+        else if (conn->smp.encryption_started) {
             if (!conn->security.phase && conn->security.status) {
                 gap_smp_finish(conn, SMP_FAIL_UNSPECIFIED);
                 return;
