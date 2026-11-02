@@ -2144,7 +2144,7 @@ int gap_send_due(
     gap_privacy_poll(now_ms);
 #endif // GAP_PRIVACY_SUPPORT
 
-// Keep extended advertising after GAP_PRIVACY_SUPPORT because address rotation
+//! Keep extended advertising after GAP_PRIVACY_SUPPORT because address rotation
 // may stop or reconfigure the shared radio.
 #if GAP_EXT_ADV_SUPPORT
     int result = gap_ext_send_due(now_ms, now_us);
@@ -2155,7 +2155,7 @@ int gap_send_due(
 
 #endif // GAP_EXT_ADV_SUPPORT
 
-// Keep legacy fallback after GAP_PRIVACY_SUPPORT and GAP_EXT_ADV_SUPPORT:
+//! Keep legacy fallback after GAP_PRIVACY_SUPPORT and GAP_EXT_ADV_SUPPORT:
 // privacy rotation updates its address first, and extended advertising gets
 // priority for the shared radio.
 #if GAP_LEGACY_ADV_SET_COUNT > 0
@@ -2172,15 +2172,10 @@ int gap_send_due(
     }
 
     int send_gap = selected_legacy_set >= 0;
-    gap_legacy_adv_set *advertiser = &gap_adv_sets[
-        send_gap ? (uint8_t)selected_legacy_set : 0
-    ];
-    if (send_gap) {
-        gap_adv_next_set = (uint8_t)((selected_legacy_set + 1) % GAP_LEGACY_ADV_SET_COUNT);
-    }
     if (!send_gap && !fallback_ad)
         return 0;
 
+    gap_legacy_adv_set *advertiser = &gap_adv_sets[0];
     const uint8_t *data = fallback_ad;
     uint8_t target_type = 0;
     // Keep the selected PDU type for validation and packet framing.
@@ -2189,6 +2184,8 @@ int gap_send_due(
     uint8_t len = fallback_len;
 
     if (send_gap) {
+        advertiser = &gap_adv_sets[selected_legacy_set];
+        gap_adv_next_set = (uint8_t)((selected_legacy_set + 1) % GAP_LEGACY_ADV_SET_COUNT);
         data = advertiser->data;
         target_type = advertiser->target.type;
         pdu_type = advertiser->pdu_type;
