@@ -5145,7 +5145,7 @@ static void test_secure_connections_just_works(void) {
     uint8_t early_random[17] = {SMP_PAIRING_RANDOM};
     memset(early_random + 1, 0xa7, 16);
     receive_test_smp(early_random, sizeof(early_random), 0);
-    assert(gap_pairing_status() == SMP_FAIL_INVALID_PARAMETERS &&
+    assert(gap_pairing_status() == SMP_ERR_INVALID_PARAMETERS &&
            !smp->pairing.phase && smp->blocked && !gap_pair());
     for (size_t i = 0; i < sizeof(smp->random); i++)
         assert(smp->random[i] == 0);
