@@ -1543,7 +1543,7 @@ static void gap_conn_poll(uint32_t now_us) {
 // shared radio until its connection event finishes.
 static inline void gap_conn_poll_all(uint32_t now_us, uint32_t now_ms) {
 #if GAP_LEGACY_ADV_SET_COUNT > 0
-    if (adv_evt.phase) return;
+    if (adv_evt.event_phase) return;
 #endif // GAP_LEGACY_ADV_SET_COUNT > 0
 #if GAP_CENTRAL_SUPPORT
     if (gap_connect_tx.phase != GAP_CONNECT_TX_IDLE) return;
@@ -1610,7 +1610,7 @@ static inline void gap_conn_poll_all(uint32_t now_us, uint32_t now_ms) {
 void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
 
 #if GAP_LEGACY_ADV_SET_COUNT > 0
-    if (adv_evt.phase) return;
+    if (adv_evt.event_phase) return;
 #endif // GAP_LEGACY_ADV_SET_COUNT > 0
 
 #if GAP_EXT_ADV_SUPPORT
@@ -2014,16 +2014,17 @@ int gap_send_due(
     if (gap_poll.slot_valid) return 0;
 
 #if GAP_LEGACY_ADV_SET_COUNT > 0
-    if (adv_evt.phase) {
+    if (adv_evt.event_phase) {
         gap_legacy_adv_set *advertiser = &gap_adv_sets[adv_evt.set_id];
 
 #if GAP_PERIPHERAL_SUPPORT
         // A connection request was received; stop advertising and set up the connection.
         if (adv_evt.conn_req_ready) {
-            if (adv_evt.phase == GAP_LEGACY_ADV_TX && RADIO_TX_DONE())
+            if (adv_evt.event_phase == GAP_LEGACY_ADV_TX && RADIO_TX_DONE())
                 RADIO_TX_CLEAR_DONE();
             RADIO_STOP();
-            adv_evt.rx_event = adv_evt.phase = 0;
+            adv_evt.rx_event = 0;
+            adv_evt.event_phase = 0;
             adv_evt.conn_req_ready = 0;
 
             gap_conn_context *conn = gap_conn_accept(adv_evt.conn_req_frame,
@@ -2049,28 +2050,28 @@ int gap_send_due(
                 return 2;
             }
             adv_evt.channel = 39;
-            adv_evt.phase = 0;
+            adv_evt.event_phase = 0;
         }
 #endif // GAP_PERIPHERAL_SUPPORT
 
         uint8_t before_deadline = (int32_t)(now_us - adv_evt.deadline_us) < 0;
 
-        if (adv_evt.phase == GAP_LEGACY_ADV_TX) {
+        if (adv_evt.event_phase == GAP_LEGACY_ADV_TX) {
             if (!RADIO_TX_DONE()) {
                 if (before_deadline)
                     return 0;
                 RADIO_STOP();
                 adv_evt.rx_event = 0;
-                adv_evt.phase = 0;
+                adv_evt.event_phase = 0;
                 return -1;
             }
             RADIO_TX_CLEAR_DONE();
 
             if ((adv_evt.adv_frame[0] & 0x0f) == ADV_NONCONN_IND) {
                 RADIO_STOP();
-                adv_evt.phase = 0;
+                adv_evt.event_phase = 0;
             } else {
-                adv_evt.phase = GAP_LEGACY_ADV_RX;
+                adv_evt.event_phase = GAP_LEGACY_ADV_RX;
                 adv_evt.deadline_us = now_us + 800;
                 before_deadline = 1;
             }
@@ -2078,9 +2079,9 @@ int gap_send_due(
 
         // Check separately: TX can transition to RX here, and RX can persist
         // across polls while waiting for a scan request or its deadline.
-        if (adv_evt.phase == GAP_LEGACY_ADV_RX) {
+        if (adv_evt.event_phase == GAP_LEGACY_ADV_RX) {
             if (adv_evt.scan_resp_started) {
-                adv_evt.phase = GAP_LEGACY_ADV_SCAN_RESPONSE_TX;
+                adv_evt.event_phase = GAP_LEGACY_ADV_SCAN_RESP_TX;
                 adv_evt.deadline_us = now_us + 1000;
                 before_deadline = 1;
             }
@@ -2092,18 +2093,19 @@ int gap_send_due(
 
         // Check separately: this TX phase can persist across polls after
         // scan_resp_started has already been handled.
-        if (adv_evt.phase == GAP_LEGACY_ADV_SCAN_RESPONSE_TX) {
+        if (adv_evt.event_phase == GAP_LEGACY_ADV_SCAN_RESP_TX) {
             if (!RADIO_TX_DONE()) {
                 if (before_deadline)
                     return 0;
                 RADIO_STOP();
-                adv_evt.rx_event = adv_evt.phase = 0;
+                adv_evt.rx_event = 0;
+                adv_evt.event_phase = 0;
                 return -1;
             }
         }
         RADIO_STOP();
 
-        adv_evt.phase = 0;
+        adv_evt.event_phase = 0;
         adv_evt.rx_event = 0;
 
         // Legacy advertising sends on channels 37, 38, and 39 in sequence.
@@ -2118,7 +2120,7 @@ int gap_send_due(
             RADIO_LINK_TX(adv_evt.adv_frame, BLE_ADV_ACCESS_ADDRESS, adv_evt.channel,
                         receive_after_tx, GAP_PHY_1M, GAP_PHY_1M, 0x555555);
             adv_evt.rx_event = 1;
-            adv_evt.phase = GAP_LEGACY_ADV_TX;
+            adv_evt.event_phase = GAP_LEGACY_ADV_TX;
             adv_evt.deadline_us = now_us + 1000;
             return 0;
         }
@@ -2236,7 +2238,7 @@ int gap_send_due(
     RADIO_TX_CLEAR_DONE();
     RADIO_LINK_TX(adv_evt.adv_frame, BLE_ADV_ACCESS_ADDRESS, adv_evt.channel,
                   receive_after_tx, GAP_PHY_1M, GAP_PHY_1M, 0x555555);
-    adv_evt.phase = GAP_LEGACY_ADV_TX;
+    adv_evt.event_phase = GAP_LEGACY_ADV_TX;
     adv_evt.deadline_us = now_us + 1000;
     return 0;
 

@@ -95,19 +95,18 @@ static struct {
 enum {
     GAP_LEGACY_ADV_TX = 1,
     GAP_LEGACY_ADV_RX,
-    GAP_LEGACY_ADV_SCAN_RESPONSE_TX
+    GAP_LEGACY_ADV_SCAN_RESP_TX
 };
 
 static struct {
-    GAP_RADIO_BUFFER_ATTR uint8_t adv_frame[8 + GAP_ADV_DATA_MAX];
-    GAP_RADIO_BUFFER_ATTR uint8_t scan_frame[8 + GAP_ADV_DATA_MAX];
+    uint32_t deadline_us, conn_req_us;
     volatile uint8_t rx_event, scan_resp_started;
     volatile uint8_t conn_req_ready;
-    volatile uint8_t phase;
+    volatile uint8_t event_phase;
     uint8_t channel, send_gap, set_id;
-    uint32_t deadline_us;
+    GAP_RADIO_BUFFER_ATTR uint8_t adv_frame[8 + GAP_ADV_DATA_MAX];
+    GAP_RADIO_BUFFER_ATTR uint8_t scan_frame[8 + GAP_ADV_DATA_MAX];
     uint8_t conn_req_frame[36];
-    uint32_t conn_req_us;
 } adv_evt;
 #endif // GAP_LEGACY_ADV_SET_COUNT > 0
 

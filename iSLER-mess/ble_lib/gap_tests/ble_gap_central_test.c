@@ -624,7 +624,7 @@ static void test_private_rotation(void) {
     assert(gap_resolve(test_address(first, 1), &identity));
     assert(gap_adv_start(0, ADV_NONCONN_IND, NULL, 0, NULL, 0, 100));
     // Start only configures advertising; this test polls rotation between radio events.
-    adv_evt.phase = 0;
+    adv_evt.event_phase = 0;
     adv_evt.rx_event = 0;
     assert(!gap_privacy_configure(NULL, 0, 0, GET_MILLIS()));
     now_ms = 14999;
@@ -642,7 +642,7 @@ static void test_private_rotation(void) {
     assert(memcmp(gap_adv_sets[0].local.address, gap_own_address.address, 6) == 0);
     assert(gap_resolve(test_address(gap_own_address.address, 1), &identity));
     gap_adv_stop(0);
-    adv_evt.phase = 0;
+    adv_evt.event_phase = 0;
     adv_evt.rx_event = 0;
     // Initiation retains InitA even if the rotation timeout expires.
     assert(gap_conn_start(test_address(test_identity, 0)));
@@ -1062,7 +1062,7 @@ static void test_scanning_and_advertising_coexistence(void) {
     uint32_t sent_at = 0;
     uint8_t jitter = 0;
     assert(gap_send_due(NULL, 0, now_ms, &sent_at, &jitter) == 0);
-    while (adv_evt.phase) assert(gap_send_due(NULL, 0, now_ms, &sent_at, &jitter) == 0);
+    while (adv_evt.event_phase) assert(gap_send_due(NULL, 0, now_ms, &sent_at, &jitter) == 0);
     assert(gap_scanner.scanning && gap_adv_sets[0].enabled &&
            link_tx_count == tx_before + 3);
     gap_hw_scan_poll(GET_MICROS(), now_ms);
@@ -1070,7 +1070,7 @@ static void test_scanning_and_advertising_coexistence(void) {
 
     now_ms = gap_adv_sets[0].next_event_ms;
     assert(gap_send_due(NULL, 0, now_ms, &sent_at, &jitter) == 0);
-    while (adv_evt.phase) assert(gap_send_due(NULL, 0, now_ms, &sent_at, &jitter) == 0);
+    while (adv_evt.event_phase) assert(gap_send_due(NULL, 0, now_ms, &sent_at, &jitter) == 0);
     assert(gap_scanner.scanning && gap_adv_sets[0].enabled &&
            link_tx_count == tx_before + 6);
 
@@ -1079,7 +1079,7 @@ static void test_scanning_and_advertising_coexistence(void) {
     assert(!gap_conn_start(test_address(peer, 0)));
     now_ms = gap_adv_sets[0].next_event_ms;
     assert(gap_send_due(NULL, 0, now_ms, &sent_at, &jitter) == 0);
-    while (adv_evt.phase) assert(gap_send_due(NULL, 0, now_ms, &sent_at, &jitter) == 0);
+    while (adv_evt.event_phase) assert(gap_send_due(NULL, 0, now_ms, &sent_at, &jitter) == 0);
     assert(!gap_initiator.active && !gap_scanner.scanning &&
            gap_adv_sets[0].enabled && link_tx_count == tx_before + 9);
 
