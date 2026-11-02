@@ -151,8 +151,9 @@ static struct {
 
 typedef struct {
     uint32_t start_us, duration_us;
-    uint8_t active, channel, phy;
+    uint8_t channel, phy;
 } gap_aux_request_context;
+
 static gap_aux_request_context gap_aux_request[GAP_EXT_ADV_CONTEXT_COUNT];
 
 static struct {
@@ -898,7 +899,7 @@ static int gap_ext_adv_decode(
 // to start an AUX_SCAN_REQ or AUX_CONNECT_REQ at T_IFS.
 static int gap_aux_request_start(const uint8_t *frame, uint32_t now_ms) {
     if (gap_ext_scan.listen_state != GAP_EXT_SCAN_AUX ||
-        !gap_aux_request[gap_ext_scan.slot].active ||
+        !gap_aux_request[gap_ext_scan.slot].duration_us ||
         gap_ext_scan.request_phase != GAP_EXT_REQ_NONE
     ) return 0;
 
@@ -2054,7 +2055,7 @@ static void gap_ext_scan_process(uint32_t now_ms) {
         packet_phy = gap_ext_scan.rx_phy;
 
         if (slot >= 0 && slot < GAP_EXT_ADV_CONTEXT_COUNT)
-            gap_aux_request[slot].active = 0;
+            gap_aux_request[slot].duration_us = 0;
     }
 
     // Clear the receive state before discarding a periodic packet with no live sync.
@@ -2120,7 +2121,7 @@ static void gap_ext_scan_process(uint32_t now_ms) {
 
                     if (aux_slot < 0) {
                         for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
-                            if (!gap_aux_request[i].active) {
+                            if (!gap_aux_request[i].duration_us) {
                                 aux_slot = i;
                                 break;
                             }
@@ -2148,7 +2149,6 @@ static void gap_ext_scan_process(uint32_t now_ms) {
                     request->duration_us = after_packet_us + offset_unit_us + widen_us - start_offset_us;
                     request->channel = fields.aux_channel;
                     request->phy = aux_phy;
-                    request->active = 1;
                 }
             }
         }

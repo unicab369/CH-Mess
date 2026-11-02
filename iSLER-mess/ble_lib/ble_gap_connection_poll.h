@@ -1445,7 +1445,7 @@ static void gap_conn_poll(uint32_t now_us) {
             gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
 
             if (slot < GAP_EXT_ADV_CONTEXT_COUNT)
-                gap_aux_request[slot].active = 0;
+                gap_aux_request[slot].duration_us = 0;
         }
     }
 #endif // GAP_EXT_ADV_SUPPORT
@@ -1693,7 +1693,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
         if (phase == GAP_EXT_REQ_CONNECT_DONE) {
             gap_ext_scan.request_phase = GAP_EXT_REQ_NONE;
             RADIO_STOP();
-            gap_aux_request[gap_ext_scan.slot].active = 0;
+            gap_aux_request[gap_ext_scan.slot].duration_us = 0;
             gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
             const uint8_t *request = adv_tx.connect_request;
             gap_conn_context *conn = gap_conn_accept(request,
@@ -1732,7 +1732,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
         else {
             gap_ext_scan.request_phase = GAP_EXT_REQ_NONE;
             RADIO_STOP();
-            gap_aux_request[gap_ext_scan.slot].active = 0;
+            gap_aux_request[gap_ext_scan.slot].duration_us = 0;
             gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
         }
     }
@@ -1828,7 +1828,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
         if (gap_rx_armed) RADIO_STOP();
         gap_rx_armed = 0;
         gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
-        request->active = 0;
+        request->duration_us = 0;
     }
 
     if (gap_scan.active_address.type == GAP_ADDR_NONE) {
@@ -1856,7 +1856,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
         }
 
         for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
-            if (!gap_aux_request[i].active)
+            if (!gap_aux_request[i].duration_us)
                 continue;
 
             if (slot < 0 || (int32_t)(gap_aux_request[i].start_us -
@@ -1925,7 +1925,7 @@ void gap_hw_scan_poll(uint32_t now_us, uint32_t now_ms) {
         if (slot >= 0) {
             gap_aux_request_context *request = &gap_aux_request[slot];
             if ((int32_t)(now_us - (request->start_us + request->duration_us)) > 0) {
-                request->active = 0;
+                request->duration_us = 0;
             }
             else if ((int32_t)(now_us - request->start_us) >= 0) {
                 if (gap_rx_armed) RADIO_STOP();

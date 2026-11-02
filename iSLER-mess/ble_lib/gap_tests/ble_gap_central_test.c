@@ -730,7 +730,7 @@ static int test_ext_scan_receive(uint8_t kind, const uint8_t *pdu,
     gap_ext_scan.scan_state = GAP_EXT_SCAN_RX;
     gap_rx_armed = 1;
     if (kind == GAP_EXT_PDU_AUX) {
-        gap_ext_scan.slot = gap_aux_request[0].active ? 0 : 1;
+        gap_ext_scan.slot = gap_aux_request[0].duration_us ? 0 : 1;
         gap_ext_scan.rx_phy = GAP_PHY_1M;
     }
     else if (kind == GAP_EXT_PDU_PERIODIC) {
@@ -767,7 +767,7 @@ static void test_extended_immediate_requests(void) {
     gap_ext_ctx[0].identity.adv_data_info = 0x1234;
     gap_ext_ctx[0].await_scan_response = 1;
     gap_ext_ctx[0].deadline_ms = GET_MILLIS() + 100;
-    gap_aux_request[0].active = 1;
+    gap_aux_request[0].duration_us = 1;
     gap_aux_request[0].channel = 5;
     gap_ext_scan.slot = 0;
     gap_ext_scan.rx_phy = GAP_PHY_1M;
@@ -795,7 +795,7 @@ static void test_extended_immediate_requests(void) {
 
     assert(gap_conn_start(test_address(peer, 0)));
     aux[2] = 0x49; // Connectable AUX_ADV_IND.
-    gap_aux_request[0].active = 1;
+    gap_aux_request[0].duration_us = 1;
     gap_aux_request[0].channel = 7;
     gap_ext_scan.slot = 0;
     gap_ext_scan.rx_phy = GAP_PHY_1M;
@@ -1015,8 +1015,8 @@ static void test_extended_advertising_radio_followup(void) {
     memcpy(rx_frame, primary, sizeof(primary));
     gap_hw_received();
     gap_hw_scan_poll(GET_MICROS(), now_ms);
-    int slot = gap_aux_request[0].active ? 0 : 1;
-    assert(gap_aux_request[slot].active);
+    int slot = gap_aux_request[0].duration_us ? 0 : 1;
+    assert(gap_aux_request[slot].duration_us);
     assert(gap_aux_request[slot].start_us == 500311 &&
            gap_aux_request[slot].start_us + gap_aux_request[slot].duration_us == 500347);
     fake_radio_ticks = gap_aux_request[slot].start_us;
@@ -1029,7 +1029,7 @@ static void test_extended_advertising_radio_followup(void) {
     memcpy(rx_frame, auxiliary, sizeof(auxiliary));
     gap_hw_received();
     gap_hw_scan_poll(GET_MICROS(), now_ms);
-    assert(gap_aux_request[slot].active);
+    assert(gap_aux_request[slot].duration_us);
     fake_radio_ticks = gap_aux_request[slot].start_us;
     gap_hw_scan_poll(GET_MICROS(), now_ms);
     assert(gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX);
