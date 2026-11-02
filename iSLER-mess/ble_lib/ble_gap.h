@@ -457,7 +457,7 @@ typedef struct {
     uint8_t random[16], peer_random[16];
     struct {
         uint8_t phase, local_is_central, key_size, authenticated, passkey_action;
-        uint8_t confirm_received, bond_requested, secure_connections;
+        uint8_t confirm_received, bond_requested, secure_conn;
         uint8_t user_notified, numeric_notified, keypress_active;
         uint8_t bond_tx_step, bond_rx_step;
         uint8_t tk[16], request[7], response[7];
