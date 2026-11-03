@@ -2286,17 +2286,14 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
             }
         }
 
-        if (pdu[2] && (!secure ||
-             !conn->smp.local_oob.oob.valid)
-        ) {
+        if (pdu[2] && (!secure || !conn->smp.local_oob.oob.valid)) {
             gap_smp_fail(conn, SMP_ERR_OOB_NOT_AVAILABLE);
             return;
         }
 
         // The local flag means we have the peer's data; pdu[2] means the peer
         // has ours. The latter determines whether our own f6 R is nonzero.
-        uint8_t local_oob_flag = (op == SMP_PAIRING_REQUEST)
-                                    ? conn->smp.peer_oob.valid : pairing->request[2];
+        uint8_t local_oob_flag = (op == SMP_PAIRING_REQUEST) ? conn->smp.peer_oob.valid : pairing->request[2];
         conn->smp.secure.oob_active = secure && (local_oob_flag || pdu[2]);
 
         uint8_t bond_requested = (local.auth_req & peer.auth_req & SMP_AUTH_BONDING) &&
@@ -2314,12 +2311,13 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
         conn->smp.secure.passkey_required = 0;
         uint8_t model = SMP_USER_NONE;
 
-        if (secure && conn->smp.secure.oob_active) {
+        if (conn->smp.secure.oob_active) {
             pairing->auth_flags |= SMP_AUTH_MITM;
         }
         else if ((pdu[3] & SMP_AUTH_MITM) ||
                  (gap_pair_cfg.options & SMP_AUTH_MITM) ||
-                 (conn->is_central && (pairing->request[3] & SMP_AUTH_MITM))) {
+                 (conn->is_central && (pairing->request[3] & SMP_AUTH_MITM))
+        ) {
             if (gap_pair_cfg.io_capability == GAP_IO_NONE || pdu[1] == GAP_IO_NONE ||
                 (gap_pair_cfg.io_capability == GAP_IO_DISPLAY_ONLY && pdu[1] == GAP_IO_DISPLAY_ONLY) ||
                 (!secure && gap_pair_cfg.io_capability < GAP_IO_KEYBOARD_ONLY && pdu[1] < GAP_IO_KEYBOARD_ONLY)
