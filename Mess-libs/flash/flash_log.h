@@ -2,7 +2,7 @@
 #define FUN_FLASH_LOG_H
 
 // Flash layout: erase blocks contain pages; pages hold bytes from the record log.
-// Record header: [sequence | crc32 | logical_id | magic | length]
+// Record header: [sequence | crc32 | logical_id | length | magic | commit]
 //
 // [erase block - 4KB (configurable)]
 //   [page: [header] [payload] [alignment padding] ...]
@@ -35,7 +35,8 @@
 
 #define FLASH_CRC32_POLYNOMIAL 0xEDB88320u
 
-#define FLASH_RECORD_MAGIC 0xFACE // 16-bit record marke
+#define FLASH_RECORD_MAGIC 0xBABE // 16-bit record marker
+#define FLASH_RECORD_COMMIT 0xCAFE //
 
 
 // Tracks erase usage and the next write position for one flash block.
@@ -57,8 +58,9 @@ typedef struct {
     uint32_t sequence;      // Increasing value used to find the newest record.
     uint32_t crc32;         // Checksum used to detect incomplete or corrupt data.
     uint16_t logical_id;    // Logical ID of the value stored in this record.
-    uint16_t magic;         // Constant used to identify a valid record.
     uint16_t length;        // Number of payload bytes following this header.
+    uint16_t magic;         // Constant used to identify a valid record.
+    uint16_t commit;        // Programmed with magic last to mark the record complete.
 } flash_record;
 
 // Holds the log configuration and current append position in RAM.
@@ -118,6 +120,20 @@ static inline int flash_crc32_at(uint32_t address, uint16_t length, uint32_t *re
     return 0;
 }
 
+// Move an address to the start of the next erase block.
+static inline uint32_t flash_next_block(uint32_t address) {
+    const uint32_t offset = (address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE;
+    return address + FLASH_BLOCK_SIZE - offset;
+}
+
+// Check whether an unread record header is still fully erased.
+static inline bool flash_record_is_erased(const flash_record *record) {
+    const uint8_t *bytes = (const uint8_t *)record;
+    for (size_t i = 0; i < sizeof(*record); ++i)
+        if (bytes[i] != 0xFFu) return false;
+    return true;
+}
+
 // Scan the reserved region to find the next unused record slot.
 static inline int flash_log_init(flash_log *log) {
     if (!log || FLASH_BLOCK_COUNT < 2)
@@ -131,15 +147,21 @@ static inline int flash_log_init(flash_log *log) {
     while (log->next_address + sizeof(record) <= end) {
         if (HW_READ(log->next_address, &record, sizeof(record)))
             return -1;
+        if (flash_record_is_erased(&record)) break;
         if (record.magic != FLASH_RECORD_MAGIC ||
-            record.length > end - log->next_address - sizeof(record)
-        ) break;
+            record.commit != FLASH_RECORD_COMMIT ||
+            record.length > end - log->next_address - sizeof(record)) {
+            log->next_address = flash_next_block(log->next_address);
+            continue;
+        }
 
         uint32_t crc;
         if (flash_crc32_at(log->next_address + sizeof(record), record.length, &crc))
             return -1;
-        if (crc != record.crc32)
-            break;
+        if (crc != record.crc32) {
+            log->next_address = flash_next_block(log->next_address);
+            continue;
+        }
 
         // Signed subtraction compares wrapped sequence numbers safely.
         if ((int32_t)((record.sequence + 1u) - log->next_sequence) > 0)
@@ -148,6 +170,10 @@ static inline int flash_log_init(flash_log *log) {
         const uint32_t record_size = flash_align_up(sizeof(record) + record.length, FLASH_ALIGNMENT);
         if (record_size > end - log->next_address)
             break;
+        if (record_size > FLASH_BLOCK_SIZE - ((log->next_address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE)) {
+            log->next_address = flash_next_block(log->next_address - 1u);
+            continue;
+        }
         log->next_address += record_size;
     }
     return 0;
@@ -159,19 +185,29 @@ static inline int flash_log_write(
 ) {
     if (!log || (!data && length)) return -1;
     const uint32_t total = flash_align_up(sizeof(flash_record) + length, FLASH_ALIGNMENT);
+    if (total > FLASH_BLOCK_SIZE) return -3;
     const uint32_t end = FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE;
+    if (total > FLASH_BLOCK_SIZE - ((log->next_address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE))
+        log->next_address = flash_next_block(log->next_address - 1u);
+
     if (log->next_address + total > end)
         return -2; // Full: GC not implemented.
 
     flash_record record = { .magic = FLASH_RECORD_MAGIC,
+                            .commit = FLASH_RECORD_COMMIT,
                             .sequence = log->next_sequence,
                             .logical_id = logical_id,
                             .length = length,
                             .crc32 = ~flash_crc32_update(0xFFFFFFFFu, (const uint8_t *)data, length) };
 
-    if ((length && HW_PROGRAM(log->next_address + sizeof(record), data, length)) ||
-        HW_PROGRAM(log->next_address, &record, sizeof(record))
-    ) return -1;
+    if (HW_PROGRAM(log->next_address, &record, offsetof(flash_record, magic)) ||
+        (length && HW_PROGRAM(log->next_address + sizeof(record), data, length)) ||
+        HW_PROGRAM(log->next_address + offsetof(flash_record, magic),
+                   &record.magic, sizeof(record.magic) + sizeof(record.commit))
+    ) {
+        log->next_address = flash_next_block(log->next_address);
+        return -1;
+    }
 
     log->next_address += total;
     ++log->next_sequence;
@@ -193,11 +229,16 @@ static inline int flash_log_read(
     flash_record record;
 
     while (address + sizeof(record) <= log->next_address) {
-        if (HW_READ(address, &record, sizeof(record)) ||
+        if (HW_READ(address, &record, sizeof(record))) return -1;
+        if (flash_record_is_erased(&record)) break;
+
+        if (record.magic != FLASH_RECORD_MAGIC ||
+            record.commit != FLASH_RECORD_COMMIT ||
             record.length > log->next_address - address - sizeof(record)
-        ) return -1;
-        if (record.magic != FLASH_RECORD_MAGIC)
-            break;
+        ) {
+            address = flash_next_block(address);
+            continue;
+        }
 
         if (record.logical_id == logical_id &&
             (!found || (int32_t)(record.sequence - new_sequence) > 0)
@@ -208,15 +249,18 @@ static inline int flash_log_read(
             found = true;
         }
 
-        address += flash_align_up(sizeof(record) + record.length, FLASH_ALIGNMENT);
+        const uint32_t record_size = flash_align_up(sizeof(record) + record.length, FLASH_ALIGNMENT);
+        if (record_size > FLASH_BLOCK_SIZE - ((address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE))
+            address = flash_next_block(address);
+        else
+            address += record_size;
     }
 
     if (!found) return -2;
     if (new_length > capacity) return -3;
     if ((new_length && HW_READ(new_address + sizeof(record), data, new_length)) ||
         HW_READ(new_address, &record, sizeof(record)) ||
-        ~flash_crc32_update(0xFFFFFFFFu, (const uint8_t *)data, new_length) !=
-            record.crc32
+        ~flash_crc32_update(0xFFFFFFFFu, (const uint8_t *)data, new_length) != record.crc32
     ) return -1;
 
     *length = new_length;
