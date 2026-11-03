@@ -127,6 +127,13 @@ enum {
     SMP_AUTH_MITM = 0x04,
     SMP_AUTH_SECURE_CONN = 0x08,
     SMP_AUTH_KEYPRESS = 0x10,
+    SMP_AUTH_MASK = SMP_AUTH_BONDING_MASK | SMP_AUTH_MITM |
+                    SMP_AUTH_SECURE_CONN | SMP_AUTH_KEYPRESS,
+    // Internal option; SMP_AUTH_MASK excludes it from on-air AuthReq bytes.
+    GAP_PAIR_OPT_DISABLED = 1u << 7
+};
+
+enum {
     SMP_KEY_DIST_ENCRYPTION = 0x01,
     SMP_KEY_DIST_IDENTITY = 0x02,
     SMP_KEY_DIST_SIGNING = 0x04,
@@ -149,15 +156,13 @@ typedef struct {
 static ble_smp_user_request_fn gap_smp_user_cb;
 static void *gap_smp_user_request_context;
 static struct {
-    gap_io_capability io;
-    uint8_t enabled;
+    int8_t io_capability;
     uint8_t min_key_size;
     volatile uint8_t options;
 } gap_pair_cfg = {
-    .enabled = 0,
-    .io = GAP_IO_NONE,
+    .io_capability = GAP_IO_NONE,
     .min_key_size = 7,
-    .options = 0
+    .options = GAP_PAIR_OPT_DISABLED
 };
 
 
@@ -875,7 +880,13 @@ static void gap_smp_fail(
 // Application facing
 void gap_pairing_set(uint8_t enabled) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    gap_pair_cfg.enabled = enabled;
+    uint32_t irq_state = GAP_CRITICAL_ENTER();
+    if (enabled)
+        gap_pair_cfg.options &= (uint8_t)~GAP_PAIR_OPT_DISABLED;
+    else
+        gap_pair_cfg.options |= GAP_PAIR_OPT_DISABLED;
+    GAP_CRITICAL_EXIT(irq_state);
+
     if (!enabled && conn->smp.pairing.phase)
         gap_smp_fail(conn, 5);
 }
@@ -930,7 +941,7 @@ int gap_security_set(uint8_t io, uint8_t authenticated, uint8_t min_key_size) {
         return 0;
     }
 
-    gap_pair_cfg.io = io;
+    gap_pair_cfg.io_capability = io;
     gap_pair_cfg.min_key_size = min_key_size;
     if (authenticated)
         gap_pair_cfg.options |= SMP_AUTH_MITM;
@@ -1005,7 +1016,7 @@ int gap_sc_oob_get(gap_oob_data *out) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t slot_bit = GAP_CONN_SLOT_BIT(gap_conn_slot);
 
-    if (!gap_pair_cfg.enabled ||
+    if ((gap_pair_cfg.options & GAP_PAIR_OPT_DISABLED) ||
         !(gap_pair_cfg.options & SMP_AUTH_SECURE_CONN) ||
         !(gap_conn_slot_mask & slot_bit) ||
         (!conn->is_central && conn->link_layer.first_event) ||
@@ -1109,7 +1120,7 @@ int gap_passkey_keypress(uint8_t notification_type) {
 
     if (!(conn->smp.pairing.auth_flags & SMP_AUTH_KEYPRESS) ||
         !passkey_phase ||
-        gap_pair_cfg.io != GAP_IO_KEYBOARD_ONLY ||
+        gap_pair_cfg.io_capability != GAP_IO_KEYBOARD_ONLY ||
         notification_type > SMP_KEYPRESS_COMPLETED
     ) return 0;
 
@@ -1161,7 +1172,7 @@ int gap_pair_cancel(void) {
 // Central starts pairing; Peripheral asks its Central to start it.
 int gap_pair(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!gap_pair_cfg.enabled ||
+    if ((gap_pair_cfg.options & GAP_PAIR_OPT_DISABLED) ||
         !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->link_layer.first_event) ||
         conn->smp.pairing.phase ||
@@ -1177,13 +1188,13 @@ int gap_pair(void) {
     conn->smp.previous_bond = (conn->smp.previous_bond_valid) ? conn->bond : (gap_bond){0};
     conn->smp.status = GAP_CONNECTION_PENDING;
 
-    uint8_t auth_req = gap_pair_cfg.options;
+    uint8_t auth_req = gap_pair_cfg.options & SMP_AUTH_MASK;
 
     if (conn->is_central) {
         uint8_t identity_irk[16] = {0}, identity_address[7] = {0};
         uint8_t *request = conn->smp.pairing.request;
         request[0] = 1;
-        request[1] = gap_pair_cfg.io;
+        request[1] = gap_pair_cfg.io_capability;
         request[2] = (gap_pair_cfg.options & SMP_AUTH_SECURE_CONN) &&
                      conn->smp.peer_oob.valid;
         request[3] = auth_req;
@@ -2147,7 +2158,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
         return;
     }
     // Check after bond RX so disabling pairing does not abort an exchange already in progress.
-    else if (!gap_pair_cfg.enabled) {
+    else if (gap_pair_cfg.options & GAP_PAIR_OPT_DISABLED) {
         gap_smp_fail(conn, SMP_ERR_PAIRING_NOT_SUPPORTED);
         return;
     }
@@ -2228,12 +2239,12 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
             }
         }
         else {
-            local = (smp_features){ .io_capability = gap_pair_cfg.io,
+            local = (smp_features){ .io_capability = gap_pair_cfg.io_capability,
                                     .oob_data_flag = conn->smp.local_oob.oob.valid,
                                     .max_key_size = 16,
                                     .init_key_dist = GAP_KEY_DIST_MASK,
                                     .resp_key_dist = GAP_KEY_DIST_MASK,
-                                    .auth_req = gap_pair_cfg.options };
+                                    .auth_req = gap_pair_cfg.options & SMP_AUTH_MASK };
         }
 
         uint8_t secure = local.auth_req & peer.auth_req & SMP_AUTH_SECURE_CONN;
@@ -2259,7 +2270,8 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
             return;
         }
 
-        uint8_t auth_req = (op == SMP_PAIRING_RESPONSE) ? local.auth_req : gap_pair_cfg.options;
+        uint8_t auth_req = (op == SMP_PAIRING_RESPONSE) ? local.auth_req
+                                                        : gap_pair_cfg.options & SMP_AUTH_MASK;
         pairing->auth_flags = secure | (auth_req & peer.auth_req & SMP_AUTH_KEYPRESS);
 
         if (secure) {
@@ -2285,14 +2297,11 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
         // has ours. The latter determines whether our own f6 R is nonzero.
         uint8_t local_oob_flag = (op == SMP_PAIRING_REQUEST)
                                     ? conn->smp.peer_oob.valid : pairing->request[2];
-        conn->smp.secure.oob_active = (pairing->auth_flags & SMP_AUTH_SECURE_CONN) &&
-                                    (local_oob_flag || pdu[2]);
+        conn->smp.secure.oob_active = secure && (local_oob_flag || pdu[2]);
 
-        uint8_t bond_requested = (local.auth_req & SMP_AUTH_BONDING_MASK) &&
-                                 (peer.auth_req & SMP_AUTH_BONDING_MASK) &&
-                                 ((pairing->auth_flags & SMP_AUTH_SECURE_CONN) ||
-                                  ((init_key_dist | resp_key_dist) & GAP_KEY_DIST_ENCRYPTION));
-        pairing->auth_flags |= bond_requested * SMP_AUTH_BONDING;
+        uint8_t bond_requested = (local.auth_req & peer.auth_req & SMP_AUTH_BONDING) &&
+                                 (secure || ((init_key_dist | resp_key_dist) & GAP_KEY_DIST_ENCRYPTION));
+        pairing->auth_flags |= bond_requested;
 
         if ((gap_pair_cfg.options & SMP_AUTH_BONDING) && !bond_requested) {
             gap_smp_fail(conn, SMP_ERR_AUTH_REQUIREMENTS);
@@ -2301,59 +2310,48 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
 
         pairing->confirm_received = 0;
         pairing->passkey_action = 0;
-        pairing->auth_flags &= (uint8_t)~SMP_AUTH_MITM;
         conn->smp.secure.numeric_required = 0;
         conn->smp.secure.passkey_required = 0;
         uint8_t model = SMP_USER_NONE;
 
-        if ((pairing->auth_flags & SMP_AUTH_SECURE_CONN) && conn->smp.secure.oob_active) {
+        if (secure && conn->smp.secure.oob_active) {
             pairing->auth_flags |= SMP_AUTH_MITM;
         }
-        else {
-            if ((pdu[3] & SMP_AUTH_MITM) ||
-                (gap_pair_cfg.options & SMP_AUTH_MITM) ||
-                (conn->is_central && (pairing->request[3] & SMP_AUTH_MITM))
+        else if ((pdu[3] & SMP_AUTH_MITM) ||
+                 (gap_pair_cfg.options & SMP_AUTH_MITM) ||
+                 (conn->is_central && (pairing->request[3] & SMP_AUTH_MITM))) {
+            if (gap_pair_cfg.io_capability == GAP_IO_NONE || pdu[1] == GAP_IO_NONE ||
+                (gap_pair_cfg.io_capability == GAP_IO_DISPLAY_ONLY && pdu[1] == GAP_IO_DISPLAY_ONLY) ||
+                (!secure && gap_pair_cfg.io_capability < GAP_IO_KEYBOARD_ONLY && pdu[1] < GAP_IO_KEYBOARD_ONLY)
             ) {
-                if (gap_pair_cfg.io == GAP_IO_NONE || pdu[1] == GAP_IO_NONE ||
-                    (gap_pair_cfg.io == GAP_IO_DISPLAY_ONLY &&
-                     pdu[1] == GAP_IO_DISPLAY_ONLY)
+                gap_smp_fail(conn, SMP_ERR_AUTH_REQUIREMENTS);
+                return;
+            }
+
+            model = SMP_USER_PASSKEY_DISPLAY;
+            if (secure) {
+                if ((gap_pair_cfg.io_capability == GAP_IO_DISPLAY_YES_NO ||
+                     gap_pair_cfg.io_capability == GAP_IO_KEYBOARD_DISPLAY) &&
+                    (pdu[1] == GAP_IO_DISPLAY_YES_NO || pdu[1] == GAP_IO_KEYBOARD_DISPLAY)
                 ) {
-                    gap_smp_fail(conn, SMP_ERR_AUTH_REQUIREMENTS);
-                    return;
+                    model = SMP_USER_NUMERIC_COMPARISON;
                 }
-
-                model = SMP_USER_PASSKEY_DISPLAY;
-
-                if ((pairing->auth_flags & SMP_AUTH_SECURE_CONN)) {
-                    if ((gap_pair_cfg.io == GAP_IO_DISPLAY_YES_NO ||
-                         gap_pair_cfg.io == GAP_IO_KEYBOARD_DISPLAY) &&
-                        (pdu[1] == GAP_IO_DISPLAY_YES_NO || pdu[1] == GAP_IO_KEYBOARD_DISPLAY)
-                    ) {
-                        model = SMP_USER_NUMERIC_COMPARISON;
-                    }
-                    else if (gap_pair_cfg.io == GAP_IO_KEYBOARD_ONLY ||
-                             (gap_pair_cfg.io == GAP_IO_KEYBOARD_DISPLAY && pdu[1] < GAP_IO_KEYBOARD_ONLY)
-                    ) {
-                        model = SMP_USER_PASSKEY_INPUT;
-                    }
-                    conn->smp.secure.numeric_required = model == SMP_USER_NUMERIC_COMPARISON;
-                    conn->smp.secure.passkey_required = model == SMP_USER_PASSKEY_INPUT ||
-                                                        model == SMP_USER_PASSKEY_DISPLAY;
+                else if (gap_pair_cfg.io_capability == GAP_IO_KEYBOARD_ONLY ||
+                         (gap_pair_cfg.io_capability == GAP_IO_KEYBOARD_DISPLAY && pdu[1] < GAP_IO_KEYBOARD_ONLY)
+                ) {
+                    model = SMP_USER_PASSKEY_INPUT;
                 }
-                else {
-                    if (gap_pair_cfg.io < GAP_IO_KEYBOARD_ONLY && pdu[1] < GAP_IO_KEYBOARD_ONLY ) {
-                        gap_smp_fail(conn, SMP_ERR_AUTH_REQUIREMENTS);
-                        return;
-                    }
-
-                    if (gap_pair_cfg.io == GAP_IO_KEYBOARD_ONLY ||
-                        (gap_pair_cfg.io == GAP_IO_KEYBOARD_DISPLAY && (pdu[1] < GAP_IO_KEYBOARD_ONLY ||
-                                            (pdu[1] == GAP_IO_KEYBOARD_DISPLAY && !conn->is_central)))
-                    ) {
-                        model = SMP_USER_PASSKEY_INPUT;
-                    }
-                    pairing->auth_flags |= SMP_AUTH_MITM;
+                conn->smp.secure.numeric_required = model == SMP_USER_NUMERIC_COMPARISON;
+                conn->smp.secure.passkey_required = model != SMP_USER_NUMERIC_COMPARISON;
+            }
+            else {
+                if (gap_pair_cfg.io_capability == GAP_IO_KEYBOARD_ONLY ||
+                    (gap_pair_cfg.io_capability == GAP_IO_KEYBOARD_DISPLAY && (pdu[1] < GAP_IO_KEYBOARD_ONLY ||
+                      (pdu[1] == GAP_IO_KEYBOARD_DISPLAY && !conn->is_central)))
+                ) {
+                    model = SMP_USER_PASSKEY_INPUT;
                 }
+                pairing->auth_flags |= SMP_AUTH_MITM;
             }
         }
 
@@ -2379,7 +2377,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
             gap_smp_fail(conn, SMP_ERR_UNSPECIFIED);
             return;
         }
-        else if ((pairing->auth_flags & SMP_AUTH_SECURE_CONN)) {
+        else if (secure) {
             gap_oob_local *oob = NULL;
             uint8_t use_oob_key = 0;
 
@@ -2446,7 +2444,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
             memcpy(pairing->request, pdu, 7);
 
             if ((pairing->auth_flags & SMP_AUTH_BONDING)) {
-                if (!(pairing->auth_flags & SMP_AUTH_SECURE_CONN))
+                if (!secure)
                     responder_keys = GAP_KEY_DIST_SIGNING | GAP_KEY_DIST_ENCRYPTION;
 
                 uint8_t irk[16] = {0}, address[7] = {0};
@@ -2459,7 +2457,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
             }
 
             pairing->response[0] = 2;
-            pairing->response[1] = gap_pair_cfg.io;
+            pairing->response[1] = gap_pair_cfg.io_capability;
             pairing->response[2] = conn->smp.secure.oob_active ? local_oob_flag : 0;
             pairing->response[3] = (gap_pair_cfg.options & SMP_AUTH_MITM) |
                                     pairing->auth_flags;
@@ -2468,7 +2466,7 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
         else {
             memcpy(pairing->response, pdu, 5);
 
-            if ((pairing->auth_flags & SMP_AUTH_SECURE_CONN)) {
+            if (secure) {
                 uint8_t public_key[64];
 
                 for (uint8_t coordinate = 0; coordinate < 2; coordinate++) {
@@ -2496,10 +2494,10 @@ static void gap_smp_poll_context(gap_conn_context *conn, uint32_t now_ms) {
         if (op == SMP_PAIRING_REQUEST)
             gap_smp_queue(&conn->smp, SMP_PAIRING_RESPONSE, pairing->response + 1, 6);
 
-        pairing->phase = (pairing->auth_flags & SMP_AUTH_SECURE_CONN) ? SMP_PHASE_SC_PUBLIC_KEY
-                                            : pairing->passkey_action == SMP_USER_PASSKEY_INPUT
-                                            ? SMP_PHASE_PASSKEY
-                                            : SMP_PHASE_CONFIRM;
+        pairing->phase = secure ? SMP_PHASE_SC_PUBLIC_KEY
+                                : pairing->passkey_action == SMP_USER_PASSKEY_INPUT
+                                ? SMP_PHASE_PASSKEY
+                                : SMP_PHASE_CONFIRM;
         return;
     }
     else if (op == SMP_PAIRING_PUBLIC_KEY && pending_len == 65 &&
