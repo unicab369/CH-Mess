@@ -100,13 +100,15 @@ static inline uint32_t flash_crc32_update(
 
 // Calculate a record payload CRC in small RAM chunks.
 static inline int flash_crc32_at(uint32_t address, uint16_t length, uint32_t *result) {
+    if (!result) return -1;
+
     uint8_t chunk[32];
     uint32_t crc = 0xFFFFFFFFu;
 
-    if (!result) return -1;
     while (length) {
         const size_t count = length < sizeof(chunk) ? length : sizeof(chunk);
-        if (HW_READ(address, chunk, count)) return -1;
+        if (HW_READ(address, chunk, count))
+            return -1;
 
         crc = flash_crc32_update(crc, chunk, count);
         address += count;
@@ -127,20 +129,25 @@ static inline int flash_log_init(flash_log *log) {
     flash_record record;
 
     while (log->next_address + sizeof(record) <= end) {
-        if (HW_READ(log->next_address, &record, sizeof(record))) return -1;
-        if (record.magic != FLASH_RECORD_MAGIC) break;
-        if (record.length > end - log->next_address - sizeof(record)) break;
+        if (HW_READ(log->next_address, &record, sizeof(record)))
+            return -1;
+        if (record.magic != FLASH_RECORD_MAGIC ||
+            record.length > end - log->next_address - sizeof(record)
+        ) break;
 
         uint32_t crc;
         if (flash_crc32_at(log->next_address + sizeof(record), record.length, &crc))
             return -1;
-        if (crc != record.crc32) break;
+        if (crc != record.crc32)
+            break;
 
         // Signed subtraction compares wrapped sequence numbers safely.
         if ((int32_t)((record.sequence + 1u) - log->next_sequence) > 0)
             log->next_sequence = record.sequence + 1u;
+
         const uint32_t record_size = flash_align_up(sizeof(record) + record.length, FLASH_ALIGNMENT);
-        if (record_size > end - log->next_address) break;
+        if (record_size > end - log->next_address)
+            break;
         log->next_address += record_size;
     }
     return 0;
@@ -153,7 +160,8 @@ static inline int flash_log_write(
     if (!log || (!data && length)) return -1;
     const uint32_t total = flash_align_up(sizeof(flash_record) + length, FLASH_ALIGNMENT);
     const uint32_t end = FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE;
-    if (log->next_address + total > end) return -2; // Full: GC not implemented.
+    if (log->next_address + total > end)
+        return -2; // Full: GC not implemented.
 
     flash_record record = { .magic = FLASH_RECORD_MAGIC,
                             .sequence = log->next_sequence,
@@ -161,9 +169,9 @@ static inline int flash_log_write(
                             .length = length,
                             .crc32 = ~flash_crc32_update(0xFFFFFFFFu, (const uint8_t *)data, length) };
 
-    if (HW_PROGRAM(log->next_address, &record, sizeof(record))) return -1;
-    if (length && HW_PROGRAM(log->next_address + sizeof(record), data, length))
-        return -1;
+    if ((length && HW_PROGRAM(log->next_address + sizeof(record), data, length)) ||
+        HW_PROGRAM(log->next_address, &record, sizeof(record))
+    ) return -1;
 
     log->next_address += total;
     ++log->next_sequence;
@@ -177,7 +185,6 @@ static inline int flash_log_read(
     uint16_t capacity, uint16_t *length
 ) {
     if (!log || !length || (!data && capacity)) return -1;
-
     uint32_t address = FLASH_BASE_ADDR;
     uint32_t new_sequence = 0;
     uint32_t new_address = 0;
@@ -186,12 +193,15 @@ static inline int flash_log_read(
     flash_record record;
 
     while (address + sizeof(record) <= log->next_address) {
-        if (HW_READ(address, &record, sizeof(record))) return -1;
-        if (record.magic != FLASH_RECORD_MAGIC) break;
-        if (record.length > log->next_address - address - sizeof(record)) return -1;
+        if (HW_READ(address, &record, sizeof(record)) ||
+            record.length > log->next_address - address - sizeof(record)
+        ) return -1;
+        if (record.magic != FLASH_RECORD_MAGIC)
+            break;
 
         if (record.logical_id == logical_id &&
-            (!found || (int32_t)(record.sequence - new_sequence) > 0)) {
+            (!found || (int32_t)(record.sequence - new_sequence) > 0)
+        ) {
             new_sequence = record.sequence;
             new_address = address;
             new_length = record.length;
@@ -203,14 +213,11 @@ static inline int flash_log_read(
 
     if (!found) return -2;
     if (new_length > capacity) return -3;
-    if (new_length &&
-        HW_READ(new_address + sizeof(record), data, new_length))
-        return -1;
-
-    if (HW_READ(new_address, &record, sizeof(record))) return -1;
-    if (~flash_crc32_update(0xFFFFFFFFu, (const uint8_t *)data, new_length) !=
-        record.crc32)
-        return -1;
+    if ((new_length && HW_READ(new_address + sizeof(record), data, new_length)) ||
+        HW_READ(new_address, &record, sizeof(record)) ||
+        ~flash_crc32_update(0xFFFFFFFFu, (const uint8_t *)data, new_length) !=
+            record.crc32
+    ) return -1;
 
     *length = new_length;
     return 0;
