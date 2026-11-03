@@ -86,17 +86,34 @@ static inline bool flash_fits_page(
     return (address / page_size) == ((address + length - 1u) / page_size);
 }
 
-// CRC-32/ISO-HDLC, used to reject records interrupted by power loss.
-static inline uint32_t flash_crc32(const void *data, size_t length) {
-    const uint8_t *bytes = (const uint8_t *)data;
-    uint32_t crc = 0xFFFFFFFFu;
-
+// Update an in-progress CRC with a chunk of bytes.
+static inline uint32_t flash_crc32_update(
+    uint32_t crc, const uint8_t *bytes, size_t length
+) {
     for (size_t i = 0; i < length; ++i) {
         crc ^= bytes[i];
         for (uint8_t bit = 0; bit < 8; ++bit)
             crc = (crc >> 1) ^ (FLASH_CRC32_POLYNOMIAL & (uint32_t)-(int32_t)(crc & 1u));
     }
-    return ~crc;
+    return crc;
+}
+
+// Calculate a record payload CRC in small RAM chunks.
+static inline int flash_crc32_at(uint32_t address, uint16_t length, uint32_t *result) {
+    uint8_t chunk[32];
+    uint32_t crc = 0xFFFFFFFFu;
+
+    if (!result) return -1;
+    while (length) {
+        const size_t count = length < sizeof(chunk) ? length : sizeof(chunk);
+        if (HW_READ(address, chunk, count)) return -1;
+
+        crc = flash_crc32_update(crc, chunk, count);
+        address += count;
+        length -= (uint16_t)count;
+    }
+    *result = ~crc;
+    return 0;
 }
 
 // Scan the reserved region to find the next unused record slot.
@@ -112,11 +129,19 @@ static inline int flash_log_init(flash_log *log) {
     while (log->next_address + sizeof(record) <= end) {
         if (HW_READ(log->next_address, &record, sizeof(record))) return -1;
         if (record.magic != FLASH_RECORD_MAGIC) break;
+        if (record.length > end - log->next_address - sizeof(record)) break;
+
+        uint32_t crc;
+        if (flash_crc32_at(log->next_address + sizeof(record), record.length, &crc))
+            return -1;
+        if (crc != record.crc32) break;
 
         // Signed subtraction compares wrapped sequence numbers safely.
         if ((int32_t)((record.sequence + 1u) - log->next_sequence) > 0)
             log->next_sequence = record.sequence + 1u;
-        log->next_address += flash_align_up(sizeof(record) + record.length, FLASH_ALIGNMENT);
+        const uint32_t record_size = flash_align_up(sizeof(record) + record.length, FLASH_ALIGNMENT);
+        if (record_size > end - log->next_address) break;
+        log->next_address += record_size;
     }
     return 0;
 }
@@ -134,7 +159,7 @@ static inline int flash_log_write(
                             .sequence = log->next_sequence,
                             .logical_id = logical_id,
                             .length = length,
-                            .crc32 = flash_crc32(data, length) };
+                            .crc32 = ~flash_crc32_update(0xFFFFFFFFu, (const uint8_t *)data, length) };
 
     if (HW_PROGRAM(log->next_address, &record, sizeof(record))) return -1;
     if (length && HW_PROGRAM(log->next_address + sizeof(record), data, length))
@@ -145,5 +170,50 @@ static inline int flash_log_write(
     return 0;
 }
 
+// Read the newest valid payload for a logical ID.
+// Returns 0 on success, -1 on flash/CRC error, -2 if missing, -3 if buffer is small.
+static inline int flash_log_read(
+    const flash_log *log, uint16_t logical_id, void *data,
+    uint16_t capacity, uint16_t *length
+) {
+    if (!log || !length || (!data && capacity)) return -1;
+
+    uint32_t address = FLASH_BASE_ADDR;
+    uint32_t new_sequence = 0;
+    uint32_t new_address = 0;
+    uint16_t new_length = 0;
+    bool found = false;
+    flash_record record;
+
+    while (address + sizeof(record) <= log->next_address) {
+        if (HW_READ(address, &record, sizeof(record))) return -1;
+        if (record.magic != FLASH_RECORD_MAGIC) break;
+        if (record.length > log->next_address - address - sizeof(record)) return -1;
+
+        if (record.logical_id == logical_id &&
+            (!found || (int32_t)(record.sequence - new_sequence) > 0)) {
+            new_sequence = record.sequence;
+            new_address = address;
+            new_length = record.length;
+            found = true;
+        }
+
+        address += flash_align_up(sizeof(record) + record.length, FLASH_ALIGNMENT);
+    }
+
+    if (!found) return -2;
+    if (new_length > capacity) return -3;
+    if (new_length &&
+        HW_READ(new_address + sizeof(record), data, new_length))
+        return -1;
+
+    if (HW_READ(new_address, &record, sizeof(record))) return -1;
+    if (~flash_crc32_update(0xFFFFFFFFu, (const uint8_t *)data, new_length) !=
+        record.crc32)
+        return -1;
+
+    *length = new_length;
+    return 0;
+}
 
 #endif // FUN_FLASH_LOG_H
