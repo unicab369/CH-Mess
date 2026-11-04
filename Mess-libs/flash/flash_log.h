@@ -93,8 +93,8 @@ typedef struct {
 } flash_log;
 
 // Hardware interface; implement these functions for the target flash device.
-int HW_READ(uint32_t address, void *dst, size_t length);
-int HW_PROGRAM(uint32_t address, const void *src, size_t length);
+int HW_FLASH_READ(uint32_t address, void *dst, size_t length);
+int HW_FLASH_WRITE(uint32_t address, const void *src, size_t length);
 int HW_ERASE_BLOCK(uint32_t address);
 
 // Check that a program operation stays within a physical page, when required.
@@ -147,7 +147,7 @@ static inline flash_status flash_log_init(flash_log *log) {
     while (log->next_address + sizeof(record) <=
            FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE
     ) {
-        if (HW_READ(log->next_address, &record, sizeof(record)))
+        if (HW_FLASH_READ(log->next_address, &record, sizeof(record)))
             return FLASH_ERROR;
         if (flash_record_is_erased(&record)) break;
 
@@ -169,7 +169,7 @@ static inline flash_status flash_log_init(flash_log *log) {
         while (crc_remaining) {
             const size_t chunk_size = crc_remaining < sizeof(crc_chunk)
                 ? crc_remaining : sizeof(crc_chunk);
-            if (HW_READ(crc_address, crc_chunk, chunk_size))
+            if (HW_FLASH_READ(crc_address, crc_chunk, chunk_size))
                 return FLASH_ERROR;
             crc = flash_crc32_update(crc, crc_chunk, chunk_size);
             crc_address += chunk_size;
@@ -230,10 +230,10 @@ static inline flash_status flash_log_write(
                             .length = length,
                             .crc32 = ~flash_crc32_update(0xFFFFFFFFu, (const uint8_t *)data, length) };
 
-    if (HW_PROGRAM(log->next_address, &record, offsetof(flash_record, magic)) ||
-        (length && HW_PROGRAM(log->next_address + sizeof(record), data, length)) ||
-        HW_PROGRAM(log->next_address + offsetof(flash_record, magic),
-                   &record.magic, sizeof(record.magic) + sizeof(record.commit))
+    if (HW_FLASH_WRITE(log->next_address, &record, offsetof(flash_record, magic)) ||
+        (length && HW_FLASH_WRITE(log->next_address + sizeof(record), data, length)) ||
+        HW_FLASH_WRITE(log->next_address + offsetof(flash_record, magic), &record.magic,
+                    sizeof(record.magic) + sizeof(record.commit))
     ) {
         log->next_address = flash_next_block(log->next_address);
         return FLASH_ERROR;
@@ -261,7 +261,7 @@ static inline flash_status flash_log_read(
     flash_record record;
 
     while (address + sizeof(record) <= log->next_address) {
-        if (HW_READ(address, &record, sizeof(record)))
+        if (HW_FLASH_READ(address, &record, sizeof(record)))
             return FLASH_ERROR;
         if (flash_record_is_erased(&record))
             break;
@@ -296,11 +296,12 @@ static inline flash_status flash_log_read(
     }
 
     if (!found) return FLASH_NOT_FOUND;
-    if (new_length > capacity) return FLASH_BUFFER_TOO_SMALL;
+    if (new_length > capacity)
+        return FLASH_BUFFER_TOO_SMALL;
 
     // Read the selected payload and verify its CRC before returning it.
-    if ((new_length && HW_READ(new_address + sizeof(record), data, new_length)) ||
-        HW_READ(new_address, &record, sizeof(record)) ||
+    if ((new_length && HW_FLASH_READ(new_address + sizeof(record), data, new_length)) ||
+        HW_FLASH_READ(new_address, &record, sizeof(record)) ||
         ~flash_crc32_update(0xFFFFFFFFu, (const uint8_t *)data, new_length) != record.crc32
     ) return FLASH_ERROR;
 
