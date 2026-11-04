@@ -13,6 +13,17 @@
 #include <stddef.h>
 #include <stdint.h>
 
+typedef uint8_t flash_status;
+
+enum {
+    FLASH_STATUS_OK = 0,
+    FLASH_STATUS_ERROR,
+    FLASH_STATUS_FULL,
+    FLASH_STATUS_RECORD_TOO_LARGE,
+    FLASH_STATUS_NOT_FOUND,
+    FLASH_STATUS_BUFFER_TOO_SMALL
+};
+
 #ifndef FLASH_BASE_ADDR
 #define FLASH_BASE_ADDR    0x08010000u
 #endif
@@ -114,9 +125,9 @@ static inline bool flash_record_is_erased(const flash_record *record) {
 }
 
 // Scan the reserved region to find the next unused record slot.
-static inline int flash_log_init(flash_log *log) {
+static inline flash_status flash_log_init(flash_log *log) {
     if (!log || FLASH_BLOCK_COUNT < 2)
-        return -1;
+        return FLASH_STATUS_ERROR;
 
     log->next_address = FLASH_BASE_ADDR;
     log->next_sequence = 1;
@@ -125,7 +136,7 @@ static inline int flash_log_init(flash_log *log) {
     while (log->next_address + sizeof(record) <=
            FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE) {
         if (HW_READ(log->next_address, &record, sizeof(record)))
-            return -1;
+            return FLASH_STATUS_ERROR;
         if (flash_record_is_erased(&record)) break;
 
         if (record.magic != FLASH_RECORD_MAGIC ||
@@ -146,7 +157,8 @@ static inline int flash_log_init(flash_log *log) {
         while (crc_remaining) {
             const size_t chunk_size = crc_remaining < sizeof(crc_chunk)
                 ? crc_remaining : sizeof(crc_chunk);
-            if (HW_READ(crc_address, crc_chunk, chunk_size)) return -1;
+            if (HW_READ(crc_address, crc_chunk, chunk_size))
+                return FLASH_STATUS_ERROR;
             crc = flash_crc32_update(crc, crc_chunk, chunk_size);
             crc_address += chunk_size;
             crc_remaining -= (uint16_t)chunk_size;
@@ -172,23 +184,23 @@ static inline int flash_log_init(flash_log *log) {
         }
         log->next_address += record_size;
     }
-    return 0;
+    return FLASH_STATUS_OK;
 }
 
 // Append one value. The record header and payload are programmed together.
-static inline int flash_log_write(
+static inline flash_status flash_log_write(
     flash_log *log, uint16_t logical_id, const void *data, uint16_t length
 ) {
-    if (!log || (!data && length)) return -1;
+    if (!log || (!data && length)) return FLASH_STATUS_ERROR;
     const uint32_t total = ((sizeof(flash_record) + length + FLASH_ALIGNMENT - 1u) /
                             FLASH_ALIGNMENT) * FLASH_ALIGNMENT;
-    if (total > FLASH_BLOCK_SIZE) return -3;
+    if (total > FLASH_BLOCK_SIZE) return FLASH_STATUS_RECORD_TOO_LARGE;
 
     if (total > FLASH_BLOCK_SIZE - ((log->next_address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE))
         log->next_address = flash_get_next_block(log->next_address - 1u);
 
     if (log->next_address + total > FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE)
-        return -2; // Full: GC not implemented.
+        return FLASH_STATUS_FULL; // GC not implemented.
 
     flash_record record = { .magic = FLASH_RECORD_MAGIC,
                             .commit = FLASH_RECORD_COMMIT,
@@ -203,21 +215,21 @@ static inline int flash_log_write(
                    &record.magic, sizeof(record.magic) + sizeof(record.commit))
     ) {
         log->next_address = flash_next_block(log->next_address);
-        return -1;
+        return FLASH_STATUS_ERROR;
     }
 
     log->next_address += total;
     ++log->next_sequence;
-    return 0;
+    return FLASH_STATUS_OK;
 }
 
 // Read the newest valid payload for a logical ID.
 // Returns 0 on success, -1 on flash/CRC error, -2 if missing, -3 if buffer is small.
-static inline int flash_log_read(
+static inline flash_status flash_log_read(
     const flash_log *log, uint16_t logical_id, void *data,
     uint16_t capacity, uint16_t *length
 ) {
-    if (!log || !length || (!data && capacity)) return -1;
+    if (!log || !length || (!data && capacity)) return FLASH_STATUS_ERROR;
     uint32_t address = FLASH_BASE_ADDR;
     uint32_t new_sequence = 0;
     uint32_t new_address = 0;
@@ -227,7 +239,7 @@ static inline int flash_log_read(
 
     while (address + sizeof(record) <= log->next_address) {
         if (HW_READ(address, &record, sizeof(record)))
-            return -1;
+            return FLASH_STATUS_ERROR;
         if (flash_record_is_erased(&record))
             break;
 
@@ -256,15 +268,15 @@ static inline int flash_log_read(
             address += record_size;
     }
 
-    if (!found) return -2;
-    if (new_length > capacity) return -3;
+    if (!found) return FLASH_STATUS_NOT_FOUND;
+    if (new_length > capacity) return FLASH_STATUS_BUFFER_TOO_SMALL;
     if ((new_length && HW_READ(new_address + sizeof(record), data, new_length)) ||
         HW_READ(new_address, &record, sizeof(record)) ||
         ~flash_crc32_update(0xFFFFFFFFu, (const uint8_t *)data, new_length) != record.crc32
-    ) return -1;
+    ) return FLASH_STATUS_ERROR;
 
     *length = new_length;
-    return 0;
+    return FLASH_STATUS_OK;
 }
 
 #endif // FUN_FLASH_LOG_H
