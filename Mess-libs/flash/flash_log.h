@@ -327,10 +327,10 @@ static inline flash_status flash_log_write(
         return FLASH_RECORD_TOO_LARGE;
 
     if (((log->next_address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u)) + total >
-        FLASH_BLOCK_SIZE) {
+        FLASH_BLOCK_SIZE
+    ) {
         log->next_address = flash_get_next_block(log->next_address - 1u);
     }
-
 
     if (log->next_address + total > FLASH_LOG_END)
         return FLASH_FULL; // GC not implemented.
