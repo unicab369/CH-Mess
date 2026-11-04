@@ -230,8 +230,12 @@ static inline flash_status flash_log_write(
                             .length = length,
                             .crc32 = ~flash_crc32_update(0xFFFFFFFFu, (const uint8_t *)data, length) };
 
-    if (HW_FLASH_WRITE(log->next_address, &record, offsetof(flash_record, magic)) ||
+    if (
+        // Write the header fields before the final marker fields.
+        HW_FLASH_WRITE(log->next_address, &record, offsetof(flash_record, magic)) ||
+        // Write the payload before marking the record complete.
         (length && HW_FLASH_WRITE(log->next_address + sizeof(record), data, length)) ||
+        // Write magic and commit last so startup can identify a complete record.
         HW_FLASH_WRITE(log->next_address + offsetof(flash_record, magic), &record.magic,
                     sizeof(record.magic) + sizeof(record.commit))
     ) {
@@ -246,23 +250,25 @@ static inline flash_status flash_log_write(
 
 // Read the latest committed payload for one logical ID.
 // Returns a FLASH_* value and writes the payload size to length.
-static inline flash_status flash_log_read(
+// Fast read for callers that guarantee valid pointers and arguments.
+static inline flash_status flash_log_read_fast(
     const flash_log *log, uint16_t logical_id, void *data,
     uint16_t capacity, uint16_t *length
 ) {
-    if (!log || !length || (!data && capacity)) return FLASH_ERROR;
-
     // Scan records and remember the newest matching logical ID.
     uint32_t address = FLASH_BASE_ADDR;
     uint32_t new_sequence = 0;
     uint32_t new_address = 0;
+    uint32_t new_crc32 = 0;
     uint16_t new_length = 0;
     bool found = false;
     flash_record record;
 
     while (address + sizeof(record) <= log->next_address) {
+        // Read this header to check whether it matches the requested logical ID.
         if (HW_FLASH_READ(address, &record, sizeof(record)))
             return FLASH_ERROR;
+        // An erased header means there are no more records in this block.
         if (flash_record_is_erased(&record))
             break;
 
@@ -280,6 +286,7 @@ static inline flash_status flash_log_read(
             (!found || (int32_t)(record.sequence - new_sequence) > 0)
         ) {
             new_sequence = record.sequence;
+            new_crc32 = record.crc32;
             new_length = record.length;
             new_address = address;
             found = true;
@@ -301,12 +308,21 @@ static inline flash_status flash_log_read(
 
     // Read the selected payload and verify its CRC before returning it.
     if ((new_length && HW_FLASH_READ(new_address + sizeof(record), data, new_length)) ||
-        HW_FLASH_READ(new_address, &record, sizeof(record)) ||
-        ~flash_crc32_update(0xFFFFFFFFu, (const uint8_t *)data, new_length) != record.crc32
+        ~flash_crc32_update(0xFFFFFFFFu, (const uint8_t *)data, new_length) != new_crc32
     ) return FLASH_ERROR;
 
     *length = new_length;
     return FLASH_OK;
+}
+
+// Read a value after checking that required pointers are valid.
+static inline flash_status flash_log_read(
+    const flash_log *log, uint16_t logical_id, void *data,
+    uint16_t capacity, uint16_t *length
+) {
+    if (!log || !length || (!data && capacity))
+        return FLASH_ERROR;
+    return flash_log_read_fast(log, logical_id, data, capacity, length);
 }
 
 #endif // FUN_FLASH_LOG_H
