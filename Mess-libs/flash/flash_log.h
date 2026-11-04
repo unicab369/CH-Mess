@@ -133,7 +133,7 @@ typedef struct {
     uint32_t next_address;  // Address where the next record will be written.
     uint32_t next_sequence; // Sequence number to assign to the next record.
 #if FLASH_CACHE_LENGTH > 0
-    uint16_t cache_next; // Next cache slot to replace when the cache is full.
+    uint16_t cache_next; // Next empty slot, then next replacement slot.
     flash_cache_entry cache[FLASH_CACHE_LENGTH];
 #endif
 } flash_log;
@@ -198,20 +198,17 @@ static inline flash_crc flash_crc_update(
 static inline void flash_cache_store(
     flash_log *log, const flash_record *record, uint32_t address
 ) {
-    uint16_t slot = FLASH_CACHE_LENGTH;
-
-    for (uint16_t i = 0; i < FLASH_CACHE_LENGTH; ++i) {
-        if (log->cache[i].valid && log->cache[i].logical_id == record->logical_id) {
-            slot = i;
-            break;
-        }
-        if (!log->cache[i].valid && slot == FLASH_CACHE_LENGTH)
-            slot = i;
+    uint16_t slot;
+    for (slot = 0; slot < FLASH_CACHE_LENGTH; ++slot) {
+        if (log->cache[slot].valid &&
+            log->cache[slot].logical_id == record->logical_id
+        ) break;
     }
 
     if (slot == FLASH_CACHE_LENGTH) {
+        // Fill slots in order, then reuse them in round-robin order.
         slot = log->cache_next;
-        log->cache_next = (log->cache_next + 1u) & (FLASH_CACHE_LENGTH - 1u);
+        log->cache_next = (slot + 1u) & (FLASH_CACHE_LENGTH - 1u);
     }
 
     log->cache[slot].logical_id = record->logical_id;
@@ -335,11 +332,13 @@ static inline flash_status flash_log_write(
     if (log->next_address + total > FLASH_LOG_END)
         return FLASH_FULL; // GC not implemented.
 
-    flash_record record = { .marker = FLASH_RECORD_MARKER,
-                        .sequence = log->next_sequence,
-                        .logical_id = logical_id,
-                        .length = length,
-                        .crc = (flash_crc)~flash_crc_update(FLASH_CRC_INITIAL, (const uint8_t *)data, length) };
+    flash_record record = {
+        .marker = FLASH_RECORD_MARKER,
+        .sequence = log->next_sequence,
+        .logical_id = logical_id,
+        .length = length,
+        .crc = (flash_crc)~flash_crc_update(FLASH_CRC_INITIAL, (const uint8_t *)data, length)
+    };
 
     if (
         // Write the header fields before the final marker.
