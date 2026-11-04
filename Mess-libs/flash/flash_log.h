@@ -33,6 +33,10 @@
 #define FLASH_ALIGNMENT    4
 #endif
 
+#if FLASH_ALIGNMENT == 0
+#error "FLASH_ALIGNMENT must be greater than zero"
+#endif
+
 #define FLASH_CRC32_POLYNOMIAL 0xEDB88320u
 
 #define FLASH_RECORD_MAGIC 0xBABE // 16-bit record marker
@@ -73,12 +77,6 @@ typedef struct {
 int HW_READ(uint32_t address, void *dst, size_t length);
 int HW_PROGRAM(uint32_t address, const void *src, size_t length);
 int HW_ERASE_BLOCK(uint32_t address);
-
-// Round a byte count up to the hardware's required program alignment.
-static inline uint32_t flash_align_up(uint32_t size, uint32_t alignment) {
-    if (alignment == 0) return size;
-    return ((size + alignment - 1u) / alignment) * alignment;
-}
 
 // Check that a program operation stays within a physical page, when required.
 static inline bool flash_fits_page(
@@ -130,7 +128,8 @@ static inline uint32_t flash_next_block(uint32_t address) {
 static inline bool flash_record_is_erased(const flash_record *record) {
     const uint8_t *bytes = (const uint8_t *)record;
     for (size_t i = 0; i < sizeof(*record); ++i)
-        if (bytes[i] != 0xFFu) return false;
+        if (bytes[i] != 0xFFu)
+            return false;
     return true;
 }
 
@@ -141,16 +140,19 @@ static inline int flash_log_init(flash_log *log) {
 
     log->next_address = FLASH_BASE_ADDR;
     log->next_sequence = 1;
-    const uint32_t end = FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE;
     flash_record record;
 
-    while (log->next_address + sizeof(record) <= end) {
+    while (log->next_address + sizeof(record) <=
+           FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE) {
         if (HW_READ(log->next_address, &record, sizeof(record)))
             return -1;
         if (flash_record_is_erased(&record)) break;
+
         if (record.magic != FLASH_RECORD_MAGIC ||
             record.commit != FLASH_RECORD_COMMIT ||
-            record.length > end - log->next_address - sizeof(record)) {
+            record.length > FLASH_BASE_ADDR +
+                (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE -
+                log->next_address - sizeof(record)) {
             log->next_address = flash_next_block(log->next_address);
             continue;
         }
@@ -167,8 +169,9 @@ static inline int flash_log_init(flash_log *log) {
         if ((int32_t)((record.sequence + 1u) - log->next_sequence) > 0)
             log->next_sequence = record.sequence + 1u;
 
-        const uint32_t record_size = flash_align_up(sizeof(record) + record.length, FLASH_ALIGNMENT);
-        if (record_size > end - log->next_address)
+        const uint32_t record_size = ((sizeof(record) + record.length + FLASH_ALIGNMENT - 1u) /
+                                    FLASH_ALIGNMENT) * FLASH_ALIGNMENT;
+        if (record_size > FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE - log->next_address)
             break;
         if (record_size > FLASH_BLOCK_SIZE - ((log->next_address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE)) {
             log->next_address = flash_next_block(log->next_address - 1u);
@@ -184,13 +187,14 @@ static inline int flash_log_write(
     flash_log *log, uint16_t logical_id, const void *data, uint16_t length
 ) {
     if (!log || (!data && length)) return -1;
-    const uint32_t total = flash_align_up(sizeof(flash_record) + length, FLASH_ALIGNMENT);
+    const uint32_t total = ((sizeof(flash_record) + length + FLASH_ALIGNMENT - 1u) /
+                            FLASH_ALIGNMENT) * FLASH_ALIGNMENT;
     if (total > FLASH_BLOCK_SIZE) return -3;
-    const uint32_t end = FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE;
+
     if (total > FLASH_BLOCK_SIZE - ((log->next_address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE))
         log->next_address = flash_next_block(log->next_address - 1u);
 
-    if (log->next_address + total > end)
+    if (log->next_address + total > FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE)
         return -2; // Full: GC not implemented.
 
     flash_record record = { .magic = FLASH_RECORD_MAGIC,
@@ -249,7 +253,8 @@ static inline int flash_log_read(
             found = true;
         }
 
-        const uint32_t record_size = flash_align_up(sizeof(record) + record.length, FLASH_ALIGNMENT);
+        const uint32_t record_size = ((sizeof(record) + record.length + FLASH_ALIGNMENT - 1u) /
+                                    FLASH_ALIGNMENT) * FLASH_ALIGNMENT;
         if (record_size > FLASH_BLOCK_SIZE - ((address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE))
             address = flash_next_block(address);
         else
