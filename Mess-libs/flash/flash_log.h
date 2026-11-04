@@ -37,6 +37,11 @@ enum {
 #define FLASH_CACHE_LENGTH 0
 #endif
 
+#if FLASH_CACHE_LENGTH > 0 && \
+    (FLASH_CACHE_LENGTH & (FLASH_CACHE_LENGTH - 1)) != 0
+#error "FLASH_CACHE_LENGTH must be a power of two or zero"
+#endif
+
 #ifndef FLASH_BLOCK_SIZE
 #define FLASH_BLOCK_SIZE   4096
 #endif
@@ -94,11 +99,11 @@ typedef struct {
 #if FLASH_CACHE_LENGTH > 0
 // Cache entry pointing to the latest record for one logical ID.
 typedef struct {
-    uint16_t logical_id; // Cached ID.
-    uint16_t length;     // Payload length.
-    uint32_t address;    // Header address.
-    uint32_t crc32;      // Payload CRC.
-    uint8_t valid;       // Slot is in use (0 or 1).
+    uint32_t address;    // Flash address of the record header.
+    uint32_t crc32;      // CRC of the cached payload.
+    uint16_t logical_id; // ID used to find the cached record.
+    uint16_t length;     // Cached payload length.
+    uint8_t valid;       // Whether this slot is in use.
 } flash_cache_entry;
 #endif
 
@@ -154,13 +159,13 @@ static inline void flash_cache_store(
 
     if (slot == FLASH_CACHE_LENGTH) {
         slot = log->cache_next;
-        log->cache_next = (log->cache_next + 1u) % FLASH_CACHE_LENGTH;
+        log->cache_next = (log->cache_next + 1u) & (FLASH_CACHE_LENGTH - 1u);
     }
 
     log->cache[slot].logical_id = record->logical_id;
-    log->cache[slot].length = record->length;
     log->cache[slot].address = address;
     log->cache[slot].crc32 = record->crc32;
+    log->cache[slot].length = record->length;
     log->cache[slot].valid = true;
 }
 #endif
@@ -323,11 +328,12 @@ static inline flash_status flash_log_read_fast(
             continue;
         if (entry->length > capacity)
             return FLASH_BUFFER_TOO_SMALL;
+
         if ((entry->length && HW_FLASH_READ(entry->address + sizeof(flash_record),
                                             data, entry->length)) ||
-            ~flash_crc32_update(0xFFFFFFFFu, (const uint8_t *)data, entry->length) !=
-                entry->crc32)
-            return FLASH_ERROR;
+            ~flash_crc32_update(0xFFFFFFFFu, (const uint8_t *)data, entry->length) != entry->crc32
+        ) return FLASH_ERROR;
+
         *length = entry->length;
         return FLASH_OK;
     }
