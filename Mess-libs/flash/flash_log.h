@@ -44,8 +44,8 @@ enum {
 #define FLASH_ALIGNMENT    4
 #endif
 
-#if FLASH_ALIGNMENT == 0
-#error "FLASH_ALIGNMENT must be greater than zero"
+#if FLASH_ALIGNMENT == 0 || (FLASH_ALIGNMENT & (FLASH_ALIGNMENT - 1)) != 0
+#error "FLASH_ALIGNMENT must be a nonzero power of two"
 #endif
 
 #define FLASH_CRC32_POLYNOMIAL 0xEDB88320u
@@ -174,8 +174,9 @@ static inline flash_status flash_log_init(flash_log *log) {
         if ((int32_t)((record.sequence + 1u) - log->next_sequence) > 0)
             log->next_sequence = record.sequence + 1u;
 
-        const uint32_t record_size = ((sizeof(record) + record.length + FLASH_ALIGNMENT - 1u) /
-                                    FLASH_ALIGNMENT) * FLASH_ALIGNMENT;
+        // Align each record and keep it within one erase block.
+        const uint32_t record_size = (sizeof(record) + record.length + FLASH_ALIGNMENT - 1u) &
+                                    ~((uint32_t)FLASH_ALIGNMENT - 1u);
         if (record_size > FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE - log->next_address)
             break;
         if (record_size > FLASH_BLOCK_SIZE - ((log->next_address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE)) {
@@ -192,8 +193,8 @@ static inline flash_status flash_log_write(
     flash_log *log, uint16_t logical_id, const void *data, uint16_t length
 ) {
     if (!log || (!data && length)) return FLASH_STATUS_ERROR;
-    const uint32_t total = ((sizeof(flash_record) + length + FLASH_ALIGNMENT - 1u) /
-                            FLASH_ALIGNMENT) * FLASH_ALIGNMENT;
+    const uint32_t total = (sizeof(flash_record) + length + FLASH_ALIGNMENT - 1u) &
+                            ~((uint32_t)FLASH_ALIGNMENT - 1u);
     if (total > FLASH_BLOCK_SIZE) return FLASH_STATUS_RECORD_TOO_LARGE;
 
     if (total > FLASH_BLOCK_SIZE - ((log->next_address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE))
@@ -223,13 +224,15 @@ static inline flash_status flash_log_write(
     return FLASH_STATUS_OK;
 }
 
-// Read the newest valid payload for a logical ID.
-// Returns 0 on success, -1 on flash/CRC error, -2 if missing, -3 if buffer is small.
+// Read the latest committed payload for one logical ID.
+// Returns a FLASH_STATUS_* value and writes the payload size to length.
 static inline flash_status flash_log_read(
     const flash_log *log, uint16_t logical_id, void *data,
     uint16_t capacity, uint16_t *length
 ) {
     if (!log || !length || (!data && capacity)) return FLASH_STATUS_ERROR;
+
+    // Scan records and remember the newest matching logical ID.
     uint32_t address = FLASH_BASE_ADDR;
     uint32_t new_sequence = 0;
     uint32_t new_address = 0;
@@ -247,10 +250,12 @@ static inline flash_status flash_log_read(
             record.commit != FLASH_RECORD_COMMIT ||
             record.length > log->next_address - address - sizeof(record)
         ) {
+            // Skip to the next block if this record's header is invalid or incomplete.
             address = flash_get_next_block(address);
             continue;
         }
 
+        // Save this record if it is the first match or newer than the saved one.
         if (record.logical_id == logical_id &&
             (!found || (int32_t)(record.sequence - new_sequence) > 0)
         ) {
@@ -260,8 +265,10 @@ static inline flash_status flash_log_read(
             found = true;
         }
 
-        const uint32_t record_size = ((sizeof(record) + record.length + FLASH_ALIGNMENT - 1u) /
-                                    FLASH_ALIGNMENT) * FLASH_ALIGNMENT;
+        // Round up: ((size + alignment - 1) / alignment) * alignment.
+        const uint32_t record_size = (sizeof(record) + record.length + FLASH_ALIGNMENT - 1u) &
+                                    ~((uint32_t)FLASH_ALIGNMENT - 1u);
+        // Move on if this record would cross the current block boundary.
         if (record_size > FLASH_BLOCK_SIZE - ((address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE))
             address = flash_get_next_block(address);
         else
@@ -270,6 +277,8 @@ static inline flash_status flash_log_read(
 
     if (!found) return FLASH_STATUS_NOT_FOUND;
     if (new_length > capacity) return FLASH_STATUS_BUFFER_TOO_SMALL;
+
+    // Read the selected payload and verify its CRC before returning it.
     if ((new_length && HW_READ(new_address + sizeof(record), data, new_length)) ||
         HW_READ(new_address, &record, sizeof(record)) ||
         ~flash_crc32_update(0xFFFFFFFFu, (const uint8_t *)data, new_length) != record.crc32
