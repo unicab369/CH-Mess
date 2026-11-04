@@ -36,12 +36,20 @@ enum {
 #define FLASH_BLOCK_SIZE   4096
 #endif
 
+#if FLASH_BLOCK_SIZE == 0 || (FLASH_BLOCK_SIZE & (FLASH_BLOCK_SIZE - 1)) != 0
+#error "FLASH_BLOCK_SIZE must be a nonzero power of two"
+#endif
+
 #ifndef FLASH_PAGE_SIZE
 #define FLASH_PAGE_SIZE    256
 #endif
 
 #ifndef FLASH_ALIGNMENT
 #define FLASH_ALIGNMENT    4
+#endif
+
+#if FLASH_BASE_ADDR % FLASH_BLOCK_SIZE != 0
+#error "FLASH_BASE_ADDR must be aligned to FLASH_BLOCK_SIZE"
 #endif
 
 #if FLASH_ALIGNMENT == 0 || (FLASH_ALIGNMENT & (FLASH_ALIGNMENT - 1)) != 0
@@ -111,7 +119,10 @@ static inline uint32_t flash_crc32_update(
 
 // Move an address to the start of the next erase block.
 static inline uint32_t flash_get_next_block(uint32_t address) {
-    const uint32_t offset = (address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE;
+    // Equivalent to (address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE.
+    // For 4096-byte blocks:
+    // 4100 % 4096 = 4; 4100 & 4095 = 4.
+    const uint32_t offset = (address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u);
     return address + FLASH_BLOCK_SIZE - offset;
 }
 
@@ -134,7 +145,8 @@ static inline flash_status flash_log_init(flash_log *log) {
     flash_record record;
 
     while (log->next_address + sizeof(record) <=
-           FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE) {
+           FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE
+    ) {
         if (HW_READ(log->next_address, &record, sizeof(record)))
             return FLASH_STATUS_ERROR;
         if (flash_record_is_erased(&record)) break;
@@ -174,12 +186,14 @@ static inline flash_status flash_log_init(flash_log *log) {
         if ((int32_t)((record.sequence + 1u) - log->next_sequence) > 0)
             log->next_sequence = record.sequence + 1u;
 
-        // Align each record and keep it within one erase block.
+        // Equivalent to ((size + FLASH_ALIGNMENT - 1) / FLASH_ALIGNMENT) * FLASH_ALIGNMENT.
+        // With alignment 4 and size 13: ((13 + 3) / 4) * 4 = 16; (13 + 3) & ~3 = 16.
         const uint32_t record_size = (sizeof(record) + record.length + FLASH_ALIGNMENT - 1u) &
                                     ~((uint32_t)FLASH_ALIGNMENT - 1u);
         if (record_size > FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE - log->next_address)
             break;
-        if (record_size > FLASH_BLOCK_SIZE - ((log->next_address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE)) {
+        if (record_size > FLASH_BLOCK_SIZE -
+            ((log->next_address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u))) {
             log->next_address = flash_get_next_block(log->next_address - 1u);
             continue;
         }
@@ -193,12 +207,17 @@ static inline flash_status flash_log_write(
     flash_log *log, uint16_t logical_id, const void *data, uint16_t length
 ) {
     if (!log || (!data && length)) return FLASH_STATUS_ERROR;
+    // Equivalent to ((size + FLASH_ALIGNMENT - 1) / FLASH_ALIGNMENT) * FLASH_ALIGNMENT.
     const uint32_t total = (sizeof(flash_record) + length + FLASH_ALIGNMENT - 1u) &
                             ~((uint32_t)FLASH_ALIGNMENT - 1u);
     if (total > FLASH_BLOCK_SIZE) return FLASH_STATUS_RECORD_TOO_LARGE;
 
-    if (total > FLASH_BLOCK_SIZE - ((log->next_address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE))
+    if (total > FLASH_BLOCK_SIZE -
+        ((log->next_address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u))
+    ) {
         log->next_address = flash_get_next_block(log->next_address - 1u);
+    }
+
 
     if (log->next_address + total > FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE)
         return FLASH_STATUS_FULL; // GC not implemented.
@@ -265,11 +284,11 @@ static inline flash_status flash_log_read(
             found = true;
         }
 
-        // Round up: ((size + alignment - 1) / alignment) * alignment.
+        // Equivalent to ((size + FLASH_ALIGNMENT - 1) / FLASH_ALIGNMENT) * FLASH_ALIGNMENT.
         const uint32_t record_size = (sizeof(record) + record.length + FLASH_ALIGNMENT - 1u) &
                                     ~((uint32_t)FLASH_ALIGNMENT - 1u);
         // Move on if this record would cross the current block boundary.
-        if (record_size > FLASH_BLOCK_SIZE - ((address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE))
+        if (record_size > FLASH_BLOCK_SIZE - ((address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u)))
             address = flash_get_next_block(address);
         else
             address += record_size;
