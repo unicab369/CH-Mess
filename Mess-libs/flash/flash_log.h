@@ -98,28 +98,8 @@ static inline uint32_t flash_crc32_update(
     return crc;
 }
 
-// Calculate a record payload CRC in small RAM chunks.
-static inline int flash_crc32_at(uint32_t address, uint16_t length, uint32_t *result) {
-    if (!result) return -1;
-
-    uint8_t chunk[32];
-    uint32_t crc = 0xFFFFFFFFu;
-
-    while (length) {
-        const size_t count = length < sizeof(chunk) ? length : sizeof(chunk);
-        if (HW_READ(address, chunk, count))
-            return -1;
-
-        crc = flash_crc32_update(crc, chunk, count);
-        address += count;
-        length -= (uint16_t)count;
-    }
-    *result = ~crc;
-    return 0;
-}
-
 // Move an address to the start of the next erase block.
-static inline uint32_t flash_next_block(uint32_t address) {
+static inline uint32_t flash_get_next_block(uint32_t address) {
     const uint32_t offset = (address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE;
     return address + FLASH_BLOCK_SIZE - offset;
 }
@@ -153,13 +133,26 @@ static inline int flash_log_init(flash_log *log) {
             record.length > FLASH_BASE_ADDR +
                 (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE -
                 log->next_address - sizeof(record)) {
-            log->next_address = flash_next_block(log->next_address);
+            log->next_address = flash_get_next_block(log->next_address);
             continue;
         }
 
-        uint32_t crc;
-        if (flash_crc32_at(log->next_address + sizeof(record), record.length, &crc))
-            return -1;
+        // Verify flash payload in small chunks without buffering the whole record.
+        uint8_t crc_chunk[32];
+        uint32_t crc = 0xFFFFFFFFu;
+        uint32_t crc_address = log->next_address + sizeof(record);
+        uint16_t crc_remaining = record.length;
+
+        while (crc_remaining) {
+            const size_t chunk_size = crc_remaining < sizeof(crc_chunk)
+                ? crc_remaining : sizeof(crc_chunk);
+            if (HW_READ(crc_address, crc_chunk, chunk_size)) return -1;
+            crc = flash_crc32_update(crc, crc_chunk, chunk_size);
+            crc_address += chunk_size;
+            crc_remaining -= (uint16_t)chunk_size;
+        }
+        crc = ~crc;
+
         if (crc != record.crc32) {
             log->next_address = flash_next_block(log->next_address);
             continue;
@@ -174,7 +167,7 @@ static inline int flash_log_init(flash_log *log) {
         if (record_size > FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE - log->next_address)
             break;
         if (record_size > FLASH_BLOCK_SIZE - ((log->next_address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE)) {
-            log->next_address = flash_next_block(log->next_address - 1u);
+            log->next_address = flash_get_next_block(log->next_address - 1u);
             continue;
         }
         log->next_address += record_size;
@@ -192,7 +185,7 @@ static inline int flash_log_write(
     if (total > FLASH_BLOCK_SIZE) return -3;
 
     if (total > FLASH_BLOCK_SIZE - ((log->next_address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE))
-        log->next_address = flash_next_block(log->next_address - 1u);
+        log->next_address = flash_get_next_block(log->next_address - 1u);
 
     if (log->next_address + total > FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE)
         return -2; // Full: GC not implemented.
@@ -233,14 +226,16 @@ static inline int flash_log_read(
     flash_record record;
 
     while (address + sizeof(record) <= log->next_address) {
-        if (HW_READ(address, &record, sizeof(record))) return -1;
-        if (flash_record_is_erased(&record)) break;
+        if (HW_READ(address, &record, sizeof(record)))
+            return -1;
+        if (flash_record_is_erased(&record))
+            break;
 
         if (record.magic != FLASH_RECORD_MAGIC ||
             record.commit != FLASH_RECORD_COMMIT ||
             record.length > log->next_address - address - sizeof(record)
         ) {
-            address = flash_next_block(address);
+            address = flash_get_next_block(address);
             continue;
         }
 
@@ -248,15 +243,15 @@ static inline int flash_log_read(
             (!found || (int32_t)(record.sequence - new_sequence) > 0)
         ) {
             new_sequence = record.sequence;
-            new_address = address;
             new_length = record.length;
+            new_address = address;
             found = true;
         }
 
         const uint32_t record_size = ((sizeof(record) + record.length + FLASH_ALIGNMENT - 1u) /
                                     FLASH_ALIGNMENT) * FLASH_ALIGNMENT;
         if (record_size > FLASH_BLOCK_SIZE - ((address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE))
-            address = flash_next_block(address);
+            address = flash_get_next_block(address);
         else
             address += record_size;
     }
