@@ -2,7 +2,7 @@
 #define FUN_FLASH_LOG_H
 
 // Flash layout: erase blocks contain pages; pages hold bytes from the record log.
-// Record header: [sequence | marker (magic + commit) | CRC | logical_id | length]
+// Record header: [sequence | CRC | logical_id | length | marker (magic + commit)]
 //
 // [erase block - 4KB (configurable)]
 //   [page: [header] [payload] [alignment padding] ...]
@@ -29,7 +29,7 @@ enum {
 #endif
 
 #ifndef FLASH_BLOCK_COUNT
-#define FLASH_BLOCK_COUNT  8
+#define FLASH_BLOCK_COUNT  1
 #endif
 
 #ifndef FLASH_CACHE_LENGTH
@@ -56,6 +56,11 @@ enum {
 
 #ifndef FLASH_ALIGNMENT
 #define FLASH_ALIGNMENT    4
+#endif
+
+#ifndef FLASH_ERASED_WORD
+// Most flash reads as 0xFFFFFFFF after erase; override for scrambled CodeFlash.
+#define FLASH_ERASED_WORD  0xFFFFFFFFu
 #endif
 
 #ifndef FLASH_USE_CRC32
@@ -101,13 +106,14 @@ typedef uint16_t flash_crc;
 #endif
 
 // Header stored before each value in the append-only flash log.
-// Keep FLASH_USE_CRC32 unchanged while records using this layout remain in flash.
+//! Changing this layout or FLASH_USE_CRC32 requires erasing existing records.
 typedef struct {
     uint32_t sequence;      // Increasing value used to find the newest record.
-    uint32_t marker;        // Combined magic and commit marker, programmed last.
     flash_crc crc;          // Selected-width checksum for the payload.
     uint16_t logical_id;    // Logical ID of the value stored in this record.
     uint16_t length;        // Number of payload bytes following this header.
+    //! NOTE: Keep last so preceding fields need one write; uint32_t stays 4-byte aligned here.
+    uint32_t marker;        // Combined magic and commit marker, programmed last.
 } flash_record;
 
 #if FLASH_CACHE_LENGTH > 0
@@ -226,8 +232,9 @@ static inline uint32_t flash_get_next_block(uint32_t address) {
 // Check whether an unread record header is still fully erased.
 static inline bool flash_record_is_erased(const flash_record *record) {
     const uint8_t *bytes = (const uint8_t *)record;
+
     for (size_t i = 0; i < sizeof(*record); ++i)
-        if (bytes[i] != 0xFFu)
+        if (bytes[i] != (uint8_t)(FLASH_ERASED_WORD >> ((i & 3u) * 8u)))
             return false;
     return true;
 }
@@ -309,7 +316,7 @@ static inline flash_status flash_log_init(flash_log *log) {
     return FLASH_OK;
 }
 
-// Append one value. The record header and payload are programmed together.
+// Append one value, committing the record only after its header and payload are written.
 static inline flash_status flash_log_write(
     flash_log *log, uint16_t logical_id, const void *data, uint16_t length
 ) {
