@@ -2,7 +2,7 @@
 #define FUN_FLASH_LOG_H
 
 // Flash layout: erase blocks contain pages; pages hold bytes from the record log.
-// Record header: [sequence | crc32 | logical_id | length | magic | commit]
+// Record header: [sequence | crc32 | logical_id | length | marker]
 //
 // [erase block - 4KB (configurable)]
 //   [page: [header] [payload] [alignment padding] ...]
@@ -60,6 +60,7 @@ enum {
 
 #define FLASH_RECORD_MAGIC 0xBABE // 16-bit record marker
 #define FLASH_RECORD_COMMIT 0xCAFE //
+#define FLASH_RECORD_MARKER (((uint32_t)FLASH_RECORD_COMMIT << 16) | FLASH_RECORD_MAGIC)
 
 
 // Tracks erase usage and the next write position for one flash block.
@@ -82,8 +83,7 @@ typedef struct {
     uint32_t crc32;         // Checksum used to detect incomplete or corrupt data.
     uint16_t logical_id;    // Logical ID of the value stored in this record.
     uint16_t length;        // Number of payload bytes following this header.
-    uint16_t magic;         // Constant used to identify a valid record.
-    uint16_t commit;        // Programmed with magic last to mark the record complete.
+    uint32_t marker;        // Combined magic and commit marker, programmed last.
 } flash_record;
 
 // Holds the log configuration and current append position in RAM.
@@ -151,8 +151,7 @@ static inline flash_status flash_log_init(flash_log *log) {
             return FLASH_ERROR;
         if (flash_record_is_erased(&record)) break;
 
-        if (record.magic != FLASH_RECORD_MAGIC ||
-            record.commit != FLASH_RECORD_COMMIT ||
+        if (record.marker != FLASH_RECORD_MARKER ||
             record.length > FLASH_BASE_ADDR +
                 (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE -
                 log->next_address - sizeof(record)) {
@@ -223,21 +222,20 @@ static inline flash_status flash_log_write(
     if (log->next_address + total > FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE)
         return FLASH_FULL; // GC not implemented.
 
-    flash_record record = { .magic = FLASH_RECORD_MAGIC,
-                            .commit = FLASH_RECORD_COMMIT,
+    flash_record record = { .marker = FLASH_RECORD_MARKER,
                             .sequence = log->next_sequence,
                             .logical_id = logical_id,
                             .length = length,
                             .crc32 = ~flash_crc32_update(0xFFFFFFFFu, (const uint8_t *)data, length) };
 
     if (
-        // Write the header fields before the final marker fields.
-        HW_FLASH_WRITE(log->next_address, &record, offsetof(flash_record, magic)) ||
+        // Write the header fields before the final marker.
+        HW_FLASH_WRITE(log->next_address, &record, offsetof(flash_record, marker)) ||
         // Write the payload before marking the record complete.
         (length && HW_FLASH_WRITE(log->next_address + sizeof(record), data, length)) ||
-        // Write magic and commit last so startup can identify a complete record.
-        HW_FLASH_WRITE(log->next_address + offsetof(flash_record, magic), &record.magic,
-                    sizeof(record.magic) + sizeof(record.commit))
+        // Write the combined marker last so startup can identify a complete record.
+        HW_FLASH_WRITE(log->next_address + offsetof(flash_record, marker), &record.marker,
+                       sizeof(record.marker))
     ) {
         log->next_address = flash_next_block(log->next_address);
         return FLASH_ERROR;
@@ -272,8 +270,7 @@ static inline flash_status flash_log_read_fast(
         if (flash_record_is_erased(&record))
             break;
 
-        if (record.magic != FLASH_RECORD_MAGIC ||
-            record.commit != FLASH_RECORD_COMMIT ||
+        if (record.marker != FLASH_RECORD_MARKER ||
             record.length > log->next_address - address - sizeof(record)
         ) {
             // Skip to the next block if this record's header is invalid or incomplete.
@@ -320,8 +317,7 @@ static inline flash_status flash_log_read(
     const flash_log *log, uint16_t logical_id, void *data,
     uint16_t capacity, uint16_t *length
 ) {
-    if (!log || !length || (!data && capacity))
-        return FLASH_ERROR;
+    if (!log || !length || (!data && capacity)) return FLASH_ERROR;
     return flash_log_read_fast(log, logical_id, data, capacity, length);
 }
 
