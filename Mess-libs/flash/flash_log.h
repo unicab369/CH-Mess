@@ -425,9 +425,6 @@ static inline flash_status flash_log_read_fast(
             new_length = record.length;
             new_address = address;
             found = true;
-#if FLASH_CACHE_LENGTH > 0
-            flash_cache_store(log, &record, address);
-#endif
         }
 
         // Equivalent to ((size + FLASH_ALIGNMENT - 1) / FLASH_ALIGNMENT) * FLASH_ALIGNMENT.
@@ -448,6 +445,16 @@ static inline flash_status flash_log_read_fast(
     if ((new_length && HW_FLASH_READ(new_address + sizeof(record), data, new_length)) ||
         (flash_crc)~flash_crc_update(FLASH_CRC_INITIAL, (const uint8_t *)data, new_length) != new_crc
     ) return FLASH_ERROR;
+
+#if FLASH_CACHE_LENGTH > 0
+    // Cache only the selected record after its payload passes the CRC check.
+    flash_record newest = {
+        .logical_id = logical_id,
+        .crc = new_crc,
+        .length = new_length
+    };
+    flash_cache_store(log, &newest, new_address);
+#endif
 
     *length = new_length;
     return FLASH_OK;
