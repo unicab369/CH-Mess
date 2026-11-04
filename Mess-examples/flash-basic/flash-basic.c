@@ -13,7 +13,6 @@
 
 #include <stdio.h>
 
-#define FLASH_LOG_END (FLASH_BASE_ADDR + FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE)
 #define DEMO_LOGICAL_ID 1u
 
 static flash_log log;

@@ -80,6 +80,8 @@ enum {
 #error "FLASH_ALIGNMENT must be a nonzero power of two"
 #endif
 
+#define FLASH_LOG_END (FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE)
+
 #define FLASH_RECORD_MAGIC 0xBABE // 16-bit record marker
 #define FLASH_RECORD_COMMIT 0xCAFE //
 #define FLASH_RECORD_MARKER (((uint32_t)FLASH_RECORD_COMMIT << 16) | FLASH_RECORD_MAGIC)
@@ -255,17 +257,13 @@ static inline flash_status flash_log_init(flash_log *log) {
 
     flash_record record;
 
-    while (log->next_address + sizeof(record) <=
-           FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE
-    ) {
+    while (log->next_address + sizeof(record) <= FLASH_LOG_END) {
         if (HW_FLASH_READ(log->next_address, &record, sizeof(record)))
             return FLASH_ERROR;
         if (flash_record_is_erased(&record)) break;
 
         if (record.marker != FLASH_RECORD_MARKER ||
-            record.length > FLASH_BASE_ADDR +
-                (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE -
-                log->next_address - sizeof(record)) {
+            record.length > FLASH_LOG_END - log->next_address - sizeof(record)) {
             log->next_address = flash_get_next_block(log->next_address);
             continue;
         }
@@ -304,7 +302,7 @@ static inline flash_status flash_log_init(flash_log *log) {
         // With alignment 4 and size 13: ((13 + 3) / 4) * 4 = 16; (13 + 3) & ~3 = 16.
         const uint32_t record_size = (sizeof(record) + record.length + FLASH_ALIGNMENT - 1u) &
                                     ~((uint32_t)FLASH_ALIGNMENT - 1u);
-        if (record_size > FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE - log->next_address)
+        if (record_size > FLASH_LOG_END - log->next_address)
             break;
         if (record_size > FLASH_BLOCK_SIZE -
             ((log->next_address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u))) {
@@ -334,7 +332,7 @@ static inline flash_status flash_log_write(
     }
 
 
-    if (log->next_address + total > FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE)
+    if (log->next_address + total > FLASH_LOG_END)
         return FLASH_FULL; // GC not implemented.
 
     flash_record record = { .marker = FLASH_RECORD_MARKER,
