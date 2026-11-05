@@ -75,19 +75,37 @@ __HIGH_CODE int HW_FLASH_WRITE(uint32_t address, const void *src, size_t length)
     uint8_t page[FLASH_PAGE_SIZE] __attribute__((aligned(4)));
 
     while (length) {
-        // Stage at most the bytes left in this flash page; the outer loop handles
-        // longer requests one page at a time.
+        // Stage at most the bytes left in this CodeFlash page. FLASH_PAGE_SIZE
+        // must match the target's programming page size.
         size_t page_remaining = FLASH_PAGE_SIZE - (address & (FLASH_PAGE_SIZE - 1u));
         size_t chunk = length < page_remaining ? length : page_remaining;
+
         // Round up to whole words and fill any unused final bytes with 0xFF.
         // For example, 5 source bytes become 8 staged bytes (two words).
         size_t program_length = (chunk + 3u) & ~3u;
         for (size_t i = 0; i < program_length; ++i)
             page[i] = i < chunk ? source[i] : 0xFFu;
 
-        // The loop above only copies into RAM; this call actually programs flash.
-        if (ch5xx_flash_cmd_write(address, page, program_length))
+        // Program the staged words while the flash controller is open. Staging
+        // first also keeps the source readable if it resides in CodeFlash.
+        ch5xx_flash_rom_open_erase_write();
+        ch5xx_flash_rom_addr(0x02, address);
+
+        for (size_t i = 0; i < program_length; i += sizeof(uint32_t)) {
+            uint32_t word;
+            __builtin_memcpy(&word, page + i, sizeof(word));
+            R32_FLASH_DATA = word;
+
+            for (uint8_t byte = 0; byte < sizeof(word); ++byte) {
+                while ((int8_t)R8_FLASH_CTRL < 0) { }
+                R8_FLASH_CTRL = 0x15;
+            }
+        }
+        if (!ch5xx_flash_rom_wait()) {
+            ch5xx_flash_rom_close();
             return -1;
+        }
+        ch5xx_flash_rom_close();
 
         address += chunk;
         source += chunk;
