@@ -48,9 +48,13 @@ __HIGH_CODE int HW_FLASH_READ(uint32_t address, void *dest, size_t length) {
         // At most 4 - word_offset bytes remain in this word, and length may be
         // smaller. For offset 2 and length 3, copy 2 bytes now and 1 next time.
         size_t count = sizeof(word) - word_offset;
-        if (count > length) count = length;
+        if (count > length)
+            count = length;
+
+        // CH5xx is little-endian: byte n occupies bits 8*n of the word.
         for (size_t i = 0; i < count; ++i)
-            destination[i] = ((const uint8_t *)&word)[word_offset + i];
+            destination[i] = (uint8_t)(word >> ((word_offset + i) * 8u));
+
         // Advance both buffers by the bytes copied. Later words start at byte 0.
         destination += count;
         word_address += sizeof(word);
@@ -115,11 +119,11 @@ __HIGH_CODE int HW_FLASH_WRITE(uint32_t address, const void *src, size_t length)
 }
 
 // Erase one 4KB CodeFlash sector used by the log.
-__HIGH_CODE int HW_ERASE_BLOCK(uint32_t address) {
+__HIGH_CODE uint32_t HW_ERASE_BLOCK(uint32_t address) {
     if (address < FLASH_BASE_ADDR || address >= FLASH_LOG_END ||
-        (address - FLASH_BASE_ADDR) % FLASH_BLOCK_SIZE
-    ) return -1;
-    return ch5xx_flash_cmd_erase(address, FLASH_BLOCK_SIZE) ? -1 : 0;
+        ((address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u))
+    ) return (uint32_t)-1;
+    return ch5xx_flash_cmd_erase(address, FLASH_BLOCK_SIZE);
 }
 
 #endif // FUN_FLASH_LOG_CH5XX_H

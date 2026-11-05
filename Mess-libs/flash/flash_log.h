@@ -141,7 +141,7 @@ typedef struct {
 // Hardware interface; implement these functions for the target flash device.
 int HW_FLASH_READ(uint32_t address, void *dst, size_t length);
 int HW_FLASH_WRITE(uint32_t address, const void *src, size_t length);
-int HW_ERASE_BLOCK(uint32_t address);
+uint32_t HW_ERASE_BLOCK(uint32_t address);
 
 // Check that a program operation stays within a physical page, when required.
 static inline bool flash_fits_page(
