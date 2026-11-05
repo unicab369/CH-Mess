@@ -429,10 +429,9 @@ static inline flash_status flash_log_read_fast(
         const uint32_t record_size = (sizeof(record) + record.length + FLASH_ALIGNMENT - 1u) &
                                     ~((uint32_t)FLASH_ALIGNMENT - 1u);
         // Move on if this record would cross the current block boundary.
-        if (record_size > FLASH_BLOCK_SIZE - ((address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u)))
-            address = flash_get_next_block(address);
-        else
-            address += record_size;
+        const uint32_t block_remaining = FLASH_BLOCK_SIZE -
+                                        ((address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u));
+        address += record_size > block_remaining ? block_remaining : record_size;
     }
 
     if (!found) return FLASH_NOT_FOUND;
