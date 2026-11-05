@@ -100,10 +100,16 @@ __HIGH_CODE int HW_FLASH_WRITE(uint32_t address, const void *src, size_t length)
             __builtin_memcpy(&word, page + i, sizeof(word));
             R32_FLASH_DATA = word;
 
-            for (uint8_t byte = 0; byte < sizeof(word); ++byte) {
-                while ((int8_t)R8_FLASH_CTRL < 0) { }
-                R8_FLASH_CTRL = 0x15;
-            }
+            // R32_FLASH_DATA holds four bytes. Each 0x15 command programs one
+            // byte, so wait for the controller and issue the command four times.
+            while ((int8_t)R8_FLASH_CTRL < 0) { }
+            R8_FLASH_CTRL = 0x15;
+            while ((int8_t)R8_FLASH_CTRL < 0) { }
+            R8_FLASH_CTRL = 0x15;
+            while ((int8_t)R8_FLASH_CTRL < 0) { }
+            R8_FLASH_CTRL = 0x15;
+            while ((int8_t)R8_FLASH_CTRL < 0) { }
+            R8_FLASH_CTRL = 0x15;
         }
         if (!ch5xx_flash_rom_wait()) {
             ch5xx_flash_rom_close();
