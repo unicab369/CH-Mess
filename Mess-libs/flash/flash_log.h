@@ -302,13 +302,9 @@ static inline flash_status flash_log_init(flash_log *log) {
                                     ~((uint32_t)FLASH_ALIGNMENT - 1u);
         if (record_size > FLASH_LOG_END - log->next_address)
             break;
-        if (record_size > FLASH_BLOCK_SIZE -
-            ((log->next_address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u))
-        ) {
-            log->next_address = flash_get_next_block(log->next_address - 1u);
-            continue;
-        }
-        log->next_address += record_size;
+        const uint32_t block_remaining = FLASH_BLOCK_SIZE -
+            ((log->next_address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u));
+        log->next_address += record_size > block_remaining ? block_remaining : record_size;
     }
     return FLASH_OK;
 }
