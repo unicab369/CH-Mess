@@ -110,9 +110,9 @@ typedef uint16_t flash_crc;
 // Header stored before each value in the append-only flash log.
 //! Changing this layout or FLASH_USE_CRC32 requires erasing existing records.
 typedef struct {
-    uint32_t sequence;      // Increasing value used to find the newest record.
+    uint32_t sequence;      // Increments for every appended record, including updates.
     flash_crc crc;          // Selected-width checksum for the payload.
-    uint16_t logical_id;    // Logical ID of the value stored in this record.
+    uint16_t logical_id;    // May repeat; reads use the record with the newest sequence.
     uint16_t length;        // Payload length in bytes.
     //! NOTE: Keep last so preceding fields need one write; uint32_t stays 4-byte aligned here.
     uint32_t marker;        // Combined magic and commit marker, programmed last.
@@ -123,7 +123,7 @@ typedef struct {
 typedef struct {
     uint32_t address;    // Flash address of the record header.
     flash_crc crc;       // CRC of the cached payload.
-    uint16_t logical_id; // ID used to find the cached record.
+    uint16_t logical_id; // May repeat; reads use the record with the newest sequence.
     uint16_t length;     // Cached payload length.
     uint8_t valid;       // Whether this slot is in use.
 } flash_cache_entry;
@@ -240,7 +240,7 @@ static inline bool flash_record_is_erased(const flash_record *record) {
 
 // Scan the reserved region to find the next unused record slot.
 static inline flash_status flash_log_init(flash_log *log) {
-    if (!log || FLASH_BLOCK_COUNT < 2)
+    if (!log || FLASH_BLOCK_COUNT == 0)
         return FLASH_ERROR;
 
     flash_record record;
@@ -275,7 +275,7 @@ static inline flash_status flash_log_init(flash_log *log) {
             break;
 
         const uint32_t block_remaining = FLASH_BLOCK_SIZE -
-            ((log->next_address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u));
+                                ((log->next_address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u));
         if (record_size > block_remaining) {
             log->next_address += block_remaining;
             continue;
@@ -377,6 +377,7 @@ static inline flash_status flash_log_read_fast(
     // Use a cached record location before scanning flash headers.
     for (uint16_t i = 0; i < FLASH_CACHE_LENGTH; ++i) {
         flash_cache_entry *entry = &log->cache[i];
+
         if (!entry->valid || entry->logical_id != logical_id)
             continue;
         if (entry->length > capacity)
@@ -402,10 +403,11 @@ static inline flash_status flash_log_read_fast(
     bool found = false;
     flash_record record;
 
+    // Scan headers to find the newest matching sequence; read only its payload below.
     while (address + sizeof(record) <= log->next_address) {
-        // Read this header to check whether it matches the requested logical ID.
         if (HW_FLASH_READ(address, &record, sizeof(record)))
             return FLASH_ERROR;
+
         if (record.marker != FLASH_RECORD_MARKER) {
             // An erased header means there are no more records in this block.
             if (flash_record_is_erased(&record))
