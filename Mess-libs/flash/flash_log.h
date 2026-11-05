@@ -260,7 +260,8 @@ static inline flash_status flash_log_init(flash_log *log) {
         if (flash_record_is_erased(&record)) break;
 
         if (record.marker != FLASH_RECORD_MARKER ||
-            record.length > FLASH_LOG_END - log->next_address - sizeof(record)) {
+            record.length > FLASH_LOG_END - log->next_address - sizeof(record)
+        ) {
             log->next_address = flash_get_next_block(log->next_address);
             continue;
         }
@@ -302,7 +303,8 @@ static inline flash_status flash_log_init(flash_log *log) {
         if (record_size > FLASH_LOG_END - log->next_address)
             break;
         if (record_size > FLASH_BLOCK_SIZE -
-            ((log->next_address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u))) {
+            ((log->next_address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u))
+        ) {
             log->next_address = flash_get_next_block(log->next_address - 1u);
             continue;
         }
@@ -323,11 +325,10 @@ static inline flash_status flash_log_write(
     if (total > FLASH_BLOCK_SIZE)
         return FLASH_RECORD_TOO_LARGE;
 
-    if (((log->next_address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u)) + total >
-        FLASH_BLOCK_SIZE
-    ) {
-        log->next_address = flash_get_next_block(log->next_address - 1u);
-    }
+    const uint32_t block_offset = (log->next_address - FLASH_BASE_ADDR) &
+                                  (FLASH_BLOCK_SIZE - 1u);
+    if (block_offset + total > FLASH_BLOCK_SIZE)
+        log->next_address += FLASH_BLOCK_SIZE - block_offset;
 
     if (log->next_address + total > FLASH_LOG_END)
         return FLASH_FULL; // GC not implemented.
