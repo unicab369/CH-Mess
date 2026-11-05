@@ -113,7 +113,7 @@ typedef struct {
     uint32_t sequence;      // Increasing value used to find the newest record.
     flash_crc crc;          // Selected-width checksum for the payload.
     uint16_t logical_id;    // Logical ID of the value stored in this record.
-    uint16_t length;        // Number of payload bytes following this header.
+    uint16_t length;        // Payload length in bytes.
     //! NOTE: Keep last so preceding fields need one write; uint32_t stays 4-byte aligned here.
     uint32_t marker;        // Combined magic and commit marker, programmed last.
 } flash_record;
@@ -313,6 +313,7 @@ static inline flash_status flash_log_init(flash_log *log) {
 
         log->next_address += record_size;
     }
+
     return FLASH_OK;
 }
 
@@ -405,14 +406,15 @@ static inline flash_status flash_log_read_fast(
         // Read this header to check whether it matches the requested logical ID.
         if (HW_FLASH_READ(address, &record, sizeof(record)))
             return FLASH_ERROR;
-        // An erased header means there are no more records in this block.
-        if (flash_record_is_erased(&record))
-            break;
-
-        if (record.marker != FLASH_RECORD_MARKER ||
-            record.length > log->next_address - address - sizeof(record)
-        ) {
+        if (record.marker != FLASH_RECORD_MARKER) {
+            // An erased header means there are no more records in this block.
+            if (flash_record_is_erased(&record))
+                break;
             // Skip to the next block if this record's header is invalid or incomplete.
+            address = flash_get_next_block(address);
+            continue;
+        }
+        if (record.length > log->next_address - address - sizeof(record)) {
             address = flash_get_next_block(address);
             continue;
         }
