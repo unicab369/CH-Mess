@@ -47,15 +47,17 @@ $(TARGET)_dataflash.elf: dataflash_functions.o dataflash_functions.ld
 $(TARGET)_dataflash.bin: $(TARGET)_dataflash.elf
 	$(PREFIX)-objcopy --gap-fill=0xff --pad-to=0x00070140 -O binary $< $@
 
-# `-s` prints section bytes; each `-j` selects one function's code section.
-# `>` saves the objdump output in the text file.
+# List each function's size in bytes, then dump its code bytes in hexadecimal.
 $(TARGET)_functions.txt: $(TARGET)_dataflash.elf
-						$(PREFIX)-objdump -s \
-							-j .dataflash_sum \
-							-j .dataflash_callback \
-							-j .dataflash_bytes \
-							-j .dataflash_checksum \
-							-j .dataflash_struct $< > $@
+	@printf 'Function sizes (bytes):\n' > $@
+	$(PREFIX)-nm -S --size-sort --radix=d $< | awk '$$4 ~ /^dataflash_/ { size = $$2; sub(/^0+/, "", size); printf "%s: %s bytes\n", $$4, size }' >> $@
+	@printf '\nFunction bytes by section:\n' >> $@
+	$(PREFIX)-objdump -s \
+		-j .dataflash_sum \
+		-j .dataflash_callback \
+		-j .dataflash_bytes \
+		-j .dataflash_checksum \
+		-j .dataflash_struct $< >> $@
 
 flash: cv_flash
 # Dependencies: the DataFlash image to write and the minichlink executable.

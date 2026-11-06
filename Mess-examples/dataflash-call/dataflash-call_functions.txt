@@ -1,3 +1,11 @@
+Function sizes (bytes):
+dataflash_sum: 6 bytes
+dataflash_call_callback: 8 bytes
+dataflash_increment_bytes: 22 bytes
+dataflash_checksum: 26 bytes
+dataflash_update_record: 30 bytes
+
+Function bytes by section:
 
 dataflash-call_dataflash.elf:     file format elf32-littleriscv
 
