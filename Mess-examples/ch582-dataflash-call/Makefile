@@ -2,36 +2,45 @@ all: flash
 
 TARGET_MCU := CH582
 TARGET := ch582-dataflash-call
-DATAFLASH_VARIANT ?= v1
-
-ifeq ($(DATAFLASH_VARIANT),v1)
-DATAFLASH_SOURCE := dataflash_v1.c
-else ifeq ($(DATAFLASH_VARIANT),v2)
-DATAFLASH_SOURCE := dataflash_v2.c
-else
-$(error DATAFLASH_VARIANT must be v1 or v2)
-endif
-DATAFLASH_OBJECT := $(DATAFLASH_SOURCE:.c=.o)
+DF_SUM_OFF ?= 0x400
+DF_WEIGHT_OFF ?= 0x500
+DF_BYTES_OFF ?= 0x600
 
 include ../../ch32fun/ch32fun/ch32fun.mk
 
-# Program the selected function image to DataFlash, then the app to CodeFlash.
-FLASH_COMMAND := $(MINICHLINK)/minichlink -w $(TARGET)_$(DATAFLASH_VARIANT).bin eeprom && \
+# Program all three function images, then the app.
+FLASH_COMMAND := $(MINICHLINK)/minichlink -w $(TARGET)_sum.bin eeprom+$(DF_SUM_OFF) && \
+	$(MINICHLINK)/minichlink -w $(TARGET)_weight.bin eeprom+$(DF_WEIGHT_OFF) && \
+	$(MINICHLINK)/minichlink -w $(TARGET)_bytes.bin eeprom+$(DF_BYTES_OFF) && \
 	$(MINICHLINK)/minichlink -w $(TARGET)_app.bin flash -b
-cv_flash: $(TARGET)_app.bin $(TARGET)_$(DATAFLASH_VARIANT).bin
+cv_flash: $(TARGET)_app.bin $(TARGET)_sum.bin $(TARGET)_weight.bin $(TARGET)_bytes.bin
+
+EXTRA_CFLAGS += \
+	-DDF_SUM_OFF=$(DF_SUM_OFF) \
+	-DDF_WEIGHT_OFF=$(DF_WEIGHT_OFF) \
+	-DDF_BYTES_OFF=$(DF_BYTES_OFF)
 
 $(TARGET)_app.bin: $(TARGET).elf
 	$(PREFIX)-objcopy -R .storage -O binary $< $@
 
-dataflash_%.o: dataflash_%.c
+df_%.o: df_%.c
 	$(PREFIX)-gcc -c $(CFLAGS) -fno-lto -o $@ $<
 
-$(TARGET)_$(DATAFLASH_VARIANT).bin: $(DATAFLASH_OBJECT)
-	$(PREFIX)-objcopy -j .dataflash_fn -O binary $< $@
+$(TARGET)_sum.bin: df_sum.o
+	$(PREFIX)-objcopy -j .df_fn -O binary $< $@
+
+$(TARGET)_weight.bin: df_weight.o
+	$(PREFIX)-objcopy -j .df_fn -O binary $< $@
+
+$(TARGET)_bytes.bin: df_bytes.o
+	$(PREFIX)-objcopy -j .df_fn -O binary $< $@
 
 flash: cv_flash
-flash-dataflash: $(TARGET)_$(DATAFLASH_VARIANT).bin $(MINICHLINK)/minichlink
-	$(MINICHLINK)/minichlink -w $< eeprom
+flash-dataflash: $(TARGET)_sum.bin $(TARGET)_weight.bin $(TARGET)_bytes.bin $(MINICHLINK)/minichlink
+	$(MINICHLINK)/minichlink -w $(TARGET)_sum.bin eeprom+$(DF_SUM_OFF)
+	$(MINICHLINK)/minichlink -w $(TARGET)_weight.bin eeprom+$(DF_WEIGHT_OFF)
+	$(MINICHLINK)/minichlink -w $(TARGET)_bytes.bin eeprom+$(DF_BYTES_OFF)
 
 clean: cv_clean
-	$(RM) $(TARGET)_app.bin $(TARGET)_v1.bin $(TARGET)_v2.bin dataflash_v1.o dataflash_v2.o
+	$(RM) $(TARGET)_app.bin $(TARGET)_sum.bin $(TARGET)_weight.bin $(TARGET)_bytes.bin \
+		df_sum.o df_weight.o df_bytes.o
