@@ -1,36 +1,19 @@
-# `make` builds the images and flashes the functions plus the app.
+# `make` builds the app and combined DataFlash image, then flashes both.
 all: flash
 
-# Select the target chip and name the CodeFlash application.
 TARGET_MCU := CH582
 TARGET := ch582-dataflash-call
 
-# Offsets are relative to the start of DataFlash (0x70000).
-# The first function uses the DataFlash base; each function has its own page.
+# Offsets are relative to the DataFlash base address, 0x70000.
 DATAFLASH_SUM_OFFSET ?= 0x000
 DATAFLASH_CALLBACK_OFFSET ?= 0x100
 DATAFLASH_BYTES_OFFSET ?= 0x200
 DATAFLASH_CHECKSUM_OFFSET ?= 0x300
 DATAFLASH_STRUCT_OFFSET ?= 0x400
 
-# Supplies the CH582 compiler, linker script, standard build, and minichlink rules.
 include ../../ch32fun/ch32fun/ch32fun.mk
 
-# Replace ch32fun's default flash command: write each function at its matching
-# DataFlash offset, write the app to CodeFlash, then reboot the chip.
-FLASH_COMMAND := $(MINICHLINK)/minichlink -w $(TARGET)_dataflash_sum.bin eeprom+$(DATAFLASH_SUM_OFFSET) && \
-	$(MINICHLINK)/minichlink -w $(TARGET)_dataflash_callback.bin eeprom+$(DATAFLASH_CALLBACK_OFFSET) && \
-	$(MINICHLINK)/minichlink -w $(TARGET)_dataflash_bytes.bin eeprom+$(DATAFLASH_BYTES_OFFSET) && \
-	$(MINICHLINK)/minichlink -w $(TARGET)_dataflash_checksum.bin eeprom+$(DATAFLASH_CHECKSUM_OFFSET) && \
-	$(MINICHLINK)/minichlink -w $(TARGET)_dataflash_struct.bin eeprom+$(DATAFLASH_STRUCT_OFFSET) && \
-	$(MINICHLINK)/minichlink -w $(TARGET)_app.bin flash -b
-
-# Make sure the app and all five function images exist before flashing.
-cv_flash: $(TARGET)_app.bin $(TARGET)_dataflash_sum.bin \
-	$(TARGET)_dataflash_callback.bin $(TARGET)_dataflash_bytes.bin \
-	$(TARGET)_dataflash_checksum.bin $(TARGET)_dataflash_struct.bin
-
-# Pass the same offsets to C so the app's function pointers match the flash locations.
+# The app and linker script use the same offsets for function addresses.
 EXTRA_CFLAGS += \
 	-DDATAFLASH_SUM_OFFSET=$(DATAFLASH_SUM_OFFSET) \
 	-DDATAFLASH_CALLBACK_OFFSET=$(DATAFLASH_CALLBACK_OFFSET) \
@@ -38,53 +21,42 @@ EXTRA_CFLAGS += \
 	-DDATAFLASH_CHECKSUM_OFFSET=$(DATAFLASH_CHECKSUM_OFFSET) \
 	-DDATAFLASH_STRUCT_OFFSET=$(DATAFLASH_STRUCT_OFFSET)
 
-# Strip the ELF into a raw CodeFlash image; keep the separate storage section out.
+# Write the complete five-page DataFlash image, then the CodeFlash app.
+FLASH_COMMAND := $(MINICHLINK)/minichlink -w $(TARGET)_dataflash.bin eeprom && \
+	$(MINICHLINK)/minichlink -w $(TARGET)_app.bin flash -b
+cv_flash: $(TARGET)_app.bin $(TARGET)_dataflash.bin
+
+# Convert the linked CodeFlash app to its raw binary image.
 $(TARGET)_app.bin: $(TARGET).elf
 	$(PREFIX)-objcopy -R .storage -O binary $< $@
 
-# Compile each standalone function source into an object file. Disable LTO so
-# objcopy can extract ordinary machine code from the function's section.
-dataflash_%.o: dataflash_%.c
-	$(PREFIX)-gcc -c $(CFLAGS) -fno-lto -o $@ $<
+# Compile every function body from the shared header into one object file.
+dataflash_functions.o: dataflash_functions.h
+	$(PREFIX)-gcc -x c -DDATAFLASH_FUNCTIONS_IMAGE -c $(CFLAGS) -fno-lto -o $@ $<
 
-# Compile the shared header as C for the standalone struct-update image.
-dataflash_struct.o: dataflash_struct.h
-	$(PREFIX)-gcc -x c -DDATAFLASH_STRUCT_IMAGE -c $(CFLAGS) -fno-lto -o $@ $<
+# Link each function section at its assigned DataFlash address.
+$(TARGET)_dataflash.elf: dataflash_functions.o dataflash_functions.ld
+	$(PREFIX)-gcc $(CFLAGS) -fno-lto -nostdlib -o $@ dataflash_functions.o \
+		-Wl,-T,dataflash_functions.ld \
+		-Wl,--defsym=DATAFLASH_SUM_ADDRESS=0x00070000+$(DATAFLASH_SUM_OFFSET) \
+		-Wl,--defsym=DATAFLASH_CALLBACK_ADDRESS=0x00070000+$(DATAFLASH_CALLBACK_OFFSET) \
+		-Wl,--defsym=DATAFLASH_BYTES_ADDRESS=0x00070000+$(DATAFLASH_BYTES_OFFSET) \
+		-Wl,--defsym=DATAFLASH_CHECKSUM_ADDRESS=0x00070000+$(DATAFLASH_CHECKSUM_OFFSET) \
+		-Wl,--defsym=DATAFLASH_STRUCT_ADDRESS=0x00070000+$(DATAFLASH_STRUCT_OFFSET) -lgcc
 
-# Extract the function and pad its image to a full 256-byte page. minichlink's
-# CH5xx writer programs 4-byte words, so page padding prevents a short final
-# word (for example, the last two bytes of the 6-byte sum function) being lost.
-$(TARGET)_dataflash_sum.bin: dataflash_sum.o
-	$(PREFIX)-objcopy -j .dataflash_fn --gap-fill=0xff --pad-to=0x100 -O binary $< $@
+# Flatten the linked sections and fill the page gaps. The image spans five
+# 256-byte pages, so minichlink can program every word, including short functions.
+$(TARGET)_dataflash.bin: $(TARGET)_dataflash.elf
+	$(PREFIX)-objcopy --gap-fill=0xff --pad-to=0x00070500 -O binary $< $@
 
-$(TARGET)_dataflash_callback.bin: dataflash_callback.o
-	$(PREFIX)-objcopy -j .dataflash_fn --gap-fill=0xff --pad-to=0x100 -O binary $< $@
-
-$(TARGET)_dataflash_bytes.bin: dataflash_bytes.o
-	$(PREFIX)-objcopy -j .dataflash_fn --gap-fill=0xff --pad-to=0x100 -O binary $< $@
-
-$(TARGET)_dataflash_checksum.bin: dataflash_checksum.o
-	$(PREFIX)-objcopy -j .dataflash_fn --gap-fill=0xff --pad-to=0x100 -O binary $< $@
-
-$(TARGET)_dataflash_struct.bin: dataflash_struct.o
-	$(PREFIX)-objcopy -j .dataflash_fn --gap-fill=0xff --pad-to=0x100 -O binary $< $@
-
-# `flash` writes all images. `flash-dataflash` updates only the functions, so
-# use it only when the app already contains the same offsets and signatures.
 flash: cv_flash
-flash-dataflash: $(TARGET)_dataflash_sum.bin $(TARGET)_dataflash_callback.bin \
-	$(TARGET)_dataflash_bytes.bin $(TARGET)_dataflash_checksum.bin \
-	$(TARGET)_dataflash_struct.bin $(MINICHLINK)/minichlink
-	$(MINICHLINK)/minichlink -w $(TARGET)_dataflash_sum.bin eeprom+$(DATAFLASH_SUM_OFFSET)
-	$(MINICHLINK)/minichlink -w $(TARGET)_dataflash_callback.bin eeprom+$(DATAFLASH_CALLBACK_OFFSET)
-	$(MINICHLINK)/minichlink -w $(TARGET)_dataflash_bytes.bin eeprom+$(DATAFLASH_BYTES_OFFSET)
-	$(MINICHLINK)/minichlink -w $(TARGET)_dataflash_checksum.bin eeprom+$(DATAFLASH_CHECKSUM_OFFSET)
-	$(MINICHLINK)/minichlink -w $(TARGET)_dataflash_struct.bin eeprom+$(DATAFLASH_STRUCT_OFFSET)
+flash-dataflash: $(TARGET)_dataflash.bin $(MINICHLINK)/minichlink
+	$(MINICHLINK)/minichlink -w $< eeprom
 
-# Remove generated build outputs, including names left by earlier example versions.
 clean: cv_clean
-	$(RM) $(TARGET)_app.bin $(TARGET)_dataflash_sum.bin \
-		$(TARGET)_dataflash_callback.bin $(TARGET)_dataflash_bytes.bin \
-		$(TARGET)_dataflash_checksum.bin $(TARGET)_dataflash_struct.bin \
-		dataflash_sum.o dataflash_bytes.o \
+	$(RM) $(TARGET)_app.bin $(TARGET)_dataflash.elf $(TARGET)_dataflash.bin \
+		$(TARGET)_dataflash_sum.bin $(TARGET)_dataflash_callback.bin \
+		$(TARGET)_dataflash_bytes.bin $(TARGET)_dataflash_checksum.bin \
+		$(TARGET)_dataflash_struct.bin dataflash_functions.o \
+		dataflash_sum.o dataflash_callback.o dataflash_bytes.o \
 		dataflash_checksum.o dataflash_struct.o
