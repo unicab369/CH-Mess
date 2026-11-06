@@ -43,4 +43,7 @@ flash-dataflash: $(TARGET)_sum.bin $(TARGET)_weight.bin $(TARGET)_bytes.bin $(MI
 
 clean: cv_clean
 	$(RM) $(TARGET)_app.bin $(TARGET)_sum.bin $(TARGET)_weight.bin $(TARGET)_bytes.bin \
-		df_sum.o df_weight.o df_bytes.o
+		$(TARGET)_weighted.bin $(TARGET)_array.bin $(TARGET)_dataflash.bin \
+		$(TARGET)_v1.bin $(TARGET)_v2.bin \
+		df_sum.o df_weight.o df_bytes.o dataflash_sum.o \
+		dataflash_weighted.o dataflash_array.o dataflash_v1.o dataflash_v2.o
