@@ -1,10 +1,30 @@
 #ifndef FUN_FLASH_LOG_CH5XX_H
 #define FUN_FLASH_LOG_CH5XX_H
 
-// Set FLASH_BASE_ADDR and other flash-log options before including this port.
-// Include it in the translation unit that provides the flash-log hooks.
+// Set FLASH_LOG_SIZE, FLASH_BLOCK_SIZE, and any other options before including this port.
+// The linker provides the log address from the selected chip's FLASH region.
 #include "ch32fun.h"
 #include "ch5xx_flash.h"
+#include <stdint.h>
+
+#ifndef FLASH_LOG_SIZE
+#error "FLASH_LOG_SIZE must be configured before including the CH5xx flash-log port"
+#endif
+
+#ifndef FLASH_BLOCK_SIZE
+#error "FLASH_BLOCK_SIZE must be configured before including the CH5xx flash-log port"
+#endif
+
+#if FLASH_LOG_SIZE % FLASH_BLOCK_SIZE != 0
+#error "FLASH_LOG_SIZE must be a multiple of FLASH_BLOCK_SIZE"
+#endif
+
+#define FLASH_BLOCK_COUNT (FLASH_LOG_SIZE / FLASH_BLOCK_SIZE)
+
+// The linker derives this symbol from the selected chip's FLASH memory region.
+extern uint8_t __flash_log_start[];
+#define FLASH_BASE_ADDR ((uint32_t)(uintptr_t)__flash_log_start)
+#define FLASH_BASE_ADDR_RUNTIME
 
 #ifndef FLASH_ERASED_WORD
 // CodeFlash read pattern reported for CH5xx; override if the target differs:

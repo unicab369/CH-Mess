@@ -1,5 +1,5 @@
-#define FLASH_BASE_ADDR    (2u * FLASH_BLOCK_SIZE)
-#define FLASH_BLOCK_COUNT  2
+#include <stdint.h>
+
 #define FLASH_CACHE_LENGTH 4
 
 #include "../../Mess-libs/flash/flash_log_ch5xx.h"

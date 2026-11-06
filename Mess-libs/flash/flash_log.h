@@ -30,7 +30,11 @@ enum {
 #endif
 
 #ifndef FLASH_BLOCK_COUNT
-#define FLASH_BLOCK_COUNT  1
+#define FLASH_BLOCK_COUNT  2
+#endif
+
+#if FLASH_BLOCK_COUNT < 2
+#error "FLASH_BLOCK_COUNT must be at least 2"
 #endif
 
 #ifndef FLASH_CACHE_LENGTH
@@ -64,8 +68,10 @@ enum {
 #define FLASH_ERASED_WORD  0xFFFFFFFFu
 #endif
 
+#ifndef FLASH_BASE_ADDR_RUNTIME
 #if FLASH_BASE_ADDR % FLASH_BLOCK_SIZE != 0
 #error "FLASH_BASE_ADDR must be aligned to FLASH_BLOCK_SIZE"
+#endif
 #endif
 
 #if FLASH_ALIGNMENT == 0 || (FLASH_ALIGNMENT & (FLASH_ALIGNMENT - 1)) != 0
@@ -230,7 +236,7 @@ static inline bool flash_record_is_erased(const flash_record *record) {
 
 // Scan the reserved region to find the next unused record slot.
 static inline flash_status flash_log_init(flash_log *log) {
-    if (!log || FLASH_BLOCK_COUNT == 0)
+    if (!log)
         return FLASH_ERROR;
 
     flash_record record;
