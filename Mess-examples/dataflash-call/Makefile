@@ -2,26 +2,25 @@
 all: flash
 
 TARGET_MCU := CH582
-TARGET := ch582-dataflash-call
+TARGET := dataflash-call
 
 # Offsets are relative to the DataFlash base address, 0x70000.
 DATAFLASH_SUM_OFFSET ?= 0x000
-DATAFLASH_CALLBACK_OFFSET ?= 0x100
-DATAFLASH_BYTES_OFFSET ?= 0x200
-DATAFLASH_CHECKSUM_OFFSET ?= 0x300
-DATAFLASH_STRUCT_OFFSET ?= 0x400
+DATAFLASH_CALLBACK_OFFSET ?= 0x040
+DATAFLASH_BYTES_OFFSET ?= 0x080
+DATAFLASH_CHECKSUM_OFFSET ?= 0x0c0
+DATAFLASH_STRUCT_OFFSET ?= 0x100
 
 include ../../ch32fun/ch32fun/ch32fun.mk
 
 # The app and linker script use the same offsets for function addresses.
-EXTRA_CFLAGS += \
-	-DDATAFLASH_SUM_OFFSET=$(DATAFLASH_SUM_OFFSET) \
+EXTRA_CFLAGS += -DDATAFLASH_SUM_OFFSET=$(DATAFLASH_SUM_OFFSET) \
 	-DDATAFLASH_CALLBACK_OFFSET=$(DATAFLASH_CALLBACK_OFFSET) \
 	-DDATAFLASH_BYTES_OFFSET=$(DATAFLASH_BYTES_OFFSET) \
 	-DDATAFLASH_CHECKSUM_OFFSET=$(DATAFLASH_CHECKSUM_OFFSET) \
 	-DDATAFLASH_STRUCT_OFFSET=$(DATAFLASH_STRUCT_OFFSET)
 
-# Write the complete five-page DataFlash image, then the CodeFlash app.
+# Write the combined DataFlash image, then the CodeFlash app.
 FLASH_COMMAND := $(MINICHLINK)/minichlink -w $(TARGET)_dataflash.bin eeprom && \
 	$(MINICHLINK)/minichlink -w $(TARGET)_app.bin flash -b
 cv_flash: $(TARGET)_app.bin $(TARGET)_dataflash.bin
@@ -44,10 +43,9 @@ $(TARGET)_dataflash.elf: dataflash_functions.o dataflash_functions.ld
 		-Wl,--defsym=DATAFLASH_CHECKSUM_ADDRESS=0x00070000+$(DATAFLASH_CHECKSUM_OFFSET) \
 		-Wl,--defsym=DATAFLASH_STRUCT_ADDRESS=0x00070000+$(DATAFLASH_STRUCT_OFFSET) -lgcc
 
-# Flatten the linked sections and fill the page gaps. The image spans five
-# 256-byte pages, so minichlink can program every word, including short functions.
+# Flatten the linked sections and fill the 64-byte slots with 0xff.
 $(TARGET)_dataflash.bin: $(TARGET)_dataflash.elf
-	$(PREFIX)-objcopy --gap-fill=0xff --pad-to=0x00070500 -O binary $< $@
+	$(PREFIX)-objcopy --gap-fill=0xff --pad-to=0x00070140 -O binary $< $@
 
 flash: cv_flash
 flash-dataflash: $(TARGET)_dataflash.bin $(MINICHLINK)/minichlink
