@@ -23,7 +23,7 @@ EXTRA_CFLAGS += -DDATAFLASH_SUM_OFFSET=$(DATAFLASH_SUM_OFFSET) \
 # Write the combined DataFlash image, then the CodeFlash app.
 FLASH_COMMAND := $(MINICHLINK)/minichlink -w $(TARGET)_dataflash.bin eeprom && \
 	$(MINICHLINK)/minichlink -w $(TARGET)_app.bin flash -b
-cv_flash: $(TARGET)_app.bin $(TARGET)_dataflash.bin
+cv_flash: $(TARGET)_app.bin $(TARGET)_dataflash.bin $(TARGET)_functions.txt
 
 # Convert the linked CodeFlash app to its raw binary image.
 $(TARGET)_app.bin: $(TARGET).elf
@@ -47,12 +47,26 @@ $(TARGET)_dataflash.elf: dataflash_functions.o dataflash_functions.ld
 $(TARGET)_dataflash.bin: $(TARGET)_dataflash.elf
 	$(PREFIX)-objcopy --gap-fill=0xff --pad-to=0x00070140 -O binary $< $@
 
+# `-s` prints section bytes; each `-j` selects one function's code section.
+# `>` saves the objdump output in the text file.
+$(TARGET)_functions.txt: $(TARGET)_dataflash.elf
+						$(PREFIX)-objdump -s \
+							-j .dataflash_sum \
+							-j .dataflash_callback \
+							-j .dataflash_bytes \
+							-j .dataflash_checksum \
+							-j .dataflash_struct $< > $@
+
 flash: cv_flash
+# Dependencies: the DataFlash image to write and the minichlink executable.
 flash-dataflash: $(TARGET)_dataflash.bin $(MINICHLINK)/minichlink
+# Command: write the first dependency ($<) to the chip's DataFlash (`eeprom`).
 	$(MINICHLINK)/minichlink -w $< eeprom
 
+# Remove generated build files so the next build creates fresh ones.
 clean: cv_clean
 	$(RM) $(TARGET)_app.bin $(TARGET)_dataflash.elf $(TARGET)_dataflash.bin \
+		$(TARGET)_functions.txt \
 		$(TARGET)_dataflash_sum.bin $(TARGET)_dataflash_callback.bin \
 		$(TARGET)_dataflash_bytes.bin $(TARGET)_dataflash_checksum.bin \
 		$(TARGET)_dataflash_struct.bin dataflash_functions.o \

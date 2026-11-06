@@ -28,8 +28,7 @@ int main(void) {
     SystemInit();
 
     dataflash_scalar_fn sum = (dataflash_scalar_fn)(uintptr_t)DATAFLASH_SUM_ADDRESS;
-    dataflash_callback_fn call_callback =
-        (dataflash_callback_fn)(uintptr_t)DATAFLASH_CALLBACK_ADDRESS;
+    dataflash_callback_fn call_callback = (dataflash_callback_fn)(uintptr_t)DATAFLASH_CALLBACK_ADDRESS;
     dataflash_bytes_fn increment = (dataflash_bytes_fn)(uintptr_t)DATAFLASH_BYTES_ADDRESS;
     dataflash_checksum_fn checksum = (dataflash_checksum_fn)(uintptr_t)DATAFLASH_CHECKSUM_ADDRESS;
     dataflash_struct_fn update_record = (dataflash_struct_fn)(uintptr_t)DATAFLASH_STRUCT_ADDRESS;
