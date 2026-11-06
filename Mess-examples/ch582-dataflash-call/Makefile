@@ -8,6 +8,7 @@ TARGET := ch582-dataflash-call
 # Offsets are relative to the start of DataFlash (0x70000).
 # The first function uses the DataFlash base; each function has its own page.
 DATAFLASH_SUM_OFFSET ?= 0x000
+DATAFLASH_CALLBACK_OFFSET ?= 0x100
 DATAFLASH_BYTES_OFFSET ?= 0x200
 DATAFLASH_CHECKSUM_OFFSET ?= 0x300
 DATAFLASH_STRUCT_OFFSET ?= 0x400
@@ -18,19 +19,21 @@ include ../../ch32fun/ch32fun/ch32fun.mk
 # Replace ch32fun's default flash command: write each function at its matching
 # DataFlash offset, write the app to CodeFlash, then reboot the chip.
 FLASH_COMMAND := $(MINICHLINK)/minichlink -w $(TARGET)_dataflash_sum.bin eeprom+$(DATAFLASH_SUM_OFFSET) && \
+	$(MINICHLINK)/minichlink -w $(TARGET)_dataflash_callback.bin eeprom+$(DATAFLASH_CALLBACK_OFFSET) && \
 	$(MINICHLINK)/minichlink -w $(TARGET)_dataflash_bytes.bin eeprom+$(DATAFLASH_BYTES_OFFSET) && \
 	$(MINICHLINK)/minichlink -w $(TARGET)_dataflash_checksum.bin eeprom+$(DATAFLASH_CHECKSUM_OFFSET) && \
 	$(MINICHLINK)/minichlink -w $(TARGET)_dataflash_struct.bin eeprom+$(DATAFLASH_STRUCT_OFFSET) && \
 	$(MINICHLINK)/minichlink -w $(TARGET)_app.bin flash -b
 
-# Make sure the app and all four function images exist before flashing.
+# Make sure the app and all five function images exist before flashing.
 cv_flash: $(TARGET)_app.bin $(TARGET)_dataflash_sum.bin \
-	$(TARGET)_dataflash_bytes.bin \
+	$(TARGET)_dataflash_callback.bin $(TARGET)_dataflash_bytes.bin \
 	$(TARGET)_dataflash_checksum.bin $(TARGET)_dataflash_struct.bin
 
 # Pass the same offsets to C so the app's function pointers match the flash locations.
 EXTRA_CFLAGS += \
 	-DDATAFLASH_SUM_OFFSET=$(DATAFLASH_SUM_OFFSET) \
+	-DDATAFLASH_CALLBACK_OFFSET=$(DATAFLASH_CALLBACK_OFFSET) \
 	-DDATAFLASH_BYTES_OFFSET=$(DATAFLASH_BYTES_OFFSET) \
 	-DDATAFLASH_CHECKSUM_OFFSET=$(DATAFLASH_CHECKSUM_OFFSET) \
 	-DDATAFLASH_STRUCT_OFFSET=$(DATAFLASH_STRUCT_OFFSET)
@@ -54,6 +57,9 @@ dataflash_struct.o: dataflash_struct.h
 $(TARGET)_dataflash_sum.bin: dataflash_sum.o
 	$(PREFIX)-objcopy -j .dataflash_fn --gap-fill=0xff --pad-to=0x100 -O binary $< $@
 
+$(TARGET)_dataflash_callback.bin: dataflash_callback.o
+	$(PREFIX)-objcopy -j .dataflash_fn --gap-fill=0xff --pad-to=0x100 -O binary $< $@
+
 $(TARGET)_dataflash_bytes.bin: dataflash_bytes.o
 	$(PREFIX)-objcopy -j .dataflash_fn --gap-fill=0xff --pad-to=0x100 -O binary $< $@
 
@@ -66,10 +72,11 @@ $(TARGET)_dataflash_struct.bin: dataflash_struct.o
 # `flash` writes all images. `flash-dataflash` updates only the functions, so
 # use it only when the app already contains the same offsets and signatures.
 flash: cv_flash
-flash-dataflash: $(TARGET)_dataflash_sum.bin $(TARGET)_dataflash_bytes.bin \
-	$(TARGET)_dataflash_checksum.bin \
+flash-dataflash: $(TARGET)_dataflash_sum.bin $(TARGET)_dataflash_callback.bin \
+	$(TARGET)_dataflash_bytes.bin $(TARGET)_dataflash_checksum.bin \
 	$(TARGET)_dataflash_struct.bin $(MINICHLINK)/minichlink
 	$(MINICHLINK)/minichlink -w $(TARGET)_dataflash_sum.bin eeprom+$(DATAFLASH_SUM_OFFSET)
+	$(MINICHLINK)/minichlink -w $(TARGET)_dataflash_callback.bin eeprom+$(DATAFLASH_CALLBACK_OFFSET)
 	$(MINICHLINK)/minichlink -w $(TARGET)_dataflash_bytes.bin eeprom+$(DATAFLASH_BYTES_OFFSET)
 	$(MINICHLINK)/minichlink -w $(TARGET)_dataflash_checksum.bin eeprom+$(DATAFLASH_CHECKSUM_OFFSET)
 	$(MINICHLINK)/minichlink -w $(TARGET)_dataflash_struct.bin eeprom+$(DATAFLASH_STRUCT_OFFSET)
@@ -77,7 +84,7 @@ flash-dataflash: $(TARGET)_dataflash_sum.bin $(TARGET)_dataflash_bytes.bin \
 # Remove generated build outputs, including names left by earlier example versions.
 clean: cv_clean
 	$(RM) $(TARGET)_app.bin $(TARGET)_dataflash_sum.bin \
-		$(TARGET)_dataflash_bytes.bin \
+		$(TARGET)_dataflash_callback.bin $(TARGET)_dataflash_bytes.bin \
 		$(TARGET)_dataflash_checksum.bin $(TARGET)_dataflash_struct.bin \
 		dataflash_sum.o dataflash_bytes.o \
 		dataflash_checksum.o dataflash_struct.o
