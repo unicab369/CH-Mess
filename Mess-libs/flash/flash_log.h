@@ -123,13 +123,6 @@ int HW_FLASH_WRITE(uint32_t address, const void *src, size_t length);
 uint32_t HW_ERASE_BLOCK(uint32_t address);
 
 // Check that a program operation stays within a physical page, when required.
-static inline bool flash_fits_page(
-    uint32_t address, uint32_t length, uint32_t page_size
-) {
-    if (page_size == 0 || length == 0) return true;
-    return (address / page_size) == ((address + length - 1u) / page_size);
-}
-
 #define FLASH_CRC_INITIAL 0xFFFFu
 // Calculate the finalized CRC-16/MODBUS (reflected polynomial 0xA001).
 static inline uint16_t flash_crc_calculate(const uint8_t *bytes, size_t length) {
@@ -218,7 +211,7 @@ static inline flash_status flash_log_init(flash_log *log) {
     log->map_end = FLASH_BASE_ADDR;
 #endif
 
-    // Scan record headers until the first unused slot or the end of the log.
+    //! Scan record headers until the first unused slot or the end of the log.
     while (log->next_address + sizeof(record) <= FLASH_LOG_END) {
         if (HW_FLASH_READ(log->next_address, &record, sizeof(record)))
             return FLASH_ERROR;
