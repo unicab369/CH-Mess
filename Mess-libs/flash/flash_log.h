@@ -111,7 +111,7 @@ typedef enum {
 
 // Header stored before each value in the append-only flash log.
 //! Changing this layout or marker values requires erasing existing records.
-// Size: 8 bytes.
+// Size: 8 bytes. Records start on 4-byte boundaries and are padded to 4 bytes.
 typedef struct {
     uint16_t crc;        // CRC-16 checksum for the payload.
     uint16_t logical_id; // May repeat; later records replace earlier values.
@@ -178,6 +178,7 @@ static inline void flash_cache_store(
 ) {
     uint16_t slot;
     for (slot = 0; slot < FLASH_CACHE_LENGTH; ++slot) {
+        // Reuse the existing cache slot when this logical ID is already cached.
         if (log->cache[slot].valid &&
             log->cache[slot].logical_id == record->logical_id
         ) break;
@@ -202,15 +203,6 @@ static inline uint16_t flash_record_payload_size(uint32_t marker) {
     case FLASH_RECORD_MARKER_4:  return FLASH_RECORD_SIZE_4;
     case FLASH_RECORD_MARKER_8:  return FLASH_RECORD_SIZE_8;
     case FLASH_RECORD_MARKER_16: return FLASH_RECORD_SIZE_16;
-    default: return 0;
-    }
-}
-
-static inline uint32_t flash_record_marker(flash_record_size size) {
-    switch (size) {
-    case FLASH_RECORD_SIZE_4:  return FLASH_RECORD_MARKER_4;
-    case FLASH_RECORD_SIZE_8:  return FLASH_RECORD_MARKER_8;
-    case FLASH_RECORD_SIZE_16: return FLASH_RECORD_MARKER_16;
     default: return 0;
     }
 }
@@ -315,10 +307,14 @@ static inline flash_status flash_log_write(
 ) {
     if (!log || !data)
         return FLASH_ERROR;
+    uint32_t marker;
+    switch (size) {
+        case FLASH_RECORD_SIZE_4:  marker = FLASH_RECORD_MARKER_4; break;
+        case FLASH_RECORD_SIZE_8:  marker = FLASH_RECORD_MARKER_8; break;
+        case FLASH_RECORD_SIZE_16: marker = FLASH_RECORD_MARKER_16; break;
+        default: return FLASH_RECORD_INVALID_SIZE;
+    }
     const uint16_t length = (uint16_t)size;
-    const uint32_t marker = flash_record_marker(size);
-    if (!marker)
-        return FLASH_RECORD_INVALID_SIZE;
 
     // Equivalent to ((size + FLASH_ALIGNMENT - 1) / FLASH_ALIGNMENT) * FLASH_ALIGNMENT.
     const uint32_t total = (sizeof(flash_record) + length + FLASH_ALIGNMENT - 1u) &
@@ -326,8 +322,7 @@ static inline flash_status flash_log_write(
     if (total > FLASH_BLOCK_SIZE)
         return FLASH_RECORD_TOO_LARGE;
 
-    const uint32_t block_offset = (log->next_address - FLASH_BASE_ADDR) &
-                                  (FLASH_BLOCK_SIZE - 1u);
+    const uint32_t block_offset = (log->next_address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u);
     if (block_offset + total > FLASH_BLOCK_SIZE)
         log->next_address += FLASH_BLOCK_SIZE - block_offset;
 
@@ -340,8 +335,9 @@ static inline flash_status flash_log_write(
         .crc = (uint16_t)~flash_crc_update(FLASH_CRC_INITIAL, (const uint8_t *)data, length)
     };
 
-    if (
-        // Write the header fields before the final marker.
+    // Header first makes an interrupted payload distinguishable from an erased slot;
+    // the marker is written last so startup accepts only complete records.
+    if ( // Write the header fields before the final marker.
         HW_FLASH_WRITE(log->next_address, &record, offsetof(flash_record, marker)) ||
         // Write the payload before marking the record complete.
         (length && HW_FLASH_WRITE(log->next_address + sizeof(record), data, length)) ||
