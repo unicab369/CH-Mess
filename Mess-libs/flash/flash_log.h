@@ -2,7 +2,9 @@
 #define FUN_FLASH_LOG_H
 
 // Flash layout: erase blocks contain pages; pages hold bytes from the record log.
-// Record header: [sequence | CRC | logical_id | marker (payload size + commit)]
+// Record header: [CRC | logical_id | marker (payload size + commit)]
+// Before garbage collection, later flash addresses contain newer records for
+// the same logical ID.
 //
 // [erase block - 4KB (configurable)]
 //   [page: [header] [payload] [alignment padding] ...]
@@ -109,11 +111,10 @@ typedef enum {
 
 // Header stored before each value in the append-only flash log.
 //! Changing this layout or marker values requires erasing existing records.
-// Size: 12 bytes.
+// Size: 8 bytes.
 typedef struct {
-    uint32_t sequence;      // Increments for every appended record, including updates.
-    uint16_t crc;           // CRC-16 checksum for the payload.
-    uint16_t logical_id;    // May repeat; reads use the record with the newest sequence.
+    uint16_t crc;        // CRC-16 checksum for the payload.
+    uint16_t logical_id; // May repeat; later records replace earlier values.
     //! NOTE: Keep last so preceding fields need one write; uint32_t stays 4-byte aligned here.
     uint32_t marker;        // Combined magic and commit marker, programmed last.
 } flash_record;
@@ -123,7 +124,7 @@ typedef struct {
 typedef struct {
     uint32_t address;    // Flash address of the record header.
     uint16_t crc;        // CRC-16 checksum of the cached payload.
-    uint16_t logical_id; // May repeat; reads use the record with the newest sequence.
+    uint16_t logical_id; // May repeat; the latest record is at the highest address.
     uint16_t length;     // Cached payload length.
     uint8_t valid;       // Whether this slot is in use.
 } flash_cache_entry;
@@ -131,7 +132,6 @@ typedef struct {
 
 typedef struct {
     uint32_t next_address;  // Address where the next record will be written.
-    uint32_t next_sequence; // Sequence number to assign to the next record.
 #if FLASH_CACHE_LENGTH > 0
     uint16_t cache_next; // Next empty slot, then next replacement slot.
     flash_cache_entry cache[FLASH_CACHE_LENGTH];
@@ -241,7 +241,6 @@ static inline flash_status flash_log_init(flash_log *log) {
 
     flash_record record;
     log->next_address = FLASH_BASE_ADDR;
-    log->next_sequence = 1;
 
 #if FLASH_CACHE_LENGTH > 0
     log->cache_next = 0;
@@ -304,10 +303,6 @@ static inline flash_status flash_log_init(flash_log *log) {
         flash_cache_store(log, &record, log->next_address, record_length);
 #endif
 
-        // Signed subtraction compares wrapped sequence numbers safely.
-        if ((int32_t)((record.sequence + 1u) - log->next_sequence) > 0)
-            log->next_sequence = record.sequence + 1u;
-
         log->next_address += record_size;
     }
 
@@ -341,7 +336,6 @@ static inline flash_status flash_log_write(
 
     flash_record record = {
         .marker = marker,
-        .sequence = log->next_sequence,
         .logical_id = logical_id,
         .crc = (uint16_t)~flash_crc_update(FLASH_CRC_INITIAL, (const uint8_t *)data, length)
     };
@@ -360,7 +354,6 @@ static inline flash_status flash_log_write(
     }
 
     log->next_address += total;
-    ++log->next_sequence;
 #if FLASH_CACHE_LENGTH > 0
     flash_cache_store(log, &record, log->next_address - total, length);
 #endif
@@ -397,14 +390,13 @@ static inline flash_status flash_log_read_fast(
 
     // Scan records and remember the newest matching logical ID.
     uint32_t address = FLASH_BASE_ADDR;
-    uint32_t new_sequence = 0;
     uint32_t new_address = 0;
     uint16_t new_crc = 0;
     uint16_t new_length = 0;
     bool found = false;
     flash_record record;
 
-    // Scan headers to find the newest matching sequence; read only its payload below.
+    // Scan in address order; the last matching record is the newest.
     while (address + sizeof(record) <= log->next_address) {
         if (HW_FLASH_READ(address, &record, sizeof(record)))
             return FLASH_ERROR;
@@ -423,11 +415,8 @@ static inline flash_status flash_log_read_fast(
             continue;
         }
 
-        // Save this record if it is the first match or newer than the saved one.
-        if (record.logical_id == logical_id &&
-            (!found || (int32_t)(record.sequence - new_sequence) > 0)
-        ) {
-            new_sequence = record.sequence;
+        // Later addresses represent later writes for this logical ID.
+        if (record.logical_id == logical_id) {
             new_crc = record.crc;
             new_length = record_length;
             new_address = address;

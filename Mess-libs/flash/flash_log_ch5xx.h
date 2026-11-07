@@ -1,6 +1,20 @@
 #ifndef FUN_FLASH_LOG_CH5XX_H
 #define FUN_FLASH_LOG_CH5XX_H
 
+// CH582
+// - Flash-ROM feature:
+// for store program code, support block erasing, dword and page writing, dword verifying,
+// unit for Length is byte, minimal quantity for write or verify is one dword (4-bytes),
+// 256 bytes/page for writing, FLASH_ROM_WRITE support one dword or more dword writing,
+// but multiple of 256 is the best, 4KB (4096 bytes) bytes/block for erasing,
+// so multiple of 4096 is the best
+
+// - Data-Flash(EEPROM) feature:
+// for store data, support block erasing, byte and page writing, byte reading,
+// minimal quantity for write or read is one byte, 256 bytes/page for writing,
+// EEPROM_WRITE support one byte or more byte writing, but multiple of 256 is the best,
+// 0.25KB/4KB (256/4096 bytes) bytes/block for erasing, so multiple of 256 or 4096 is the best */
+
 // Set FLASH_LOG_SIZE, FLASH_BLOCK_SIZE, and any other options before including this port.
 // The linker provides the log address from the selected chip's FLASH region.
 #include "ch32fun.h"
