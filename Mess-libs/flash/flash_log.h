@@ -39,14 +39,14 @@ enum {
 #error "FLASH_BLOCK_COUNT must be at least 2"
 #endif
 
-#ifndef FLASH_CACHE_LENGTH
-// Set to 0 to disable the RAM cache.
-#define FLASH_CACHE_LENGTH 0
+#ifndef FLASH_RECORD_MAP_LENGTH
+// One byte per recent record; 0 disables the reverse lookup map.
+#define FLASH_RECORD_MAP_LENGTH 32
 #endif
 
-#if FLASH_CACHE_LENGTH > 0 && \
-    (FLASH_CACHE_LENGTH & (FLASH_CACHE_LENGTH - 1)) != 0
-#error "FLASH_CACHE_LENGTH must be a power of two or zero"
+#if FLASH_RECORD_MAP_LENGTH > 0 && \
+    (FLASH_RECORD_MAP_LENGTH & (FLASH_RECORD_MAP_LENGTH - 1)) != 0
+#error "FLASH_RECORD_MAP_LENGTH must be a power of two or zero"
 #endif
 
 #ifndef FLASH_BLOCK_SIZE
@@ -97,12 +97,6 @@ typedef struct {
     bool     erased;       // True if the block is erased and ready to use.
 } flash_block;
 
-// | Record | Key_id | Sequence | Meaning
-// |--------|--------|----------|--------------------------
-// | 1      | 1      | 1        | set X to 40
-// | 2      | 2      | 2        | set Y to 8
-// | 3      | 1      | 3        | update X 60
-
 // Header stored before each value in the append-only flash log.
 //! Changing this layout or marker values requires erasing existing records.
 // Size: 8 bytes. Records start on 4-byte boundaries and are padded to 4 bytes.
@@ -113,22 +107,13 @@ typedef struct {
     uint32_t marker;        // Combined magic and commit marker, programmed last.
 } flash_record;
 
-#if FLASH_CACHE_LENGTH > 0
-// Cache entry pointing to the latest record for one logical ID.
-typedef struct {
-    uint32_t address;    // Flash address of the record header.
-    uint16_t crc;        // CRC-16 checksum of the cached payload.
-    uint16_t logical_id; // May repeat; the latest record is at the highest address.
-    uint16_t length;     // Cached payload length.
-    uint8_t valid;       // Whether this slot is in use.
-} flash_cache_entry;
-#endif
-
 typedef struct {
     uint32_t next_address;  // Address where the next record will be written.
-#if FLASH_CACHE_LENGTH > 0
-    uint16_t cache_next; // Next empty slot, then next replacement slot.
-    flash_cache_entry cache[FLASH_CACHE_LENGTH];
+#if FLASH_RECORD_MAP_LENGTH > 0
+    uint32_t map_end;       // End address of the newest mapped record.
+    uint16_t map_count;
+    uint16_t map_next;
+    uint8_t record_map[FLASH_RECORD_MAP_LENGTH];
 #endif
 } flash_log;
 
@@ -146,10 +131,8 @@ static inline bool flash_fits_page(
 }
 
 #define FLASH_CRC_INITIAL 0xFFFFu
-// Update CRC-16/MODBUS (reflected polynomial 0xA001) with a byte chunk.
-static inline uint16_t flash_crc_update(
-    uint16_t crc, const uint8_t *bytes, size_t length
-) {
+// Calculate the finalized CRC-16/MODBUS (reflected polynomial 0xA001).
+static inline uint16_t flash_crc_calculate(const uint8_t *bytes, size_t length) {
     static const uint16_t table[16] = {
         0x0000u, 0xCC01u, 0xD801u, 0x1400u,
         0xF001u, 0x3C00u, 0x2800u, 0xE401u,
@@ -157,40 +140,14 @@ static inline uint16_t flash_crc_update(
         0x5000u, 0x9C01u, 0x8801u, 0x4400u
     };
 
+    uint16_t crc = FLASH_CRC_INITIAL;
     for (size_t i = 0; i < length; ++i) {
         crc ^= bytes[i];
         crc = (crc >> 4) ^ table[crc & 0x0Fu];
         crc = (crc >> 4) ^ table[crc & 0x0Fu];
     }
-    return crc;
+    return (uint16_t)~crc;
 }
-
-#if FLASH_CACHE_LENGTH > 0
-// Cache a record, replacing the entry for its logical ID or the next old entry.
-static inline void flash_cache_store(
-    flash_log *log, const flash_record *record, uint32_t address, uint16_t length
-) {
-    uint16_t slot;
-    for (slot = 0; slot < FLASH_CACHE_LENGTH; ++slot) {
-        // Reuse the existing cache slot when this logical ID is already cached.
-        if (log->cache[slot].valid &&
-            log->cache[slot].logical_id == record->logical_id
-        ) break;
-    }
-
-    if (slot == FLASH_CACHE_LENGTH) {
-        // Fill slots in order, then reuse them in round-robin order.
-        slot = log->cache_next;
-        log->cache_next = (slot + 1u) & (FLASH_CACHE_LENGTH - 1u);
-    }
-
-    log->cache[slot].logical_id = record->logical_id;
-    log->cache[slot].address = address;
-    log->cache[slot].crc = record->crc;
-    log->cache[slot].length = length;
-    log->cache[slot].valid = true;
-}
-#endif
 
 static inline uint16_t flash_record_payload_size(uint32_t marker) {
     switch (marker) {
@@ -200,6 +157,34 @@ static inline uint16_t flash_record_payload_size(uint32_t marker) {
     default: return 0;
     }
 }
+
+#if FLASH_RECORD_MAP_LENGTH > 0
+// Keep a size code and six-bit ID hint for each of the newest contiguous records.
+static inline void flash_record_map_store(
+    flash_log *log, uint16_t logical_id, uint32_t address, uint16_t size
+) {
+    // If this record doesn't follow the previous one in flash, discard the map.
+    if (log->map_count && address != log->map_end) {
+        log->map_count = 0;
+        log->map_next = 0;
+    }
+
+    //! Store a six-bit ID hint and a two-bit code for the payload size.
+    const uint8_t id_hint = (uint8_t)((logical_id ^ (logical_id >> 6) ^
+                                       (logical_id >> 12)) & 0x3fu);
+    const uint8_t size_code = size == 4 ? 0 : size == 8 ? 1 : 2;
+    log->record_map[log->map_next] = (uint8_t)((id_hint << 2) | size_code);
+
+    //! Advance the circular map slot and cap its count at its capacity.
+    log->map_next = (log->map_next + 1u) & (FLASH_RECORD_MAP_LENGTH - 1u);
+    if (log->map_count < FLASH_RECORD_MAP_LENGTH)
+        ++log->map_count;
+
+    //! Remember where the next contiguous record should begin.
+    log->map_end = address + ((sizeof(flash_record) + size + FLASH_ALIGNMENT - 1u) &
+                              ~((uint32_t)FLASH_ALIGNMENT - 1u));
+}
+#endif
 
 // Move an address to the start of the next erase block.
 static inline uint32_t flash_get_next_block(uint32_t address) {
@@ -227,25 +212,48 @@ static inline flash_status flash_log_init(flash_log *log) {
 
     flash_record record;
     log->next_address = FLASH_BASE_ADDR;
-
-#if FLASH_CACHE_LENGTH > 0
-    log->cache_next = 0;
-    for (uint16_t i = 0; i < FLASH_CACHE_LENGTH; ++i)
-        log->cache[i].valid = false;
+#if FLASH_RECORD_MAP_LENGTH > 0
+    log->map_count = 0;
+    log->map_next = 0;
+    log->map_end = FLASH_BASE_ADDR;
 #endif
 
+    // Scan record headers until the first unused slot or the end of the log.
     while (log->next_address + sizeof(record) <= FLASH_LOG_END) {
         if (HW_FLASH_READ(log->next_address, &record, sizeof(record)))
             return FLASH_ERROR;
 
         const uint16_t record_length = flash_record_payload_size(record.marker);
+
         if (!record_length) {
-            if (flash_record_is_erased(&record))
+            const uint32_t next_block = flash_get_next_block(log->next_address);
+
+            if (flash_record_is_erased(&record)) {
+                // An erased header can be an unused tail; records may continue in the next block.
+                // Only inspect the next block if a full header fits in the log.
+                if (next_block + sizeof(record) <= FLASH_LOG_END) {
+                    flash_record next_header;
+
+                    if (HW_FLASH_READ(next_block, &next_header, sizeof(next_header)))
+                        return FLASH_ERROR;
+                    //! A non-erased header means records continue in the next block.
+                    if (!flash_record_is_erased(&next_header)) {
+                        log->next_address = next_block;
+                        continue;
+                    }
+                }
+                // No record follows this erased location, so stop scanning.
                 break;
-            log->next_address = flash_get_next_block(log->next_address);
-            continue;
+            } else {
+                //! The marker has no valid payload size, so skip to the next block.
+                log->next_address = next_block;
+                continue;
+            }
         }
+
+        // Check whether this record fits before reading its payload for the CRC.
         if (record_length > FLASH_LOG_END - log->next_address - sizeof(record)) {
+            // Advance next_address to the next block because this record won't fit here.
             log->next_address = flash_get_next_block(log->next_address);
             continue;
         }
@@ -256,37 +264,30 @@ static inline flash_status flash_log_init(flash_log *log) {
         if (record_size > FLASH_LOG_END - log->next_address)
             break;
 
+        // Calculate the bytes left between next_address and the end of this block.
         const uint32_t block_remaining = FLASH_BLOCK_SIZE -
                                 ((log->next_address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u));
         if (record_size > block_remaining) {
+            // Keep the record within one block by advancing to the next block.
             log->next_address += block_remaining;
             continue;
         }
 
-        // Verify flash payload in small chunks without buffering the whole record.
-        uint8_t crc_chunk[32];
-        uint16_t crc = FLASH_CRC_INITIAL;
+        uint8_t crc_chunk[16];
         uint32_t crc_address = log->next_address + sizeof(record);
         uint16_t crc_remaining = record_length;
 
-        while (crc_remaining) {
-            const size_t chunk_size = crc_remaining < sizeof(crc_chunk)
-                                    ? crc_remaining : sizeof(crc_chunk);
-            if (HW_FLASH_READ(crc_address, crc_chunk, chunk_size))
-                return FLASH_ERROR;
+        //! Payloads are at most 16 bytes, so read and checksum the payload at once.
+        if (HW_FLASH_READ(crc_address, crc_chunk, crc_remaining))
+            return FLASH_ERROR;
 
-            crc = flash_crc_update(crc, crc_chunk, chunk_size);
-            crc_address += chunk_size;
-            crc_remaining -= (uint16_t)chunk_size;
-        }
-
-        if ((uint16_t)~crc != record.crc) {
+        if (flash_crc_calculate(crc_chunk, crc_remaining) != record.crc) {
             log->next_address = flash_get_next_block(log->next_address);
             continue;
         }
 
-#if FLASH_CACHE_LENGTH > 0
-        flash_cache_store(log, &record, log->next_address, record_length);
+#if FLASH_RECORD_MAP_LENGTH > 0
+        flash_record_map_store(log, record.logical_id, log->next_address, record_length);
 #endif
 
         log->next_address += record_size;
@@ -299,8 +300,8 @@ static inline flash_status flash_log_init(flash_log *log) {
 static inline flash_status flash_log_write(
     flash_log *log, uint16_t logical_id, const void *data, uint32_t marker
 ) {
-    if (!log || !data)
-        return FLASH_ERROR;
+    if (!log || !data) return FLASH_ERROR;
+
     const uint16_t length = flash_record_payload_size(marker);
     if (!length)
         return FLASH_RECORD_INVALID_SIZE;
@@ -312,6 +313,7 @@ static inline flash_status flash_log_write(
         return FLASH_RECORD_TOO_LARGE;
 
     const uint32_t block_offset = (log->next_address - FLASH_BASE_ADDR) & (FLASH_BLOCK_SIZE - 1u);
+    // Move to the next block if the full record would cross this block's boundary.
     if (block_offset + total > FLASH_BLOCK_SIZE)
         log->next_address += FLASH_BLOCK_SIZE - block_offset;
 
@@ -321,7 +323,7 @@ static inline flash_status flash_log_write(
     flash_record record = {
         .marker = marker,
         .logical_id = logical_id,
-        .crc = (uint16_t)~flash_crc_update(FLASH_CRC_INITIAL, (const uint8_t *)data, length)
+        .crc = flash_crc_calculate((const uint8_t *)data, length)
     };
 
     // Header first makes an interrupted payload distinguishable from an erased slot;
@@ -339,8 +341,8 @@ static inline flash_status flash_log_write(
     }
 
     log->next_address += total;
-#if FLASH_CACHE_LENGTH > 0
-    flash_cache_store(log, &record, log->next_address - total, length);
+#if FLASH_RECORD_MAP_LENGTH > 0
+    flash_record_map_store(log, logical_id, log->next_address - total, length);
 #endif
     return FLASH_OK;
 }
@@ -352,27 +354,58 @@ static inline flash_status flash_log_read_fast(
     flash_log *log, uint16_t logical_id, void *data,
     uint16_t capacity, uint16_t *length
 ) {
-#if FLASH_CACHE_LENGTH > 0
-    // Use a cached record location before scanning flash headers.
-    for (uint16_t i = 0; i < FLASH_CACHE_LENGTH; ++i) {
-        flash_cache_entry *entry = &log->cache[i];
+#if FLASH_RECORD_MAP_LENGTH > 0
+    // Start just past the newest mapped record and walk toward older records.
+    uint32_t candidate_addr = log->map_end;
+    // Each map byte packs a six-bit ID hint (which can collide) and a two-bit payload-size code.
+    const uint8_t id_hint = (uint8_t)((logical_id ^ (logical_id >> 6) ^
+                                       (logical_id >> 12)) & 0x3fu);
 
-        if (!entry->valid || entry->logical_id != logical_id)
+    // map_next changes as records are added; it points to the next slot to write.
+    // Walk backward from the latest entry, wrapping around the ring as needed.
+    const uint16_t map_count = log->map_count;
+
+    for (uint16_t n = 0; n < map_count; ++n) {
+        // The map is a ring; map_next points to the next slot to overwrite.
+        const uint16_t index = (log->map_next - 1u - n) & (FLASH_RECORD_MAP_LENGTH - 1u);
+
+        //! The map entry contains a six-bit ID hint and a two-bit payload-size code.
+        const uint8_t map_entry = log->record_map[index];
+        //! The low two bits encode payload sizes 4, 8, and 16.
+        const uint16_t payload_len = (uint16_t)(4u << (map_entry & 3u));
+        //! Move back to this record's start so the next iteration can check the older record.
+        candidate_addr -= (sizeof(flash_record) + payload_len + FLASH_ALIGNMENT - 1u) &
+                       ~((uint32_t)FLASH_ALIGNMENT - 1u);
+
+        //! Skip this entry if its ID hint doesn't match; check older entries.
+        if ((map_entry >> 2) != id_hint)
             continue;
-        if (entry->length > capacity)
+
+        //! Read the header first so a hint collision needs no payload read.
+        flash_record candidate;
+        if (HW_FLASH_READ(candidate_addr, &candidate, sizeof(candidate)))
+            return FLASH_ERROR;
+
+        //! Confirm the full header before using this payload.
+        if (candidate.logical_id != logical_id ||
+            flash_record_payload_size(candidate.marker) != payload_len
+        ) continue;
+
+        //! confirm the full ID before reporting that this matching record needs a larger buffer.
+        if (payload_len > capacity)
             return FLASH_BUFFER_TOO_SMALL;
 
-        if ((entry->length && HW_FLASH_READ(entry->address + sizeof(flash_record),
-                                            data, entry->length)) ||
-            (uint16_t)~flash_crc_update(FLASH_CRC_INITIAL, (const uint8_t *)data,
-                                        entry->length) != entry->crc
-        ) return FLASH_ERROR;
-
-        *length = entry->length;
+        //! Read the matched record's payload into the caller's buffer.
+        if (HW_FLASH_READ(candidate_addr + sizeof(candidate), data, payload_len))
+            return FLASH_ERROR;
+        if (flash_crc_calculate((const uint8_t *)data, payload_len) != candidate.crc)
+            return FLASH_ERROR;
+        *length = payload_len;
         return FLASH_OK;
     }
 #endif
 
+    // An ID older than the mapped range still needs the full flash scan.
     // Scan records and remember the newest matching logical ID.
     uint32_t address = FLASH_BASE_ADDR;
     uint32_t new_address = 0;
@@ -381,16 +414,22 @@ static inline flash_status flash_log_read_fast(
     bool found = false;
     flash_record record;
 
-    // Scan in address order; the last matching record is the newest.
+    //! Scan in address order; the last matching record is the newest.
     while (address + sizeof(record) <= log->next_address) {
         if (HW_FLASH_READ(address, &record, sizeof(record)))
             return FLASH_ERROR;
 
         const uint16_t record_length = flash_record_payload_size(record.marker);
         if (!record_length) {
-            // An erased header means there are no more records in this block.
-            if (flash_record_is_erased(&record))
+            // An erased tail may precede records in the next block.
+            if (flash_record_is_erased(&record)) {
+                const uint32_t next_block = flash_get_next_block(address);
+                if (next_block < log->next_address) {
+                    address = next_block;
+                    continue;
+                }
                 break;
+            }
             // Skip to the next block if this record's header is invalid or incomplete.
             address = flash_get_next_block(address);
             continue;
@@ -421,19 +460,10 @@ static inline flash_status flash_log_read_fast(
     if (new_length > capacity)
         return FLASH_BUFFER_TOO_SMALL;
 
-    // Read the selected payload and verify its CRC before returning it.
+    //! Read the selected payload and verify its CRC before returning it.
     if ((new_length && HW_FLASH_READ(new_address + sizeof(record), data, new_length)) ||
-        (uint16_t)~flash_crc_update(FLASH_CRC_INITIAL, (const uint8_t *)data, new_length) != new_crc
+        flash_crc_calculate((const uint8_t *)data, new_length) != new_crc
     ) return FLASH_ERROR;
-
-#if FLASH_CACHE_LENGTH > 0
-    // Cache only the selected record after its payload passes the CRC check.
-    flash_record newest = {
-        .logical_id = logical_id,
-        .crc = new_crc
-    };
-    flash_cache_store(log, &newest, new_address, new_length);
-#endif
 
     *length = new_length;
     return FLASH_OK;

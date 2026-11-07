@@ -1,7 +1,5 @@
 #include <stdint.h>
 
-#define FLASH_CACHE_LENGTH 4
-
 #include "../../Mess-libs/flash/flash_log_ch5xx.h"
 
 #include <stdio.h>
