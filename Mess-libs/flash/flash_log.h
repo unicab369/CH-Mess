@@ -83,6 +83,7 @@ enum {
 #define FLASH_LOG_END (FLASH_BASE_ADDR + (uint32_t)FLASH_BLOCK_COUNT * FLASH_BLOCK_SIZE)
 
 #define FLASH_RECORD_COMMIT 0xCAFEu
+#define FLASH_RECORD_MAGIC  0xBA00u
 #define FLASH_RECORD_MARKER_4  (((uint32_t)FLASH_RECORD_COMMIT << 16) | 0xBA04u)
 #define FLASH_RECORD_MARKER_8  (((uint32_t)FLASH_RECORD_COMMIT << 16) | 0xBA08u)
 #define FLASH_RECORD_MARKER_16 (((uint32_t)FLASH_RECORD_COMMIT << 16) | 0xBA10u)
@@ -101,13 +102,6 @@ typedef struct {
 // | 1      | 1      | 1        | set X to 40
 // | 2      | 2      | 2        | set Y to 8
 // | 3      | 1      | 3        | update X 60
-
-// Fixed payload sizes supported by the record marker.
-typedef enum {
-    FLASH_RECORD_SIZE_4 = 4,
-    FLASH_RECORD_SIZE_8 = 8,
-    FLASH_RECORD_SIZE_16 = 16
-} flash_record_size;
 
 // Header stored before each value in the append-only flash log.
 //! Changing this layout or marker values requires erasing existing records.
@@ -200,9 +194,9 @@ static inline void flash_cache_store(
 
 static inline uint16_t flash_record_payload_size(uint32_t marker) {
     switch (marker) {
-    case FLASH_RECORD_MARKER_4:  return FLASH_RECORD_SIZE_4;
-    case FLASH_RECORD_MARKER_8:  return FLASH_RECORD_SIZE_8;
-    case FLASH_RECORD_MARKER_16: return FLASH_RECORD_SIZE_16;
+    case FLASH_RECORD_MARKER_4:  return 4;
+    case FLASH_RECORD_MARKER_8:  return 8;
+    case FLASH_RECORD_MARKER_16: return 16;
     default: return 0;
     }
 }
@@ -303,18 +297,13 @@ static inline flash_status flash_log_init(flash_log *log) {
 
 // Append one value, committing the record only after its header and payload are written.
 static inline flash_status flash_log_write(
-    flash_log *log, uint16_t logical_id, const void *data, flash_record_size size
+    flash_log *log, uint16_t logical_id, const void *data, uint32_t marker
 ) {
     if (!log || !data)
         return FLASH_ERROR;
-    uint32_t marker;
-    switch (size) {
-        case FLASH_RECORD_SIZE_4:  marker = FLASH_RECORD_MARKER_4; break;
-        case FLASH_RECORD_SIZE_8:  marker = FLASH_RECORD_MARKER_8; break;
-        case FLASH_RECORD_SIZE_16: marker = FLASH_RECORD_MARKER_16; break;
-        default: return FLASH_RECORD_INVALID_SIZE;
-    }
-    const uint16_t length = (uint16_t)size;
+    const uint16_t length = flash_record_payload_size(marker);
+    if (!length)
+        return FLASH_RECORD_INVALID_SIZE;
 
     // Equivalent to ((size + FLASH_ALIGNMENT - 1) / FLASH_ALIGNMENT) * FLASH_ALIGNMENT.
     const uint32_t total = (sizeof(flash_record) + length + FLASH_ALIGNMENT - 1u) &

@@ -68,7 +68,7 @@ static __HIGH_CODE void run_flash_demo(void) {
     }
 
     ++value;
-    status = flash_log_write(&log, DEMO_LOGICAL_ID, &value, FLASH_RECORD_SIZE_4);
+    status = flash_log_write(&log, DEMO_LOGICAL_ID, &value, FLASH_RECORD_MARKER_4);
     if (status != FLASH_OK) {
         if (status == FLASH_FULL)
             printf("Flash log is full; next address: 0x%08lx\n",
