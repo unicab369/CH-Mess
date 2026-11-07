@@ -482,16 +482,19 @@ static inline flash_status flash_log_write(
     if (total > FLASH_BLOCK_SIZE)
         return FLASH_RECORD_TOO_LARGE;
 
+    // Run GC if the next record would extend past the active block's end.
     if (log->next_address + total > log->active_block + FLASH_BLOCK_SIZE) {
         const flash_status gc_status = flash_log_gc(log);
+
         if (gc_status != FLASH_OK)
             return gc_status;
         if (log->next_address + total > log->active_block + FLASH_BLOCK_SIZE)
             return FLASH_FULL;
     }
 
-    if (flash_write_at(log->next_address, logical_id, (const uint8_t *)data,
-                              length, marker) != FLASH_OK) {
+    if (flash_write_at(log->next_address, logical_id,
+        (const uint8_t *)data, length, marker) != FLASH_OK
+    ) {
         log->next_address = log->active_block + FLASH_BLOCK_SIZE;
         return FLASH_ERROR;
     }
