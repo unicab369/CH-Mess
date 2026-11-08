@@ -84,14 +84,6 @@ enum {
 #define FLASH_BLOCK_HEADER_COMMIT 0xBA8Bu
 
 
-// Tracks erase usage and the next write position for one flash block.
-typedef struct {
-    // Range: 0–65,535 erases; rebase all counts before incrementing at max.
-    uint16_t erase_count;  // Number of times this block has been erased.
-    uint16_t write_offset; // Offset of the next writable byte in the block.
-    bool     erased;       // True if the block is erased and ready to use.
-} flash_block;
-
 // Header stored before each value in the append-only flash log.
 //! Changing this layout or marker values requires erasing existing records.
 // Size: 8 bytes. Records start on 4-byte boundaries and are padded to 4 bytes.
@@ -217,7 +209,7 @@ static inline int record_meta_init(uint32_t block) {
 #endif
 }
 
-static inline int record_meta_write_word(uint32_t address, uint32_t word) {
+static inline int write_record_meta_word(uint32_t address, uint32_t word) {
     if (HW_FLASH_WRITE(address, &word, sizeof(word)))
         return -1;
 #if FLASH_ERASED_WORD != 0xFFFFFFFFu
@@ -228,7 +220,7 @@ static inline int record_meta_write_word(uint32_t address, uint32_t word) {
     return 0;
 }
 
-static inline int record_meta_store_record(
+static inline int store_record_meta(
     uint32_t block, uint16_t record_index, uint16_t logical_id, uint16_t length
 ) {
     if (record_index >= FLASH_RECORD_META_MAX_RECORDS || (length != 4u && length != 8u))
@@ -259,7 +251,7 @@ static inline int record_meta_store_record(
     // `<< entry_shift` moves that 8-bit mask into this record's byte (G uses a 16-bit shift).
     // The outer `~` flips the mask so `&` clears the marked bits and preserves all others.
     const uint32_t updated = record_meta_word & ~((uint32_t)(~entry & 0xffu) << entry_shift);
-    return updated == record_meta_word ? 0 : record_meta_write_word(word_address, updated);
+    return updated == record_meta_word ? 0 : write_record_meta_word(word_address, updated);
 }
 
 static inline flash_status block_header_write(
@@ -421,12 +413,12 @@ static inline flash_status flash_log_init(flash_log *log) {
     return FLASH_OK;
 }
 
-static inline uint32_t flash_record_size(uint16_t payload_length) {
+static inline uint32_t get_record_size(uint16_t payload_length) {
     return (sizeof(flash_record) + payload_length + FLASH_ALIGNMENT - 1u) &
            ~((uint32_t)FLASH_ALIGNMENT - 1u);
 }
 
-static inline flash_status flash_write_at(
+static inline flash_status store_record_at(
     uint32_t address, uint16_t logical_id, const uint8_t *data,
     uint16_t length, uint32_t marker
 ) {
@@ -482,7 +474,7 @@ static inline flash_status flash_log_gc(flash_log *log) {
             break;
 
         // Stop if the full record exceeds the remaining source bytes.
-        const uint32_t record_size = flash_record_size(payload_len);
+        const uint32_t record_size = get_record_size(payload_len);
         if (record_size > src_remaining)
             break;
 
@@ -533,7 +525,7 @@ static inline flash_status flash_log_gc(flash_log *log) {
                         has_newer_record = true;
                         break;
                     }
-                    later_addr += flash_record_size(later_length);
+                    later_addr += get_record_size(later_length);
                     ++later_index;
                 }
             }
@@ -546,11 +538,11 @@ static inline flash_status flash_log_gc(flash_log *log) {
                 //! Validate the source, then append the copy with its marker last.
                 if (HW_FLASH_READ(address + sizeof(record), payload, payload_len) ||
                     calculate_crc(payload, payload_len) != record.crc ||
-                    flash_write_at(write_address, record.logical_id, payload,
+                    store_record_at(write_address, record.logical_id, payload,
                                   payload_len, record.marker) != FLASH_OK
                 ) return FLASH_ERROR;
 
-                if (record_meta_store_record(new_block, copied_count,
+                if (store_record_meta(new_block, copied_count,
                                               record.logical_id, payload_len))
                     return FLASH_ERROR;
 
@@ -612,7 +604,7 @@ static inline flash_status flash_log_write(
             return FLASH_FULL;
     }
 
-    if (flash_write_at(log->next_address, logical_id,
+    if (store_record_at(log->next_address, logical_id,
         (const uint8_t *)data, length, marker) != FLASH_OK
     ) {
         log->next_address = log->active_block + FLASH_BLOCK_SIZE;
@@ -623,7 +615,7 @@ static inline flash_status flash_log_write(
     ++log->record_count;
 
     if (log->record_meta_trusted) {
-        if (record_meta_store_record(log->active_block, record_index, logical_id, length)) {
+        if (store_record_meta(log->active_block, record_index, logical_id, length)) {
             log->record_meta_trusted = 0;
         } else {
             // Scan older entries: the tag avoids reading most full record headers.
@@ -667,7 +659,7 @@ static inline flash_status flash_log_write(
                         }
                         if (word & mask) {
                             word &= ~mask;
-                            if (record_meta_write_word(word_address, word)) {
+                            if (write_record_meta_word(word_address, word)) {
                                 log->record_meta_trusted = 0;
                                 break;
                             }
@@ -679,7 +671,7 @@ static inline flash_status flash_log_write(
                     }
                 }
 
-                old_address += flash_record_size(old_length);
+                old_address += get_record_size(old_length);
             }
         }
     }
@@ -715,7 +707,7 @@ static inline flash_status flash_log_read_fast(
 
             //! The length bit tells us the record size so we can step backward.
             const uint16_t payload_len = (entry & (1u << FLASH_RECORD_META_LENGTH_BIT)) ? 8u : 4u;
-            address -= flash_record_size(payload_len);
+            address -= get_record_size(payload_len);
 
             //! Skip obsolete entries and tag mismatches; check the next older record.
             const bool is_live = (entry & (1u << FLASH_RECORD_META_LIVE_BIT)) != 0;
