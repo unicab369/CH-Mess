@@ -513,40 +513,36 @@ static inline flash_status flash_log_read_fast(
     if (!pool->active_block)
         return FLASH_NOT_FOUND;
 
-    uint32_t address = pool->active_block + FLASH_RECORDS_OFFSET;
-    uint32_t newest_address = 0;
-    uint16_t newest_crc = 0;
-    bool found = false;
+    const uint32_t records_start = pool->active_block + FLASH_RECORDS_OFFSET;
+    const uint32_t record_size = get_record_size(requested_length);
+    uint32_t address = pool->record_end;
     flash_record record;
 
-    // Later records with the same ID replace earlier values in this size class.
-    // record_end excludes any damaged or incomplete tail that must be skipped by future writes.
-    while (address + sizeof(record) <= pool->record_end) {
-        if (HW_FLASH_READ(address, &record, sizeof(record)))
+    // Newer records are at higher addresses. Scan backward so the first matching
+    // ID is the current value; record_end excludes any damaged or incomplete tail.
+    while (address > records_start) {
+        if (address - records_start < record_size)
             return FLASH_ERROR;
-        if (get_record_len(record.marker) != requested_length ||
-            requested_length > pool->record_end - address - sizeof(record)
-        ) break;
+        address -= record_size;
+
+        if (HW_FLASH_READ(address, &record, sizeof(record)) ||
+            get_record_len(record.marker) != requested_length
+        ) return FLASH_ERROR;
 
         if (record.logical_id == logical_id) {
-            newest_address = address;
-            newest_crc = record.crc;
-            found = true;
+            if (requested_length > capacity)
+                return FLASH_BUFFER_TOO_SMALL;
+
+            if (HW_FLASH_READ(address + sizeof(record), data, requested_length) ||
+                calculate_crc((const uint8_t *)data, requested_length) != record.crc
+            ) return FLASH_ERROR;
+
+            *length = requested_length;
+            return FLASH_OK;
         }
-        address += get_record_size(requested_length);
     }
 
-    if (!found)
-        return FLASH_NOT_FOUND;
-    if (requested_length > capacity)
-        return FLASH_BUFFER_TOO_SMALL;
-
-    if (HW_FLASH_READ(newest_address + sizeof(record), data, requested_length) ||
-        calculate_crc((const uint8_t *)data, requested_length) != newest_crc
-    ) return FLASH_ERROR;
-
-    *length = requested_length;
-    return FLASH_OK;
+    return FLASH_NOT_FOUND;
 }
 
 // Read a value after checking that required pointers are valid.
