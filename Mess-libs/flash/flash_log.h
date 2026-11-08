@@ -340,7 +340,7 @@ static inline flash_status flash_log_init(flash_log *log) {
 
             // Compare each header byte with the erased pattern; stop at the first programmed byte.
             for (size_t i = 0; i < sizeof(record); ++i) {
-                if (record_bytes[i] != (uint8_t)(FLASH_ERASED_WORD >> ((i & 3u) * 8u))) {
+                if (record_bytes[i] != (uint8_t)(FLASH_ERASED_WORD >> ((i & 0b11u) * 8u))) {
                     record_erased = false;
                     break;
                 }
@@ -485,8 +485,9 @@ static inline flash_status flash_log_gc(flash_log *log) {
             if (source_index >= FLASH_META_MAX_RECORDS ||
                 HW_FLASH_READ(old_block + sizeof(flash_block_header) + source_index,
                               &meta_entry, sizeof(meta_entry))
-            )
-                return FLASH_ERROR;
+            ) return FLASH_ERROR;
+
+            // Check the payload length and metadata tag against the source record before trusting its live bit.
             if (((meta_entry >> FLASH_META_LENGTH_BIT) & 1u ? 8u : 4u) != payload_len ||
                 ((meta_entry >> FLASH_META_TAG_SHIFT) & FLASH_META_TAG_MASK) !=
                     get_id_tag(record.logical_id)
@@ -507,18 +508,15 @@ static inline flash_status flash_log_gc(flash_log *log) {
                 uint32_t later_addr = address + record_size;
 
                 //! Search later records; a later record with the same ID replaces this one.
-                while (later_index < old_record_count &&
-                       later_addr + sizeof(record) <= old_end
-                ) {
+                while (later_index < old_record_count && later_addr + sizeof(record) <= old_end) {
                     flash_record candidate;
                     if (HW_FLASH_READ(later_addr, &candidate, sizeof(candidate)))
                         return FLASH_ERROR;
 
                      // Stop if this later record has an invalid marker or extends past written data.
                     const uint16_t later_length = get_record_len(candidate.marker);
-                    if (!later_length ||
-                        later_length > old_end - later_addr - sizeof(candidate)
-                    ) break;
+                    if (!later_length || later_length > old_end - later_addr - sizeof(candidate))
+                        break;
 
                     //! A valid later record with this ID replaces the current record.
                     if (candidate.logical_id == record.logical_id) {
@@ -542,8 +540,7 @@ static inline flash_status flash_log_gc(flash_log *log) {
                                   payload_len, record.marker) != FLASH_OK
                 ) return FLASH_ERROR;
 
-                if (store_record_meta(new_block, copied_count,
-                                              record.logical_id, payload_len))
+                if (store_record_meta(new_block, copied_count, record.logical_id, payload_len))
                     return FLASH_ERROR;
 
                 // Advance the destination cursor to the next free record position.
@@ -649,8 +646,8 @@ static inline flash_status flash_log_write(
                     if (old_record.logical_id == logical_id) {
                         // Clear this record's live bit in its containing 32-bit metadata word.
                         const uint32_t word_address = log->active_block + sizeof(flash_block_header) +
-                                                      (i & ~3u);
-                        const uint32_t mask = 1u << ((i & 3u) * 8u + FLASH_META_LIVE_BIT);
+                                                      (i & ~0b11u);
+                        const uint32_t mask = 1u << ((i & 0b11u) * 8u + FLASH_META_LIVE_BIT);
                         uint32_t word;
                         if (i >= FLASH_META_MAX_RECORDS ||
                             HW_FLASH_READ(word_address, &word, sizeof(word))) {
