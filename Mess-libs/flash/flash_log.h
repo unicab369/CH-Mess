@@ -2,36 +2,34 @@
 #define FUN_FLASH_LOG_H
 
 // Each block starts with a 4-byte header [generation: 2 bytes | size-class commit: 2 bytes].
-// A packed tag table follows: one 4-bit logical-ID tag for each record slot,
-// with eight tags stored in each 32-bit word. The record area follows the table.
-// Every block holds one payload size class, selected by its block-header commit.
-// That keeps the record spacing fixed within each block: 12 bytes for 4-byte
-// payloads and 16 bytes for 8-byte payloads (header + payload, already aligned).
+// A packed tag table follows: one 4-bit logical-ID tag for each record slot.
+// In each 32-bit word, the newest record's tag is in bits 3-0; the previous
+// record's tag is in bits 7-4. The record area follows the table.
 // Each record has an 8-byte header [CRC: 2 bytes | logical_id: 2 bytes | marker: 4 bytes],
 // then its payload and alignment padding.
 // GC copies the newest value for each (logical ID, size class) into a shared spare block.
 //
-// [erase block - 4KB (configurable)]
-//   [block header: generation (2 bytes) | size-class commit (2 bytes)]
-//   [tag table: 8 x 4-bit logical-ID tags per 32-bit word]
+// [erase_block - 4KB (configurable)]
+//   [block_header: generation 2B | size-class commit 2B]
+//   [tag_table: 8 x 4-bit logical-ID tags per 32-bit word, newest tag in low bits]
 //   [alignment padding]
-//   4-byte class: [record header (8 bytes)] [payload (4 bytes)] ... (12-byte stride)
-//   8-byte class: [record header (8 bytes)] [payload (8 bytes)] ... (16-byte stride)
+//   4B_class: [record_header 8B [payload 4B] ... (12B stride)
+//   8B_class: [record_header 8B [payload 8B] ... (16B stride)
 //
-// Capacity for the default 4 KB block and 4-byte alignment, including tag table:
+// Capacity for the default 4KB block and 4B alignment, including tag table:
+// | Payload | Block header | Tag table | Record header | Record size | Rec/block | Unused space |
+// |---------|--------------|-----------|---------------|-------------|-----------|--------------|
+// | 4 bytes | 4 bytes      | 164 bytes | 8 bytes       | 12 bytes    | 327       | 4 bytes      |
+// | 8 bytes | 4 bytes      | 124 bytes | 8 bytes       | 16 bytes    | 248       | none         |
 //
-// | Payload | Block header | Tag table | Record header | Record size | Records/block | Unused space |
-// |---------|--------------|-----------|---------------|-------------|---------------|--------------|
-// | 4 bytes | 4 bytes      | 164 bytes | 8 bytes       | 12 bytes    | 327           | 4 bytes      |
-// | 8 bytes | 4 bytes      | 124 bytes | 8 bytes       | 16 bytes    | 248           | none         |
-// A block uses exactly one row's stride; 4-byte and 8-byte records never
-// interleave within a block. The tag table has one nibble for each record slot.
-//
-// Tag collisions when tags are uniformly distributed:
-// | Tags stored in 4 bytes | Same tag for two specific IDs | Any pair in the set collides |
-// |------------------------|-------------------------------|------------------------------|
-// | 8 x 4-bit tags         | 6.25%                         | about 87.9%                  |
-// | 4 x 8-bit tags         | 0.39%                         | about 2.3%                   |
+// In each group of records 0-7, record 7 (newest) is stored in bits 3-0,
+// record 6 in bits 7-4, continuing through record 0 (oldest) in bits 31-28.
+// Each tag is the logical ID's low 4 bits: tag = logical_id & 0x0F.
+// Example records, oldest to newest:
+//   index 0: ID 0x1207 -> tag 7     index 4: ID 0x1243 -> tag 3
+//   index 1: ID 0x1216 -> tag 6     index 5: ID 0x1252 -> tag 2
+//   index 2: ID 0x1225 -> tag 5     index 6: ID 0x1261 -> tag 1
+//   index 3: ID 0x1234 -> tag 4     index 7: ID 0x1270 -> tag 0
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -101,10 +99,10 @@ enum {
 #define FLASH_RECORD_MARKER_4  (((uint32_t)FLASH_RECORD_COMMIT << 16) | 0xBA04u)
 #define FLASH_RECORD_MARKER_8  (((uint32_t)FLASH_RECORD_COMMIT << 16) | 0xBA08u)
 
-// These version-2 values commit the block, identify its payload size, and
-// distinguish the tag-table layout from the previous block format.
-#define FLASH_BLOCK_HEADER_COMMIT_4 0xBB84u
-#define FLASH_BLOCK_HEADER_COMMIT_8 0xBB88u
+// These version-3 values commit the block, identify its payload size, and
+// distinguish newest-first tag packing from the previous block format.
+#define FLASH_BLOCK_HEADER_COMMIT_4 0xBB94u
+#define FLASH_BLOCK_HEADER_COMMIT_8 0xBB98u
 
 
 // Header stored before each value in the append-only flash log.
@@ -311,7 +309,8 @@ static inline flash_status log_pool_scan(log_pool_state *pool, uint32_t size_cod
         }
 
         const uint16_t record_index = pool->record_count;
-        const uint8_t tag_shift = (uint8_t)((record_index & 0b0111u) << 2);
+        // Reverse nibble order so backward reads consume the low nibble first.
+        const uint8_t tag_shift = (uint8_t)((0b0111u - (record_index & 0b0111u)) << 2);
         // Empty nibbles start as 1s, so write this tag by clearing its zero bits.
         pool->pending_tags &= ~((uint32_t)(~record.logical_id & 0b1111u) << tag_shift);
         pool->next_address += record_size;
@@ -479,7 +478,7 @@ static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t size_code
                                 payload_len, size_code) != FLASH_OK
             ) return FLASH_ERROR;
 
-            const uint8_t tag_shift = (uint8_t)((copied_count & 0b0111u) << 2);
+            const uint8_t tag_shift = (uint8_t)((0b0111u - (copied_count & 0b0111u)) << 2);
             copied_tags &= ~((uint32_t)(~record.logical_id & 0b1111u) << tag_shift);
             write_address += record_size;
             ++copied_count;
@@ -581,7 +580,8 @@ static inline flash_status flash_log_write(
     // Accumulate the tag in RAM. Flash stores each tag word once, after all eight
     // corresponding records are committed, so a reset cannot leave a half-updated word.
     const uint16_t record_index = pool->record_count;
-    const uint8_t tag_shift = (uint8_t)((record_index & 0b0111u) << 2);
+    // Reverse nibble order so backward reads consume the low nibble first.
+    const uint8_t tag_shift = (uint8_t)((0b0111u - (record_index & 0b0111u)) << 2);
     pool->pending_tags &= ~((uint32_t)(~logical_id & 0b1111u) << tag_shift);
     pool->next_address += record_size;
     pool->record_end = pool->next_address;
@@ -655,7 +655,10 @@ static inline flash_status flash_log_read_fast(
             }
 
             if (cached_tags != FLASH_ERASED_WORD) {
-                record_tag = (cached_tags >> ((record_index & 0b0111u) << 2)) & 0b1111u;
+                // Example: 0x76543210 stores tags 0 through 7 from newest to oldest.
+                // The low nibble gives tag 0; shifting right makes tag 1 the new low nibble.
+                record_tag = cached_tags & 0b1111u;
+                cached_tags >>= 4;
                 if (record_tag != wanted_tag)
                     continue;
             }
