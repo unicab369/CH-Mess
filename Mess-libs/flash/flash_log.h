@@ -403,18 +403,19 @@ static inline flash_status store_record_at(
 // With more than two blocks, starting each search after the old block rotates
 // this class through available blocks; the other class's active block is skipped.
 static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t size_code) {
-    const uint32_t old_block = pool->active_block;
     uint32_t new_block = 0;
     bool found_spare = false;
+    const uint32_t old_block = pool->active_block;
+    const uint32_t old_index = (old_block - FLASH_BASE_ADDR) / FLASH_BLOCK_SIZE;
 
     // Start after the source block and search circularly. After each GC the
     // source becomes spare, so this advances the active block through the
     // available blocks instead of repeatedly choosing the lowest free address.
-    const uint32_t old_index = (old_block - FLASH_BASE_ADDR) / FLASH_BLOCK_SIZE;
     for (uint32_t step = 1; step < FLASH_BLOCK_COUNT; ++step) {
         uint32_t candidate_index = old_index + step;
         if (candidate_index >= FLASH_BLOCK_COUNT)
             candidate_index -= FLASH_BLOCK_COUNT;
+
         const uint32_t candidate = FLASH_BASE_ADDR + candidate_index * FLASH_BLOCK_SIZE;
         if (candidate != flash_log_pools[FLASH_LOG_POOL_4].active_block &&
             candidate != flash_log_pools[FLASH_LOG_POOL_8].active_block
@@ -610,36 +611,42 @@ static inline flash_status flash_log_read_fast(
     if (!pool->active_block)
         return FLASH_NOT_FOUND;
 
-    const uint32_t records_start = pool->records_start;
-    const uint32_t record_size = get_record_size(requested_length);
-    uint32_t address = pool->record_end;
+    const uint32_t tag_base = pool->active_block + sizeof(flash_block_header);
+    const uint16_t complete_tag_groups = pool->record_count >> 3;
     uint16_t cached_tag_group = 0;
     uint32_t cached_tags = 0;
     bool tag_group_cached = false;
     const uint8_t wanted_tag = (uint8_t)(logical_id & 0b1111u);
-    flash_record record;
 
     // Newer records are at higher addresses. Scan backward so the first matching
     // ID is the current value. Complete groups use packed tags to skip full headers;
     // the newest incomplete group and any untrusted map use full-header checks.
+    uint32_t address = pool->record_end;
+    const uint32_t records_start = pool->records_start;
+    const uint32_t record_size = get_record_size(requested_length);
+    uint16_t record_index = pool->record_count;
+
     while (address > records_start) {
         if (address - records_start < record_size)
             return FLASH_ERROR;
         address -= record_size;
 
-        const uint16_t record_index = (uint16_t)((address - records_start) / record_size);
+        if (!record_index) return FLASH_ERROR;
+        --record_index;
+
         const uint16_t tag_group = record_index >> 3;
-        bool has_tag = pool->tag_map_valid && tag_group < (pool->record_count >> 3);
+        bool has_tag = pool->tag_map_valid && tag_group < complete_tag_groups;
         uint8_t record_tag = 0;
 
+        //! 1. Check the tag first so mismatches skip the full record-header read below.
         if (has_tag) {
             if (!tag_group_cached || cached_tag_group != tag_group) {
-                if (HW_FLASH_READ(pool->active_block + sizeof(flash_block_header) +
-                                  (uint32_t)tag_group * sizeof(cached_tags),
+                if (HW_FLASH_READ(tag_base + (uint32_t)tag_group * sizeof(cached_tags),
                                   &cached_tags, sizeof(cached_tags))
                 ) { // A failed hint read must not hide a valid record.
                     pool->tag_map_valid = false;
                     address = pool->record_end;
+                    record_index = pool->record_count;
                     tag_group_cached = false;
                     continue;
                 }
@@ -658,19 +665,25 @@ static inline flash_status flash_log_read_fast(
             }
         }
 
+        //! 2. Read and validate the header before using its ID, marker, or CRC.
+        flash_record record;
         if (HW_FLASH_READ(address, &record, sizeof(record)) ||
             get_record_len(record.marker) != requested_length
         ) return FLASH_ERROR;
 
+        //! 3. Check the tag against the full ID before trusting it to skip records.
         if (has_tag && (record.logical_id & 0b1111u) != record_tag) {
             // Metadata disagrees with the record. Restart without using the hint.
             pool->tag_map_valid = false;
             address = pool->record_end;
+            record_index = pool->record_count;
             tag_group_cached = false;
             continue;
         }
 
+        //! 4. The full ID distinguishes a real match from a tag collision.
         if (record.logical_id == logical_id) {
+            // Only a matching record needs a capacity check and payload read.
             if (requested_length > capacity)
                 return FLASH_BUFFER_TOO_SMALL;
 
