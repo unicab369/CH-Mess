@@ -132,6 +132,8 @@ typedef struct {
 // With a 4 KB block and 4-byte minimum payloads, these evaluate to 314 slots
 // and a 316-byte bitmap; records then start at byte offset 320.
 
+// Compile-time check: the header, bitmap, and minimum-size record slots must
+// all fit inside one erase block; otherwise this typedef fails to compile.
 typedef char flash_bitmap_must_fit_block[
     sizeof(flash_block_header) + FLASH_BITMAP_BYTES +
     FLASH_BITMAP_MAX_RECORDS * FLASH_BITMAP_MIN_REC_SIZE <= FLASH_BLOCK_SIZE ? 1 : -1
@@ -154,7 +156,7 @@ uint32_t HW_ERASE_BLOCK(uint32_t address);
 // Check that a program operation stays within a physical page, when required.
 #define FLASH_CRC_INITIAL 0xFFFFu
 // Calculate the finalized CRC-16/MODBUS (reflected polynomial 0xA001).
-static inline uint16_t flash_crc_calculate(const uint8_t *bytes, size_t length) {
+static inline uint16_t calculate_crc(const uint8_t *bytes, size_t length) {
     static const uint16_t table[16] = {
         0x0000u, 0xCC01u, 0xD801u, 0x1400u,
         0xF001u, 0x3C00u, 0x2800u, 0xE401u,
@@ -171,7 +173,7 @@ static inline uint16_t flash_crc_calculate(const uint8_t *bytes, size_t length) 
     return (uint16_t)~crc;
 }
 
-static inline uint16_t flash_record_len(uint32_t marker) {
+static inline uint16_t get_record_len(uint32_t marker) {
     switch (marker) {
     case FLASH_RECORD_MARKER_4:  return 4;
     case FLASH_RECORD_MARKER_8:  return 8;
@@ -179,7 +181,7 @@ static inline uint16_t flash_record_len(uint32_t marker) {
     }
 }
 
-static inline uint8_t flash_bitmap_id_tag(uint16_t logical_id) {
+static inline uint8_t get_id_tag(uint16_t logical_id) {
     const uint16_t mixed = logical_id ^ (logical_id >> 6) ^ (logical_id >> 12);
     return (uint8_t)(mixed & FLASH_BITMAP_TAG_MASK);
 }
@@ -238,7 +240,7 @@ static inline int flash_bitmap_store_record(
         return -1;
     const uint8_t entry = (uint8_t)((1u << FLASH_BITMAP_LIVE_BIT) |
                                     (length == 8u ? (1u << FLASH_BITMAP_LENGTH_BIT) : 0u) |
-                                    (flash_bitmap_id_tag(logical_id) << FLASH_BITMAP_TAG_SHIFT));
+                                    (get_id_tag(logical_id) << FLASH_BITMAP_TAG_SHIFT));
 
     // Read the containing word and update only this record's bitmap byte.
     const uint32_t word_address = block + sizeof(flash_block_header) + (index & ~3u);
@@ -358,7 +360,7 @@ static inline flash_status flash_log_init(flash_log *log) {
         if (HW_FLASH_READ(log->next_address, &record, sizeof(record)))
             return FLASH_ERROR;
 
-        const uint16_t record_length = flash_record_len(record.marker);
+        const uint16_t record_length = get_record_len(record.marker);
 
         if (!record_length) {
             if (flash_record_is_erased(&record)) {
@@ -400,7 +402,7 @@ static inline flash_status flash_log_init(flash_log *log) {
 
         if (((bitmap_entry >> FLASH_BITMAP_LENGTH_BIT) & 1u ? 8u : 4u) != record_length ||
             ((bitmap_entry >> FLASH_BITMAP_TAG_SHIFT) & FLASH_BITMAP_TAG_MASK) !=
-                flash_bitmap_id_tag(record.logical_id)
+                get_id_tag(record.logical_id)
         ) {
             // A committed record without matching bitmap metadata falls back to header scans.
             log->bitmap_trusted = 0;
@@ -413,7 +415,7 @@ static inline flash_status flash_log_init(flash_log *log) {
             if (HW_FLASH_READ(crc_address, crc_chunk, crc_remaining))
                 return FLASH_ERROR;
 
-            if (flash_crc_calculate(crc_chunk, crc_remaining) != record.crc) {
+            if (calculate_crc(crc_chunk, crc_remaining) != record.crc) {
                 log->next_address = block_end;
                 break;
             }
@@ -439,7 +441,7 @@ static inline flash_status flash_write_at(
     flash_record record = {
         .marker = marker,
         .logical_id = logical_id,
-        .crc = flash_crc_calculate(data, length)
+        .crc = calculate_crc(data, length)
     };
     if (HW_FLASH_WRITE(address, &record, offsetof(flash_record, marker)) ||
         HW_FLASH_WRITE(address + sizeof(record), data, length) ||
@@ -481,7 +483,7 @@ static inline flash_status flash_log_gc(flash_log *log) {
             return FLASH_ERROR;
 
         const uint32_t src_remaining = old_end - address;
-        const uint16_t payload_len = flash_record_len(record.marker);
+        const uint16_t payload_len = get_record_len(record.marker);
 
         // Ensure the payload fits after the header.
         if (!payload_len || payload_len > src_remaining - sizeof(record))
@@ -500,7 +502,7 @@ static inline flash_status flash_log_gc(flash_log *log) {
                 return FLASH_ERROR;
             if (((bitmap_entry >> FLASH_BITMAP_LENGTH_BIT) & 1u ? 8u : 4u) != payload_len ||
                 ((bitmap_entry >> FLASH_BITMAP_TAG_SHIFT) & FLASH_BITMAP_TAG_MASK) !=
-                    flash_bitmap_id_tag(record.logical_id)
+                    get_id_tag(record.logical_id)
             ) {
                 // Do not trust a mismatched hint; use the full-ID fallback for this GC.
                 src_bitmap_ok = false;
@@ -526,7 +528,7 @@ static inline flash_status flash_log_gc(flash_log *log) {
                         return FLASH_ERROR;
 
                      // Stop if this later record has an invalid marker or extends past written data.
-                    const uint16_t later_length = flash_record_len(candidate.marker);
+                    const uint16_t later_length = get_record_len(candidate.marker);
                     if (!later_length ||
                         later_length > old_end - later_addr - sizeof(candidate)
                     ) break;
@@ -548,7 +550,7 @@ static inline flash_status flash_log_gc(flash_log *log) {
 
                 //! Validate the source, then append the copy with its marker last.
                 if (HW_FLASH_READ(address + sizeof(record), payload, payload_len) ||
-                    flash_crc_calculate(payload, payload_len) != record.crc ||
+                    calculate_crc(payload, payload_len) != record.crc ||
                     flash_write_at(write_address, record.logical_id, payload,
                                   payload_len, record.marker) != FLASH_OK
                 ) return FLASH_ERROR;
@@ -590,7 +592,7 @@ static inline flash_status flash_log_write(
 ) {
     if (!log || !data) return FLASH_ERROR;
 
-    const uint16_t length = flash_record_len(marker);
+    const uint16_t length = get_record_len(marker);
     if (!length)
         return FLASH_RECORD_INVALID_SIZE;
 
@@ -630,7 +632,7 @@ static inline flash_status flash_log_write(
             log->bitmap_trusted = 0;
         } else {
             // Scan older entries: the tag avoids reading most full record headers.
-            const uint8_t tag = flash_bitmap_id_tag(logical_id);
+            const uint8_t tag = get_id_tag(logical_id);
             uint32_t old_address = log->active_block + sizeof(flash_block_header) + FLASH_BITMAP_BYTES;
 
             for (uint16_t i = 0; i < record_index; ++i) {
@@ -650,10 +652,10 @@ static inline flash_status flash_log_write(
 
                     //! Validate the header; mark an exact ID obsolete, or confirm a tag collision.
                     if (HW_FLASH_READ(old_address, &old_record, sizeof(old_record)) ||
-                        flash_record_len(old_record.marker) != old_length ||
+                        get_record_len(old_record.marker) != old_length ||
                         (old_record.logical_id == logical_id
                             ? flash_bitmap_mark_outdated(log->active_block, i)
-                            : flash_bitmap_id_tag(old_record.logical_id) != tag)
+                            : get_id_tag(old_record.logical_id) != tag)
                     ) {
                         log->bitmap_trusted = 0;
                         break;
@@ -681,7 +683,7 @@ static inline flash_status flash_log_read_fast(
         uint32_t address = log->record_end;
         uint16_t index = log->record_count;
         // Compute the requested ID's short tag for quick candidate filtering.
-        const uint8_t tag = flash_bitmap_id_tag(logical_id);
+        const uint8_t tag = get_id_tag(logical_id);
 
         // Each pass examines one record, moving toward older entries.
         while (index) {
@@ -707,8 +709,8 @@ static inline flash_status flash_log_read_fast(
 
             //! 1. Validate bitmap length and tag against the record before treating it as a
             //    tag collision; inconsistent metadata requires the full header scan below.
-            if (flash_record_len(candidate.marker) != payload_len ||
-                flash_bitmap_id_tag(candidate.logical_id) != tag
+            if (get_record_len(candidate.marker) != payload_len ||
+                get_id_tag(candidate.logical_id) != tag
             ) {
                 log->bitmap_trusted = 0;
                 break;
@@ -725,7 +727,7 @@ static inline flash_status flash_log_read_fast(
 
             //! 4. Read the payload and verify its CRC before returning the value.
             if (HW_FLASH_READ(address + sizeof(candidate), data, payload_len) ||
-                flash_crc_calculate((const uint8_t *)data, payload_len) != candidate.crc
+                calculate_crc((const uint8_t *)data, payload_len) != candidate.crc
             ) return FLASH_ERROR;
 
             *length = payload_len;
@@ -751,7 +753,7 @@ static inline flash_status flash_log_read_fast(
         if (HW_FLASH_READ(address, &record, sizeof(record)))
             return FLASH_ERROR;
 
-        const uint16_t record_length = flash_record_len(record.marker);
+        const uint16_t record_length = get_record_len(record.marker);
         if (!record_length ||
             record_length > log->next_address - address - sizeof(record)
         ) break;
@@ -776,7 +778,7 @@ static inline flash_status flash_log_read_fast(
 
     //! Read the selected payload and verify its CRC before returning it.
     if ((new_length && HW_FLASH_READ(new_address + sizeof(record), data, new_length)) ||
-        flash_crc_calculate((const uint8_t *)data, new_length) != new_crc
+        calculate_crc((const uint8_t *)data, new_length) != new_crc
     ) return FLASH_ERROR;
 
     *length = new_length;
