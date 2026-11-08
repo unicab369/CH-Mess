@@ -460,6 +460,8 @@ static inline flash_status flash_log_gc(flash_log *log) {
     uint16_t source_index = 0;
     uint16_t copied_count = 0;
     bool src_meta_ok = log->record_meta_trusted != 0;
+    uint8_t meta_entries[sizeof(uint32_t)];
+    uint16_t cached_meta_group = 0xFFFFu;
 
     // Walk the old log in append order.
     while (source_index < old_record_count && address + sizeof(record) <= old_end) {
@@ -482,10 +484,18 @@ static inline flash_status flash_log_gc(flash_log *log) {
         uint8_t meta_entry = 0xffu;
 
         if (src_meta_ok) {
-            if (source_index >= FLASH_META_MAX_RECORDS ||
-                HW_FLASH_READ(old_block + sizeof(flash_block_header) + source_index,
-                              &meta_entry, sizeof(meta_entry))
-            ) return FLASH_ERROR;
+            if (source_index >= FLASH_META_MAX_RECORDS)
+                return FLASH_ERROR;
+
+            // Read each aligned 4-entry metadata group once as the scan moves forward.
+            const uint16_t meta_group = source_index & ~0b11u;
+            if (meta_group != cached_meta_group) {
+                if (HW_FLASH_READ(old_block + sizeof(flash_block_header) + meta_group,
+                                  meta_entries, sizeof(meta_entries))
+                ) return FLASH_ERROR;
+                cached_meta_group = meta_group;
+            }
+            meta_entry = meta_entries[source_index & 0b11u];
 
             // Check the payload length and metadata tag against the source record before trusting its live bit.
             if (((meta_entry >> FLASH_META_LENGTH_BIT) & 1u ? 8u : 4u) != payload_len ||
@@ -649,6 +659,7 @@ static inline flash_status flash_log_write(
                                                       (i & ~0b11u);
                         const uint32_t mask = 1u << ((i & 0b11u) * 8u + FLASH_META_LIVE_BIT);
                         uint32_t word;
+
                         if (i >= FLASH_META_MAX_RECORDS ||
                             HW_FLASH_READ(word_address, &word, sizeof(word))) {
                             log->record_meta_trusted = 0;
@@ -683,24 +694,33 @@ static inline flash_status flash_log_read_fast(
     flash_log *log, uint16_t logical_id, void *data,
     uint16_t capacity, uint16_t *length
 ) {
-    // Search from the newest record backward; metadata skips obsolete records and most IDs.
+    //! Search from the newest record backward; metadata skips obsolete records and most IDs.
     if (log->record_meta_trusted) {
         // Begin at the end of valid record data and one past its last metadata entry.
         uint32_t address = log->record_end;
         uint16_t index = log->record_count;
         // Compute the requested ID's short tag for quick candidate filtering.
         const uint8_t tag = get_id_tag(logical_id);
+        uint8_t meta_entries[sizeof(uint32_t)];
+        uint16_t cached_meta_group = 0xFFFFu;
 
         // Each pass examines one record, moving toward older entries.
         while (index) {
-            uint8_t entry;
             // Select the next older record's metadata entry.
             --index;
-            if (index >= FLASH_META_MAX_RECORDS ||
-                HW_FLASH_READ(log->active_block + sizeof(flash_block_header) + index,
-                              &entry, sizeof(entry))
-            )
+            if (index >= FLASH_META_MAX_RECORDS)
                 return FLASH_ERROR;
+
+            // Read each aligned 4-entry metadata group once as the scan moves backward.
+            const uint16_t meta_group = index & ~0b11u;
+            if (meta_group != cached_meta_group) {
+                if (HW_FLASH_READ(log->active_block + sizeof(flash_block_header) + meta_group,
+                                  meta_entries, sizeof(meta_entries))
+                ) return FLASH_ERROR;
+
+                cached_meta_group = meta_group;
+            }
+            const uint8_t entry = meta_entries[index & 0b11u];
 
             //! The length bit tells us the record size so we can step backward.
             const uint16_t payload_len = (entry & (1u << FLASH_META_LENGTH_BIT)) ? 8u : 4u;
@@ -748,8 +768,7 @@ static inline flash_status flash_log_read_fast(
             return FLASH_NOT_FOUND;
     }
 
-    uint32_t address =
-        log->active_block + sizeof(flash_block_header) + FLASH_META_BYTES;
+    uint32_t address = log->active_block + sizeof(flash_block_header) + FLASH_META_BYTES;
     uint32_t new_address = 0;
     uint16_t new_crc = 0;
     uint16_t new_length = 0;

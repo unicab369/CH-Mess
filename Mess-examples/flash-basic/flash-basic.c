@@ -38,10 +38,17 @@ static __HIGH_CODE void run_flash_demo(void) {
             printf("CodeFlash erase readback failed\n");
             return;
         }
-        if (!flash_record_is_erased(&erased_check)) {
+        const uint8_t *bytes = (const uint8_t *)&erased_check;
+        bool erased = true;
+        for (size_t i = 0; i < sizeof(erased_check); ++i) {
+            if (bytes[i] != (uint8_t)(FLASH_ERASED_WORD >> ((i & 0b11u) * 8u))) {
+                erased = false;
+                break;
+            }
+        }
+        if (!erased) {
             printf("CodeFlash erase pattern mismatch at 0x%08lx; first bytes:",
                    (unsigned long)FLASH_BASE_ADDR);
-            const uint8_t *bytes = (const uint8_t *)&erased_check;
             for (size_t i = 0; i < sizeof(erased_check); ++i)
                 printf(" %02x", bytes[i]);
             printf("\n");
