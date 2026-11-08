@@ -234,24 +234,30 @@ static inline int record_meta_store_record(
     if (record_index >= FLASH_RECORD_META_MAX_RECORDS || (length != 4u && length != 8u))
         return -1;
 
-    // Bitmap byte layout: 1 live bit, 1 payload-length bit, and 6 logical-ID tag bits.
+    // Metadata byte layout: 1 live bit, 1 payload-length bit, and 6 logical-ID tag bits.
     const uint8_t entry = (uint8_t)((1u << FLASH_RECORD_META_LIVE_BIT) |
                                     (length == 8u ? (1u << FLASH_RECORD_META_LENGTH_BIT) : 0u) |
                                     (get_id_tag(logical_id) << FLASH_RECORD_META_TAG_SHIFT));
 
-    // Bitmap bytes are read in 4-byte words: [A B C D] [E F G H] ...
-    // With zero-based indexes, index 6 is G in [E F G H], so start at E (index 4).
-    const uint32_t word_address = block + sizeof(flash_block_header) + (record_index & ~0b11u);
+    // Metadata bytes are read in 4-byte words: [A B C D] [E F G H] ...
+    // `record_index & ~0b11u` rounds down to a multiple of 4 to find the word's start.
+    // For index 6(G), this rounds down to E.
+    const uint32_t word_address = block + sizeof(flash_block_header) +
+                                  (record_index & ~0b11u);
     uint32_t record_meta_word;
     if (HW_FLASH_READ(word_address, &record_meta_word, sizeof(record_meta_word)))
         return -1;
 
-    // This follows the read because it needs the current byte; flash programming
-    // can clear bits, but cannot restore a cleared bit to one.
+    // For index 6(G), 0b110 & 0b11 = 0b10 (2), selecting G (3rd byte) in [E F G H].
+    // G is 2 bytes after E, so its bit offset from the word start is 2 * 8 = 16.
     const uint8_t entry_shift = (uint8_t)((record_index & 0b11u) * 8u);
     if (((record_meta_word >> entry_shift) & entry) != entry)
         return -1;
 
+    //! NOTE: Flash can change bits from 1 to 0, but not from 0 back to 1 without erasing the block.
+    // Example: entry 0b10110000 gives `~entry & 0xffu` = 0b01001111, marking bits to clear.
+    // `<< entry_shift` moves that 8-bit mask into this record's byte (G uses a 16-bit shift).
+    // The outer `~` flips the mask so `&` clears the marked bits and preserves all others.
     const uint32_t updated = record_meta_word & ~((uint32_t)(~entry & 0xffu) << entry_shift);
     return updated == record_meta_word ? 0 : record_meta_write_word(word_address, updated);
 }
