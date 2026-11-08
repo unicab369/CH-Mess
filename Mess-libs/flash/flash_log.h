@@ -328,6 +328,7 @@ static inline flash_status flash_log_init(flash_log *log) {
     log->record_end = log->next_address;
     log->record_count = 0;
     log->record_meta_trusted = 1;
+
     //! Scan committed records until the first unused slot.
     while (log->next_address + sizeof(record) <= block_end) {
         if (log->record_count >= FLASH_RECORD_META_MAX_RECORDS) {
@@ -345,6 +346,7 @@ static inline flash_status flash_log_init(flash_log *log) {
             const uint8_t *record_bytes = (const uint8_t *)&record;
             bool record_erased = true;
 
+            // Compare each header byte with the erased pattern; stop at the first programmed byte.
             for (size_t i = 0; i < sizeof(record); ++i) {
                 if (record_bytes[i] != (uint8_t)(FLASH_ERASED_WORD >> ((i & 3u) * 8u))) {
                     record_erased = false;
@@ -384,25 +386,24 @@ static inline flash_status flash_log_init(flash_log *log) {
         uint32_t crc_address = log->next_address + sizeof(record);
         uint16_t crc_remaining = record_length;
 
-        uint8_t record_meta_entry;
+        uint8_t meta_entry;
         if (log->record_count >= FLASH_RECORD_META_MAX_RECORDS ||
             HW_FLASH_READ(log->active_block + sizeof(flash_block_header) + log->record_count,
-                          &record_meta_entry, sizeof(record_meta_entry))
-        )
-            return FLASH_ERROR;
+                          &meta_entry, sizeof(meta_entry))
+        ) return FLASH_ERROR;
 
-        if (((record_meta_entry >> FLASH_RECORD_META_LENGTH_BIT) & 1u ? 8u : 4u) != record_length ||
-            ((record_meta_entry >> FLASH_RECORD_META_TAG_SHIFT) & FLASH_RECORD_META_TAG_MASK) !=
+        // Check that metadata's stored length and ID tag match the record header.
+        if (((meta_entry >> FLASH_RECORD_META_LENGTH_BIT) & 1u ? 8u : 4u) != record_length ||
+            ((meta_entry >> FLASH_RECORD_META_TAG_SHIFT) & FLASH_RECORD_META_TAG_MASK) !=
                 get_id_tag(record.logical_id)
         ) {
             // A committed record without matching metadata falls back to header scans.
             log->record_meta_trusted = 0;
         }
 
-        // Outdated records cannot be returned, so their payload CRC need not be read at startup.
-        if (!log->record_meta_trusted ||
-            (record_meta_entry & (1u << FLASH_RECORD_META_LIVE_BIT))) {
-            //! Payloads are at most 8 bytes, so read and checksum the payload at once.
+        // If trusted metadata marks this record outdated, skip reading its payload for CRC validation;
+        // reads will never return that record.
+        if (!log->record_meta_trusted || (meta_entry & (1u << FLASH_RECORD_META_LIVE_BIT))) {
             if (HW_FLASH_READ(crc_address, crc_chunk, crc_remaining))
                 return FLASH_ERROR;
 
@@ -486,22 +487,22 @@ static inline flash_status flash_log_gc(flash_log *log) {
             break;
 
         bool outdated = false;
-        uint8_t record_meta_entry = 0xffu;
+        uint8_t meta_entry = 0xffu;
 
         if (src_meta_ok) {
             if (source_index >= FLASH_RECORD_META_MAX_RECORDS ||
                 HW_FLASH_READ(old_block + sizeof(flash_block_header) + source_index,
-                              &record_meta_entry, sizeof(record_meta_entry))
+                              &meta_entry, sizeof(meta_entry))
             )
                 return FLASH_ERROR;
-            if (((record_meta_entry >> FLASH_RECORD_META_LENGTH_BIT) & 1u ? 8u : 4u) != payload_len ||
-                ((record_meta_entry >> FLASH_RECORD_META_TAG_SHIFT) & FLASH_RECORD_META_TAG_MASK) !=
+            if (((meta_entry >> FLASH_RECORD_META_LENGTH_BIT) & 1u ? 8u : 4u) != payload_len ||
+                ((meta_entry >> FLASH_RECORD_META_TAG_SHIFT) & FLASH_RECORD_META_TAG_MASK) !=
                     get_id_tag(record.logical_id)
             ) {
                 // Do not trust a mismatched hint; use the full-ID fallback for this GC.
                 src_meta_ok = false;
             } else {
-                outdated = !(record_meta_entry & (1u << FLASH_RECORD_META_LIVE_BIT));
+                outdated = !(meta_entry & (1u << FLASH_RECORD_META_LIVE_BIT));
             }
         }
 
