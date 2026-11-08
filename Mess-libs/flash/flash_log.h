@@ -18,6 +18,12 @@
 // |---------|--------------|---------------|-------------|---------------|--------------|
 // | 4 bytes | 4 bytes      | 8 bytes       | 12 bytes    | 341           | no tail      |
 // | 8 bytes | 4 bytes      | 8 bytes       | 16 bytes    | 255           | 12-byte tail |
+//
+// Tag collisions when tags are uniformly distributed:
+// | Tags stored in 4 bytes | Same tag for two specific IDs | Any pair in the set collides |
+// |------------------------|-------------------------------|------------------------------|
+// | 8 x 4-bit tags         | 6.25%                         | about 87.9%                  |
+// | 4 x 8-bit tags         | 0.39%                         | about 2.3%                   |
 
 #include <stdbool.h>
 #include <stddef.h>
