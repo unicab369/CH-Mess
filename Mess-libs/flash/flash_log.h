@@ -613,8 +613,6 @@ static inline flash_status flash_log_write(
         return FLASH_ERROR;
     }
 
-    // The record is committed. Bitmap failures disable the optimization but do not
-    // turn a successful value write into an apparent failure.
     const uint16_t record_index = log->record_count;
     ++log->record_count;
 
@@ -624,8 +622,8 @@ static inline flash_status flash_log_write(
         } else {
             // Scan older entries: the tag avoids reading most full record headers.
             const uint8_t tag = flash_bitmap_id_tag(logical_id);
-            uint32_t old_address =
-                log->active_block + sizeof(flash_block_header) + FLASH_BITMAP_BYTES;
+            uint32_t old_address = log->active_block + sizeof(flash_block_header) + FLASH_BITMAP_BYTES;
+
             for (uint16_t i = 0; i < record_index; ++i) {
                 uint8_t entry;
                 if (flash_bitmap_read_entry(log->active_block, i, &entry)) {
@@ -633,26 +631,20 @@ static inline flash_status flash_log_write(
                     break;
                 }
 
-                const uint16_t old_length =
-                    (entry & (1u << FLASH_BITMAP_LENGTH_BIT)) ? 8u : 4u;
-                const bool old_is_live = (entry & (1u << FLASH_BITMAP_LIVE_BIT)) != 0;
-                const bool old_tag_matches =
-                    ((entry >> FLASH_BITMAP_TAG_SHIFT) & FLASH_BITMAP_TAG_MASK) == tag;
+                const uint16_t old_length = (entry & (1u << FLASH_BITMAP_LENGTH_BIT)) ? 8u : 4u;
+                const bool is_live = (entry & (1u << FLASH_BITMAP_LIVE_BIT)) != 0;
+                const bool tag_match = ((entry >> FLASH_BITMAP_TAG_SHIFT) & FLASH_BITMAP_TAG_MASK) == tag;
 
-                // Read the old header only if it is live and its tag matches.
-                if (old_is_live && old_tag_matches) {
+                //! Read the old header only if it is live and its tag matches.
+                if (is_live && tag_match) {
                     flash_record old_record;
+
+                    //! Validate the header; mark an exact ID obsolete, or confirm a tag collision.
                     if (HW_FLASH_READ(old_address, &old_record, sizeof(old_record)) ||
                         flash_record_len(old_record.marker) != old_length ||
-                        flash_bitmap_id_tag(old_record.logical_id) != tag
-                    ) {
-                        log->bitmap_trusted = 0;
-                        break;
-                    }
-
-                    // Clear the old record's live bit only when the full ID matches.
-                    if (old_record.logical_id == logical_id &&
-                        flash_bitmap_mark_outdated(log->active_block, i)
+                        (old_record.logical_id == logical_id
+                            ? flash_bitmap_mark_outdated(log->active_block, i)
+                            : flash_bitmap_id_tag(old_record.logical_id) != tag)
                     ) {
                         log->bitmap_trusted = 0;
                         break;
@@ -669,8 +661,6 @@ static inline flash_status flash_log_write(
     return FLASH_OK;
 }
 
-// Read the latest committed payload for one logical ID.
-// Returns a FLASH_* value and writes the payload size to length.
 // Fast read for callers that guarantee valid pointers and arguments.
 static inline flash_status flash_log_read_fast(
     flash_log *log, uint16_t logical_id, void *data,
