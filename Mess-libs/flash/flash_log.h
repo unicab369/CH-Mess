@@ -198,13 +198,13 @@ static inline flash_status block_header_write(
             ? FLASH_ERROR : FLASH_OK;
 }
 
-static inline log_pool_state *flash_log_pool_for_size(uint32_t size_code) {
+static inline log_pool_state *log_pool_for_size(uint32_t size_code) {
     if (size_code == FLASH_RECORD_MARKER_4) return &flash_log_pools[FLASH_LOG_POOL_4];
     if (size_code == FLASH_RECORD_MARKER_8) return &flash_log_pools[FLASH_LOG_POOL_8];
     return NULL;
 }
 
-static inline uint32_t flash_log_free_blocks(void) {
+static inline uint32_t log_free_blocks(void) {
     uint32_t count = 0;
     for (uint32_t i = 0; i < FLASH_BLOCK_COUNT; ++i) {
         const uint32_t block = FLASH_BASE_ADDR + i * FLASH_BLOCK_SIZE;
@@ -283,7 +283,7 @@ static inline flash_status flash_log_init(void) {
             return FLASH_ERROR;
 
         const uint32_t size_code = block_size_for_commit(header.commit);
-        log_pool_state *pool = flash_log_pool_for_size(size_code);
+        log_pool_state *pool = log_pool_for_size(size_code);
         if (!pool)
             continue;
 
@@ -425,7 +425,7 @@ static inline flash_status flash_log_write(
 ) {
     if (!data) return FLASH_ERROR;
 
-    log_pool_state *pool = flash_log_pool_for_size(size_code);
+    log_pool_state *pool = log_pool_for_size(size_code);
     const uint16_t length = get_record_len(size_code);
     if (!pool || !length)
         return FLASH_RECORD_INVALID_SIZE;
@@ -436,7 +436,7 @@ static inline flash_status flash_log_write(
         log_pool_state *other_pool = (pool == &flash_log_pools[FLASH_LOG_POOL_4])
                             ? &flash_log_pools[FLASH_LOG_POOL_8] : &flash_log_pools[FLASH_LOG_POOL_4];
         const uint32_t needed_free = other_pool->active_block ? 2u : 1u;
-        if (flash_log_free_blocks() < needed_free)
+        if (log_free_blocks() < needed_free)
             return FLASH_FULL;
 
         for (uint32_t i = 0; i < FLASH_BLOCK_COUNT; ++i) {
@@ -489,8 +489,7 @@ static inline flash_status flash_log_read_fast(
     uint16_t logical_id, uint32_t size_code, void *data,
     uint16_t capacity, uint16_t *length
 ) {
-
-    log_pool_state *pool = flash_log_pool_for_size(size_code);
+    log_pool_state *pool = log_pool_for_size(size_code);
     const uint16_t requested_length = get_record_len(size_code);
 
     if (!pool || !requested_length)
