@@ -295,10 +295,9 @@ static inline flash_status block_header_write(
         .generation = generation,
         .commit = FLASH_BLOCK_HEADER_COMMIT
     };
-    if (HW_FLASH_WRITE(address, &pending, sizeof(pending)) ||
-        HW_FLASH_WRITE(address, &committed, sizeof(committed)))
-        return FLASH_ERROR;
-    return FLASH_OK;
+    return (HW_FLASH_WRITE(address, &pending, sizeof(pending)) ||
+            HW_FLASH_WRITE(address, &committed, sizeof(committed)))
+            ? FLASH_ERROR : FLASH_OK;
 }
 
 // Select the newest committed block and find its next unused record slot.
@@ -459,9 +458,7 @@ static inline flash_status flash_log_gc(flash_log *log) {
         new_block = FLASH_BASE_ADDR;
 
     // The destination must be erased before any copied records are written.
-    if (HW_ERASE_BLOCK(new_block))
-        return FLASH_ERROR;
-    if (flash_bitmap_prepare(new_block))
+    if (HW_ERASE_BLOCK(new_block) || flash_bitmap_prepare(new_block))
         return FLASH_ERROR;
 
     // Reserve the block header and bitmap; copied records follow both.
@@ -470,12 +467,13 @@ static inline flash_status flash_log_gc(flash_log *log) {
     uint32_t address = old_block + sizeof(flash_block_header) + FLASH_BITMAP_BYTES;
     flash_record record;
     uint8_t payload[8];
+
     // Keep the source scan bound fixed while the active log state is unchanged.
     const uint32_t old_end = log->next_address;
     const uint16_t old_record_count = log->record_count;
     uint16_t source_index = 0;
     uint16_t copied_count = 0;
-    bool source_bitmap_valid = log->bitmap_trusted != 0;
+    bool src_bitmap_ok = log->bitmap_trusted != 0;
 
     // Walk the old log in append order.
     while (source_index < old_record_count && address + sizeof(record) <= old_end) {
@@ -496,7 +494,8 @@ static inline flash_status flash_log_gc(flash_log *log) {
 
         bool outdated = false;
         uint8_t bitmap_entry = 0xffu;
-        if (source_bitmap_valid) {
+
+        if (src_bitmap_ok) {
             if (flash_bitmap_read_entry(old_block, source_index, &bitmap_entry))
                 return FLASH_ERROR;
             if (((bitmap_entry >> FLASH_BITMAP_LENGTH_BIT) & 1u ? 8u : 4u) != payload_len ||
@@ -504,7 +503,7 @@ static inline flash_status flash_log_gc(flash_log *log) {
                     flash_bitmap_id_tag(record.logical_id)
             ) {
                 // Do not trust a mismatched hint; use the full-ID fallback for this GC.
-                source_bitmap_valid = false;
+                src_bitmap_ok = false;
             } else {
                 outdated = !(bitmap_entry & (1u << FLASH_BITMAP_LIVE_BIT));
             }
@@ -512,44 +511,56 @@ static inline flash_status flash_log_gc(flash_log *log) {
 
         // If metadata is unavailable, preserve correctness by checking later full IDs.
         bool has_newer_record = false;
-        if (!source_bitmap_valid && !outdated) {
-            uint16_t later_index = (uint16_t)(source_index + 1u);
-            uint32_t later_address = address + record_size;
-            while (later_index < old_record_count && later_address + sizeof(record) <= old_end) {
-                flash_record candidate;
-                if (HW_FLASH_READ(later_address, &candidate, sizeof(candidate)))
+        // Outdated records need neither duplicate checks nor copying.
+        if (!outdated) {
+            if (!src_bitmap_ok) {
+                uint16_t later_index = (uint16_t)(source_index + 1u);
+                uint32_t later_addr = address + record_size;
+
+                //! Search later records; a later record with the same ID replaces this one.
+                while (later_index < old_record_count &&
+                       later_addr + sizeof(record) <= old_end
+                ) {
+                    flash_record candidate;
+                    if (HW_FLASH_READ(later_addr, &candidate, sizeof(candidate)))
+                        return FLASH_ERROR;
+
+                     // Stop if this later record has an invalid marker or extends past written data.
+                    const uint16_t later_length = flash_record_len(candidate.marker);
+                    if (!later_length ||
+                        later_length > old_end - later_addr - sizeof(candidate)
+                    ) break;
+
+                    //! A valid later record with this ID replaces the current record.
+                    if (candidate.logical_id == record.logical_id) {
+                        has_newer_record = true;
+                        break;
+                    }
+                    later_addr += flash_record_size(later_length);
+                    ++later_index;
+                }
+            }
+
+            if (!has_newer_record) {
+                // Check destination capacity before reading the source payload.
+                if (write_address + record_size > new_end)
+                    return FLASH_FULL;
+
+                //! Validate the source, then append the copy with its marker last.
+                if (HW_FLASH_READ(address + sizeof(record), payload, payload_len) ||
+                    flash_crc_calculate(payload, payload_len) != record.crc ||
+                    flash_write_at(write_address, record.logical_id, payload,
+                                  payload_len, record.marker) != FLASH_OK
+                ) return FLASH_ERROR;
+
+                if (flash_bitmap_store_record(new_block, copied_count,
+                                              record.logical_id, payload_len))
                     return FLASH_ERROR;
 
-                const uint16_t later_length = flash_record_len(candidate.marker);
-                if (!later_length || later_length > old_end - later_address - sizeof(candidate))
-                    break;
-                if (candidate.logical_id == record.logical_id) {
-                    has_newer_record = true;
-                    break;
-                }
-                later_address += flash_record_size(later_length);
-                ++later_index;
+                // Advance the destination cursor to the next free record position.
+                write_address += record_size;
+                ++copied_count;
             }
-        }
-
-        if (!outdated && !has_newer_record) {
-            // Check destination capacity before reading the source payload.
-            if (write_address + record_size > new_end)
-                return FLASH_FULL;
-
-            // Validate the source, then append the copy with its marker last.
-            if (HW_FLASH_READ(address + sizeof(record), payload, payload_len) ||
-                flash_crc_calculate(payload, payload_len) != record.crc ||
-                flash_write_at(write_address, record.logical_id, payload,
-                                      payload_len, record.marker) != FLASH_OK
-            ) return FLASH_ERROR;
-
-            if (flash_bitmap_store_record(new_block, copied_count, record.logical_id, payload_len))
-                return FLASH_ERROR;
-
-            // Advance the destination cursor to the next free record position.
-            write_address += record_size;
-            ++copied_count;
         }
         // Advance through the source log whether this record was copied or skipped.
         address += record_size;
@@ -570,9 +581,7 @@ static inline flash_status flash_log_gc(flash_log *log) {
     log->bitmap_trusted = 1;
 
     // The committed destination is recoverable now; erase the old copy last.
-    if (HW_ERASE_BLOCK(old_block))
-        return FLASH_ERROR;
-    return FLASH_OK;
+    return HW_ERASE_BLOCK(old_block) ? FLASH_ERROR : FLASH_OK;
 }
 
 // Append one value, committing the record only after its header and payload are written.
