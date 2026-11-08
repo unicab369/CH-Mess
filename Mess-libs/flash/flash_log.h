@@ -119,19 +119,17 @@ typedef struct {
     uint32_t active_block;  // Block selected by its committed generation header.
     uint16_t generation;
     uint16_t record_count;  // Number of committed records in the active block.
-} flash_log_pool;
+} log_pool_state;
 
+// Indexes into the library's single global pool-state array.
 enum {
     FLASH_LOG_POOL_4,
     FLASH_LOG_POOL_8,
     FLASH_LOG_POOL_COUNT
 };
 
-// Each size class has one active block. Any erased non-active block can be shared by GC.
-typedef struct {
-    flash_log_pool pools[FLASH_LOG_POOL_COUNT];
-} flash_log;
-
+// The library manages one flash log globally; the target port defines this once.
+extern log_pool_state flash_log_pools[FLASH_LOG_POOL_COUNT];
 // Hardware interface; implement these functions for the target flash device.
 int HW_FLASH_READ(uint32_t address, void *dst, size_t length);
 int HW_FLASH_WRITE(uint32_t address, const void *src, size_t length);
@@ -200,19 +198,19 @@ static inline flash_status block_header_write(
             ? FLASH_ERROR : FLASH_OK;
 }
 
-static inline flash_log_pool *flash_log_pool_for_size(flash_log *log, uint32_t size_code) {
-    if (size_code == FLASH_RECORD_MARKER_4) return &log->pools[FLASH_LOG_POOL_4];
-    if (size_code == FLASH_RECORD_MARKER_8) return &log->pools[FLASH_LOG_POOL_8];
+static inline log_pool_state *flash_log_pool_for_size(uint32_t size_code) {
+    if (size_code == FLASH_RECORD_MARKER_4) return &flash_log_pools[FLASH_LOG_POOL_4];
+    if (size_code == FLASH_RECORD_MARKER_8) return &flash_log_pools[FLASH_LOG_POOL_8];
     return NULL;
 }
 
-static inline uint32_t flash_log_free_blocks(const flash_log *log) {
+static inline uint32_t flash_log_free_blocks(void) {
     uint32_t count = 0;
     for (uint32_t i = 0; i < FLASH_BLOCK_COUNT; ++i) {
         const uint32_t block = FLASH_BASE_ADDR + i * FLASH_BLOCK_SIZE;
-        if (block != log->pools[FLASH_LOG_POOL_4].active_block &&
-            block != log->pools[FLASH_LOG_POOL_8].active_block)
-            ++count;
+        if (block != flash_log_pools[FLASH_LOG_POOL_4].active_block &&
+            block != flash_log_pools[FLASH_LOG_POOL_8].active_block
+        ) ++count;
     }
     return count;
 }
@@ -220,7 +218,7 @@ static inline uint32_t flash_log_free_blocks(const flash_log *log) {
 static inline uint32_t get_record_size(uint16_t payload_length);
 
 // Rebuild one class's append cursor by scanning its committed record headers.
-static inline flash_status flash_log_pool_scan(flash_log_pool *pool, uint32_t size_code) {
+static inline flash_status flash_log_pool_scan(log_pool_state *pool, uint32_t size_code) {
     const uint16_t expected_length = get_record_len(size_code);
     const uint32_t block_end = pool->active_block + FLASH_BLOCK_SIZE;
     pool->next_address = pool->active_block + FLASH_RECORDS_OFFSET;
@@ -271,12 +269,9 @@ static inline flash_status flash_log_pool_scan(flash_log_pool *pool, uint32_t si
 }
 
 // Find the newest committed block in each size class. Blank storage is formatted lazily.
-static inline flash_status flash_log_init(flash_log *log) {
-    if (!log)
-        return FLASH_ERROR;
-
-    log->pools[FLASH_LOG_POOL_4] = (flash_log_pool){0};
-    log->pools[FLASH_LOG_POOL_8] = (flash_log_pool){0};
+static inline flash_status flash_log_init(void) {
+    flash_log_pools[FLASH_LOG_POOL_4] = (log_pool_state){0};
+    flash_log_pools[FLASH_LOG_POOL_8] = (log_pool_state){0};
     flash_block_header header;
     bool found = false;
 
@@ -285,7 +280,7 @@ static inline flash_status flash_log_init(flash_log *log) {
         if (HW_FLASH_READ(block, &header, sizeof(header)))
             return FLASH_ERROR;
         const uint32_t size_code = block_size_for_commit(header.commit);
-        flash_log_pool *pool = flash_log_pool_for_size(log, size_code);
+        log_pool_state *pool = flash_log_pool_for_size(size_code);
         if (!pool)
             continue;
 
@@ -303,12 +298,12 @@ static inline flash_status flash_log_init(flash_log *log) {
                 return FLASH_ERROR;
     }
 
-    if (log->pools[FLASH_LOG_POOL_4].active_block &&
-        flash_log_pool_scan(&log->pools[FLASH_LOG_POOL_4], FLASH_RECORD_MARKER_4) != FLASH_OK)
-        return FLASH_ERROR;
-    if (log->pools[FLASH_LOG_POOL_8].active_block &&
-        flash_log_pool_scan(&log->pools[FLASH_LOG_POOL_8], FLASH_RECORD_MARKER_8) != FLASH_OK)
-        return FLASH_ERROR;
+    if ((flash_log_pools[FLASH_LOG_POOL_4].active_block &&
+         flash_log_pool_scan(&flash_log_pools[FLASH_LOG_POOL_4], FLASH_RECORD_MARKER_4) != FLASH_OK) ||
+        (flash_log_pools[FLASH_LOG_POOL_8].active_block &&
+         flash_log_pool_scan(&flash_log_pools[FLASH_LOG_POOL_8], FLASH_RECORD_MARKER_8) != FLASH_OK)
+    ) return FLASH_ERROR;
+
     return FLASH_OK;
 }
 
@@ -335,15 +330,15 @@ static inline flash_status store_record_at(
 }
 
 // Copy current values of one size class into an erased shared spare block.
-static inline flash_status flash_log_gc(
-    flash_log *owner, flash_log_pool *pool, uint32_t size_code
-) {
+static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t size_code) {
     const uint32_t old_block = pool->active_block;
     uint32_t new_block = 0;
+
     for (uint32_t i = 0; i < FLASH_BLOCK_COUNT; ++i) {
         const uint32_t candidate = FLASH_BASE_ADDR + i * FLASH_BLOCK_SIZE;
-        if (candidate != owner->pools[FLASH_LOG_POOL_4].active_block &&
-            candidate != owner->pools[FLASH_LOG_POOL_8].active_block) {
+        if (candidate != flash_log_pools[FLASH_LOG_POOL_4].active_block &&
+            candidate != flash_log_pools[FLASH_LOG_POOL_8].active_block
+        ) {
             new_block = candidate;
             break;
         }
@@ -374,9 +369,11 @@ static inline flash_status flash_log_gc(
 
         bool replaced = false;
         uint32_t later_address = address + record_size;
+
         for (uint16_t j = (uint16_t)(i + 1u);
              j < old_count && later_address + sizeof(record) <= old_end; ++j) {
             flash_record later;
+
             if (HW_FLASH_READ(later_address, &later, sizeof(later)))
                 return FLASH_ERROR;
             if (get_record_len(later.marker) != payload_len ||
@@ -395,8 +392,9 @@ static inline flash_status flash_log_gc(
             if (HW_FLASH_READ(address + sizeof(record), payload, payload_len) ||
                 calculate_crc(payload, payload_len) != record.crc ||
                 store_record_at(write_address, record.logical_id, payload,
-                                payload_len, size_code) != FLASH_OK)
-                return FLASH_ERROR;
+                                payload_len, size_code) != FLASH_OK
+            ) return FLASH_ERROR;
+
             write_address += record_size;
             ++copied_count;
         }
@@ -419,12 +417,11 @@ static inline flash_status flash_log_gc(
 
 // Append one value to its fixed-size class; size is part of the logical key.
 static inline flash_status flash_log_write(
-    flash_log *owner, uint16_t logical_id, const void *data, uint32_t size_code
+    uint16_t logical_id, const void *data, uint32_t size_code
 ) {
-    if (!owner || !data)
-        return FLASH_ERROR;
+    if (!data) return FLASH_ERROR;
 
-    flash_log_pool *pool = flash_log_pool_for_size(owner, size_code);
+    log_pool_state *pool = flash_log_pool_for_size(size_code);
     const uint16_t length = get_record_len(size_code);
     if (!pool || !length)
         return FLASH_RECORD_INVALID_SIZE;
@@ -432,19 +429,20 @@ static inline flash_status flash_log_write(
     // The first class can use one block and leave one spare. A second class needs
     // a block of its own while preserving a shared spare, so it needs two free blocks.
     if (!pool->active_block) {
-        flash_log_pool *other_pool =
-            pool == &owner->pools[FLASH_LOG_POOL_4]
-            ? &owner->pools[FLASH_LOG_POOL_8] : &owner->pools[FLASH_LOG_POOL_4];
+        log_pool_state *other_pool = pool == &flash_log_pools[FLASH_LOG_POOL_4]
+            ? &flash_log_pools[FLASH_LOG_POOL_8] : &flash_log_pools[FLASH_LOG_POOL_4];
         const uint32_t needed_free = other_pool->active_block ? 2u : 1u;
-        if (flash_log_free_blocks(owner) < needed_free)
+        if (flash_log_free_blocks() < needed_free)
             return FLASH_FULL;
+
         for (uint32_t i = 0; i < FLASH_BLOCK_COUNT; ++i) {
             const uint32_t block = FLASH_BASE_ADDR + i * FLASH_BLOCK_SIZE;
-            if (block == owner->pools[FLASH_LOG_POOL_4].active_block ||
-                block == owner->pools[FLASH_LOG_POOL_8].active_block)
+            if (block == flash_log_pools[FLASH_LOG_POOL_4].active_block ||
+                block == flash_log_pools[FLASH_LOG_POOL_8].active_block)
                 continue;
             if (HW_ERASE_BLOCK(block))
                 return FLASH_ERROR;
+
             pool->active_block = block;
             pool->generation = 1;
             if (block_header_write(block, pool->generation, size_code) != FLASH_OK) {
@@ -461,8 +459,10 @@ static inline flash_status flash_log_write(
     const uint32_t record_size = get_record_size(length);
     if (record_size > FLASH_BLOCK_SIZE - FLASH_RECORDS_OFFSET)
         return FLASH_RECORD_TOO_LARGE;
+
     if (pool->next_address + record_size > pool->active_block + FLASH_BLOCK_SIZE) {
-        const flash_status status = flash_log_gc(owner, pool, size_code);
+        const flash_status status = flash_log_gc(pool, size_code);
+
         if (status != FLASH_OK)
             return status;
         if (pool->next_address + record_size > pool->active_block + FLASH_BLOCK_SIZE)
@@ -481,14 +481,13 @@ static inline flash_status flash_log_write(
 
 // Read the newest value for a logical ID from the requested size class.
 static inline flash_status flash_log_read_fast(
-    flash_log *owner, uint16_t logical_id, uint32_t size_code, void *data,
+    uint16_t logical_id, uint32_t size_code, void *data,
     uint16_t capacity, uint16_t *length
 ) {
-    if (!owner || !length || (!data && capacity))
-        return FLASH_ERROR;
 
-    flash_log_pool *pool = flash_log_pool_for_size(owner, size_code);
+    log_pool_state *pool = flash_log_pool_for_size(size_code);
     const uint16_t requested_length = get_record_len(size_code);
+
     if (!pool || !requested_length)
         return FLASH_RECORD_INVALID_SIZE;
     if (!pool->active_block)
@@ -521,9 +520,10 @@ static inline flash_status flash_log_read_fast(
         return FLASH_NOT_FOUND;
     if (requested_length > capacity)
         return FLASH_BUFFER_TOO_SMALL;
+
     if (HW_FLASH_READ(newest_address + sizeof(record), data, requested_length) ||
-        calculate_crc((const uint8_t *)data, requested_length) != newest_crc)
-        return FLASH_ERROR;
+        calculate_crc((const uint8_t *)data, requested_length) != newest_crc
+    ) return FLASH_ERROR;
 
     *length = requested_length;
     return FLASH_OK;
@@ -531,12 +531,11 @@ static inline flash_status flash_log_read_fast(
 
 // Read a value after checking that required pointers are valid.
 static inline flash_status flash_log_read(
-    flash_log *log, uint16_t logical_id, uint32_t size_code, void *data,
+    uint16_t logical_id, uint32_t size_code, void *data,
     uint16_t capacity, uint16_t *length
 ) {
-    if (!log || !length || (!data && capacity))
-        return FLASH_ERROR;
-    return flash_log_read_fast(log, logical_id, size_code, data, capacity, length);
+    if (!length || (!data && capacity)) return FLASH_ERROR;
+    return flash_log_read_fast(logical_id, size_code, data, capacity, length);
 }
 
 #endif // FUN_FLASH_LOG_H

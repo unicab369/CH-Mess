@@ -48,6 +48,9 @@ extern uint8_t __flash_log_start[];
 
 #include "flash_log.h"
 
+// This port header is included by one C file and owns the global pool-state array.
+log_pool_state flash_log_pools[FLASH_LOG_POOL_COUNT];
+
 // Read any byte range using the CH5xx's memory-mapped 32-bit CodeFlash reads.
 __HIGH_CODE int HW_FLASH_READ(uint32_t address, void *dest, size_t length) {
     // Keep the request inside the reserved log region and require a destination.

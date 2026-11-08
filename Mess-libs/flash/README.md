@@ -8,6 +8,10 @@ read and GC paths scan record headers directly. `FLASH_RECORD_MARKER_4` and
 header uses matching class-specific commit values. Existing flash data in the old
 format is not migrated by this version.
 
+The API manages one global log. The CH5xx port header defines its pool-state
+array; applications call `flash_log_init()`, `flash_log_read(...)`, and
+`flash_log_write(...)` without passing a pool-state array.
+
 Keep the block header when simplifying the log. It records the block generation and
 whether the block contains 4-byte or 8-byte payloads. Startup uses the generation
 and commit marker to choose the newest complete copy after an interrupted GC.
