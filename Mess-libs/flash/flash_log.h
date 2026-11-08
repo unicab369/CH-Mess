@@ -332,21 +332,37 @@ static inline flash_status store_record_at(
     return FLASH_OK;
 }
 
-// Copy current values of one size class into an erased shared spare block.
+// GC steps:
+// 1. Find the next spare block in circular order, skipping both active blocks,
+//    and erase it.
+// 2. Copy only the newest record for each ID from this size class into the spare.
+// 3. Commit the spare's header only after all record copies succeed.
+// 4. Erase the old active block; it becomes the spare for a later GC.
+// With more than two blocks, starting each search after the old block rotates
+// this class through available blocks; the other class's active block is skipped.
 static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t size_code) {
     const uint32_t old_block = pool->active_block;
     uint32_t new_block = 0;
+    bool found_spare = false;
 
-    for (uint32_t i = 0; i < FLASH_BLOCK_COUNT; ++i) {
-        const uint32_t candidate = FLASH_BASE_ADDR + i * FLASH_BLOCK_SIZE;
+    // Start after the source block and search circularly. After each GC the
+    // source becomes spare, so this advances the active block through the
+    // available blocks instead of repeatedly choosing the lowest free address.
+    const uint32_t old_index = (old_block - FLASH_BASE_ADDR) / FLASH_BLOCK_SIZE;
+    for (uint32_t step = 1; step < FLASH_BLOCK_COUNT; ++step) {
+        uint32_t candidate_index = old_index + step;
+        if (candidate_index >= FLASH_BLOCK_COUNT)
+            candidate_index -= FLASH_BLOCK_COUNT;
+        const uint32_t candidate = FLASH_BASE_ADDR + candidate_index * FLASH_BLOCK_SIZE;
         if (candidate != flash_log_pools[FLASH_LOG_POOL_4].active_block &&
             candidate != flash_log_pools[FLASH_LOG_POOL_8].active_block
         ) {
             new_block = candidate;
+            found_spare = true;
             break;
         }
     }
-    if (!new_block)
+    if (!found_spare)
         return FLASH_FULL;
     if (HW_ERASE_BLOCK(new_block))
         return FLASH_ERROR;

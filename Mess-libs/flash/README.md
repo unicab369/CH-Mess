@@ -30,7 +30,45 @@ logical ID are independent values. Keep one active block for each size class and
 use an erased block as shared GC scratch. GC copies the live records of one class,
 commits the destination header, then erases the old active block. The erased source
 becomes the next scratch block. With both classes active, at least three blocks are
-needed to guarantee a scratch block.
+needed to guarantee a scratch block. GC searches circularly from the source block,
+so successive collections rotate through the available blocks rather than always
+choosing the lowest-address spare.
+
+### Example block rotation
+
+The log keeps separate saved values for 4-byte payloads and 8-byte payloads.
+An active block is the block currently holding the saved values for one payload
+size. GC for one size leaves the other size's active block alone, so its saved
+values stay available.
+
+With 3 blocks, suppose B1 holds saved values with 4-byte payloads, B2 holds saved
+values with 8-byte payloads, and B3 is erased and available for GC:
+
+- When the 4-byte block fills, GC copies its latest saved values from B1 to B3.
+  It marks B3 as the new 4-byte block, then erases B1.
+- The next 4-byte GC can copy the values from B3 back to B1.
+- B2 keeps the 8-byte payload values throughout this process. GC leaves B2 alone.
+
+The 4-byte data moves between B1 and the available block. The 8-byte data remains
+in B2 unless GC for 8-byte payloads moves it.
+
+With 4 blocks, suppose B1 holds 4-byte payload values, B2 holds 8-byte payload
+values, and B3 and B4 are erased and available:
+
+- Successive 4-byte GCs can move the saved values B1 → B3 → B4 → B1.
+- B2 keeps the 8-byte payload values while the 4-byte values move.
+- If the 8-byte block fills, its GC moves the 8-byte values to an available block.
+  It leaves the block currently holding the 4-byte values alone.
+
+Blocks are not permanently assigned to a payload size. Each size has one block
+holding its current values; GC moves those values to an available block, then
+erases the old block so it can be used later.
+
+No block stays reserved as the spare. After GC commits the copied values, it
+erases the old block, which becomes available for the next GC. With 3 total blocks,
+each size can rotate between 2 blocks while the other size's active block is left
+alone. With 4 total blocks, each size can rotate among 3 blocks while the other
+size's active block is left alone.
 
 ## Re-adding per-record metadata later
 
