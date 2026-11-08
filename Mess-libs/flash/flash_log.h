@@ -2,22 +2,30 @@
 #define FUN_FLASH_LOG_H
 
 // Each block starts with a 4-byte header [generation: 2 bytes | size-class commit: 2 bytes].
-// The header fixes the payload size for every record in the block (4 or 8 bytes).
-// Records start immediately after it. Each record has an 8-byte header
-// [CRC: 2 bytes | logical_id: 2 bytes | marker: 4 bytes], then its payload and alignment padding.
+// A packed tag table follows: one 4-bit logical-ID tag for each record slot,
+// with eight tags stored in each 32-bit word. The record area follows the table.
+// Every block holds one payload size class, selected by its block-header commit.
+// That keeps the record spacing fixed within each block: 12 bytes for 4-byte
+// payloads and 16 bytes for 8-byte payloads (header + payload, already aligned).
+// Each record has an 8-byte header [CRC: 2 bytes | logical_id: 2 bytes | marker: 4 bytes],
+// then its payload and alignment padding.
 // GC copies the newest value for each (logical ID, size class) into a shared spare block.
 //
 // [erase block - 4KB (configurable)]
 //   [block header: generation (2 bytes) | size-class commit (2 bytes)]
-//   [record header: CRC (2 bytes) | logical_id (2 bytes) | marker (4 bytes)] [payload] [padding]
-//   [record header: CRC (2 bytes) | logical_id (2 bytes) | marker (4 bytes)] [payload] [padding] ...
+//   [tag table: 8 x 4-bit logical-ID tags per 32-bit word]
+//   [alignment padding]
+//   4-byte class: [record header (8 bytes)] [payload (4 bytes)] ... (12-byte stride)
+//   8-byte class: [record header (8 bytes)] [payload (8 bytes)] ... (16-byte stride)
 //
-// Capacity for the default 4 KB block and 4-byte alignment:
+// Capacity for the default 4 KB block and 4-byte alignment, including tag table:
 //
-// | Payload | Block header | Record header | Record size | Records/block | Unused space |
-// |---------|--------------|---------------|-------------|---------------|--------------|
-// | 4 bytes | 4 bytes      | 8 bytes       | 12 bytes    | 341           | no tail      |
-// | 8 bytes | 4 bytes      | 8 bytes       | 16 bytes    | 255           | 12-byte tail |
+// | Payload | Block header | Tag table | Record header | Record size | Records/block | Unused space |
+// |---------|--------------|-----------|---------------|-------------|---------------|--------------|
+// | 4 bytes | 4 bytes      | 164 bytes | 8 bytes       | 12 bytes    | 327           | 4 bytes      |
+// | 8 bytes | 4 bytes      | 124 bytes | 8 bytes       | 16 bytes    | 248           | none         |
+// A block uses exactly one row's stride; 4-byte and 8-byte records never
+// interleave within a block. The tag table has one nibble for each record slot.
 //
 // Tag collisions when tags are uniformly distributed:
 // | Tags stored in 4 bytes | Same tag for two specific IDs | Any pair in the set collides |
@@ -93,9 +101,10 @@ enum {
 #define FLASH_RECORD_MARKER_4  (((uint32_t)FLASH_RECORD_COMMIT << 16) | 0xBA04u)
 #define FLASH_RECORD_MARKER_8  (((uint32_t)FLASH_RECORD_COMMIT << 16) | 0xBA08u)
 
-// These values commit the block and identify its fixed payload size.
-#define FLASH_BLOCK_HEADER_COMMIT_4 0xBA84u
-#define FLASH_BLOCK_HEADER_COMMIT_8 0xBA88u
+// These version-2 values commit the block, identify its payload size, and
+// distinguish the tag-table layout from the previous block format.
+#define FLASH_BLOCK_HEADER_COMMIT_4 0xBB84u
+#define FLASH_BLOCK_HEADER_COMMIT_8 0xBB88u
 
 
 // Header stored before each value in the append-only flash log.
@@ -116,15 +125,15 @@ typedef struct {
     uint16_t commit;     // Size-class commit value, written after records are copied.
 } flash_block_header;
 
-#define FLASH_RECORDS_OFFSET \
-    ((sizeof(flash_block_header) + FLASH_ALIGNMENT - 1u) & ~((uint32_t)FLASH_ALIGNMENT - 1u))
-
 typedef struct {
     uint32_t next_address;  // Address where the next record will be written.
     uint32_t record_end;    // End of committed records, even if a damaged tail fills the block.
     uint32_t active_block;  // Block selected by its committed generation header.
+    uint32_t records_start; // After this class's tag table and alignment padding.
+    uint32_t pending_tags;  // Tags for the incomplete group of up to eight records.
     uint16_t generation;
     uint16_t record_count;  // Number of committed records in the active block.
+    bool tag_map_valid;     // False means reads must scan full record headers.
 } log_pool_state;
 
 // Indexes into the library's single global pool-state array.
@@ -221,18 +230,50 @@ static inline uint32_t log_free_blocks(void) {
     return count;
 }
 
-static inline uint32_t get_record_size(uint16_t payload_length);
+static inline uint32_t get_record_size(uint16_t payload_length) {
+    return (sizeof(flash_record) + payload_length + FLASH_ALIGNMENT - 1u) &
+           ~((uint32_t)FLASH_ALIGNMENT - 1u);
+}
+
+// Reserve one 32-bit tag word for each group of eight record slots.
+static inline uint16_t max_records_for_length(uint16_t payload_length) {
+    const uint32_t record_size = get_record_size(payload_length);
+    uint16_t count = 0;
+
+    while (count < UINT16_MAX) {
+        const uint32_t next_count = (uint32_t)count + 1u;
+        const uint32_t records_offset = (sizeof(flash_block_header) +
+                                    ((next_count + 7u) / 8u) * sizeof(uint32_t) +
+                                    FLASH_ALIGNMENT - 1u) & ~((uint32_t)FLASH_ALIGNMENT - 1u);
+        if (records_offset + next_count * record_size > FLASH_BLOCK_SIZE)
+            break;
+        ++count;
+    }
+    return count;
+}
+
+static inline uint32_t records_start_for_length(uint32_t block, uint16_t payload_length) {
+    const uint32_t tag_words = ((uint32_t)max_records_for_length(payload_length) + 7u) / 8u;
+    return block + ((sizeof(flash_block_header) + tag_words * sizeof(uint32_t) +
+                    FLASH_ALIGNMENT - 1u) & ~((uint32_t)FLASH_ALIGNMENT - 1u));
+}
 
 // Rebuild one class's append cursor by scanning its committed record headers.
-static inline flash_status flash_log_pool_scan(log_pool_state *pool, uint32_t size_code) {
+static inline flash_status log_pool_scan(log_pool_state *pool, uint32_t size_code) {
     const uint16_t expected_length = get_record_len(size_code);
     const uint32_t block_end = pool->active_block + FLASH_BLOCK_SIZE;
-    pool->next_address = pool->active_block + FLASH_RECORDS_OFFSET;
+    const uint16_t max_records = max_records_for_length(expected_length);
+    pool->records_start = records_start_for_length(pool->active_block, expected_length);
+    pool->next_address = pool->records_start;
     pool->record_end = pool->next_address;
     pool->record_count = 0;
+    pool->pending_tags = 0xFFFFFFFFu;
+    pool->tag_map_valid = true;
     flash_record record;
 
-    while (pool->next_address + sizeof(record) <= block_end) {
+    while (pool->record_count < max_records &&
+           pool->next_address + sizeof(record) <= block_end
+    ) {
         if (HW_FLASH_READ(pool->next_address, &record, sizeof(record)))
             return FLASH_ERROR;
 
@@ -269,9 +310,29 @@ static inline flash_status flash_log_pool_scan(log_pool_state *pool, uint32_t si
             return FLASH_OK;
         }
 
+        const uint16_t record_index = pool->record_count;
+        const uint8_t tag_shift = (uint8_t)((record_index & 0b0111u) << 2);
+        // Empty nibbles start as 1s, so write this tag by clearing its zero bits.
+        pool->pending_tags &= ~((uint32_t)(~record.logical_id & 0b1111u) << tag_shift);
         pool->next_address += record_size;
         pool->record_end = pool->next_address;
         ++pool->record_count;
+
+        // A tag word is committed only after all eight records it describes.
+        // A mismatch disables the accelerator; full-header reads remain correct.
+        if (!(pool->record_count & 0b0111u)) {
+            uint32_t stored_tags;
+            if (HW_FLASH_READ(pool->active_block + sizeof(flash_block_header) +
+                              (uint32_t)(record_index >> 3) * sizeof(stored_tags),
+                              &stored_tags, sizeof(stored_tags)) ||
+                (stored_tags != pool->pending_tags &&
+                 !(pool->pending_tags == 0xFFFFFFFFu && stored_tags == FLASH_ERASED_WORD))
+            ) {
+                pool->tag_map_valid = false;
+            }
+
+            pool->pending_tags = 0xFFFFFFFFu;
+        }
     }
     return FLASH_OK;
 }
@@ -308,17 +369,12 @@ static inline flash_status flash_log_init(void) {
     }
 
     if ((flash_log_pools[FLASH_LOG_POOL_4].active_block &&
-         flash_log_pool_scan(&flash_log_pools[FLASH_LOG_POOL_4], FLASH_RECORD_MARKER_4) != FLASH_OK) ||
+         log_pool_scan(&flash_log_pools[FLASH_LOG_POOL_4], FLASH_RECORD_MARKER_4) != FLASH_OK) ||
         (flash_log_pools[FLASH_LOG_POOL_8].active_block &&
-         flash_log_pool_scan(&flash_log_pools[FLASH_LOG_POOL_8], FLASH_RECORD_MARKER_8) != FLASH_OK)
+         log_pool_scan(&flash_log_pools[FLASH_LOG_POOL_8], FLASH_RECORD_MARKER_8) != FLASH_OK)
     ) return FLASH_ERROR;
 
     return FLASH_OK;
-}
-
-static inline uint32_t get_record_size(uint16_t payload_length) {
-    return (sizeof(flash_record) + payload_length + FLASH_ALIGNMENT - 1u) &
-           ~((uint32_t)FLASH_ALIGNMENT - 1u);
 }
 
 static inline flash_status store_record_at(
@@ -373,14 +429,15 @@ static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t size_code
     if (HW_ERASE_BLOCK(new_block))
         return FLASH_ERROR;
 
-    uint32_t write_address = new_block + FLASH_RECORDS_OFFSET;
+    uint32_t write_address = records_start_for_length(new_block, get_record_len(size_code));
     const uint32_t new_end = new_block + FLASH_BLOCK_SIZE;
-    uint32_t address = old_block + FLASH_RECORDS_OFFSET;
-    const uint32_t old_end = pool->next_address;
+    uint32_t address = pool->records_start;
+    const uint32_t old_end = pool->record_end;
     const uint16_t old_count = pool->record_count;
     const uint16_t payload_len = get_record_len(size_code);
     const uint32_t record_size = get_record_size(payload_len);
     uint16_t copied_count = 0;
+    uint32_t copied_tags = 0xFFFFFFFFu;
     flash_record record;
     uint8_t payload[8];
 
@@ -421,8 +478,20 @@ static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t size_code
                                 payload_len, size_code) != FLASH_OK
             ) return FLASH_ERROR;
 
+            const uint8_t tag_shift = (uint8_t)((copied_count & 0b0111u) << 2);
+            copied_tags &= ~((uint32_t)(~record.logical_id & 0b1111u) << tag_shift);
             write_address += record_size;
             ++copied_count;
+
+            // Write each packed tag word once, after all eight destination records commit.
+            if (!(copied_count & 0b0111u)) {
+                if (copied_tags != 0xFFFFFFFFu &&
+                    HW_FLASH_WRITE(new_block + sizeof(flash_block_header) +
+                                   (uint32_t)((copied_count >> 3) - 1u) * sizeof(copied_tags),
+                                   &copied_tags, sizeof(copied_tags))
+                ) return FLASH_ERROR;
+                copied_tags = 0xFFFFFFFFu;
+            }
         }
         address += record_size;
     }
@@ -434,9 +503,12 @@ static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t size_code
 
     pool->active_block = new_block;
     pool->generation = new_generation;
+    pool->records_start = records_start_for_length(new_block, payload_len);
     pool->next_address = write_address;
     pool->record_end = write_address;
     pool->record_count = copied_count;
+    pool->pending_tags = copied_tags;
+    pool->tag_map_valid = true;
     // Keep the old block until the destination header is committed; it becomes spare after erase.
     return HW_ERASE_BLOCK(old_block) ? FLASH_ERROR : FLASH_OK;
 }
@@ -476,15 +548,18 @@ static inline flash_status flash_log_write(
                 pool->active_block = 0;
                 return FLASH_ERROR;
             }
-            pool->next_address = block + FLASH_RECORDS_OFFSET;
+            pool->records_start = records_start_for_length(block, length);
+            pool->next_address = pool->records_start;
             pool->record_end = pool->next_address;
             pool->record_count = 0;
+            pool->pending_tags = 0xFFFFFFFFu;
+            pool->tag_map_valid = true;
             break;
         }
     }
 
     const uint32_t record_size = get_record_size(length);
-    if (record_size > FLASH_BLOCK_SIZE - FLASH_RECORDS_OFFSET)
+    if (record_size > FLASH_BLOCK_SIZE - (pool->records_start - pool->active_block))
         return FLASH_RECORD_TOO_LARGE;
 
     if (pool->next_address + record_size > pool->active_block + FLASH_BLOCK_SIZE) {
@@ -492,6 +567,7 @@ static inline flash_status flash_log_write(
 
         if (status != FLASH_OK)
             return status;
+        // GC may change active_block and next_address; check whether the new block fits.
         if (pool->next_address + record_size > pool->active_block + FLASH_BLOCK_SIZE)
             return FLASH_FULL;
     }
@@ -500,9 +576,24 @@ static inline flash_status flash_log_write(
         pool->next_address = pool->active_block + FLASH_BLOCK_SIZE;
         return FLASH_ERROR;
     }
+
+    // Accumulate the tag in RAM. Flash stores each tag word once, after all eight
+    // corresponding records are committed, so a reset cannot leave a half-updated word.
+    const uint16_t record_index = pool->record_count;
+    const uint8_t tag_shift = (uint8_t)((record_index & 0b0111u) << 2);
+    pool->pending_tags &= ~((uint32_t)(~logical_id & 0b1111u) << tag_shift);
     pool->next_address += record_size;
     pool->record_end = pool->next_address;
     ++pool->record_count;
+
+    if (!(pool->record_count & 0b0111u)) {
+        if (pool->tag_map_valid &&
+            HW_FLASH_WRITE(pool->active_block + sizeof(flash_block_header) +
+                           (uint32_t)(record_index >> 3) * sizeof(pool->pending_tags),
+                           &pool->pending_tags, sizeof(pool->pending_tags))
+        ) pool->tag_map_valid = false;
+        pool->pending_tags = 0xFFFFFFFFu;
+    }
     return FLASH_OK;
 }
 
@@ -519,21 +610,65 @@ static inline flash_status flash_log_read_fast(
     if (!pool->active_block)
         return FLASH_NOT_FOUND;
 
-    const uint32_t records_start = pool->active_block + FLASH_RECORDS_OFFSET;
+    const uint32_t records_start = pool->records_start;
     const uint32_t record_size = get_record_size(requested_length);
     uint32_t address = pool->record_end;
+    uint16_t cached_tag_group = 0;
+    uint32_t cached_tags = 0;
+    bool tag_group_cached = false;
+    const uint8_t wanted_tag = (uint8_t)(logical_id & 0b1111u);
     flash_record record;
 
     // Newer records are at higher addresses. Scan backward so the first matching
-    // ID is the current value; record_end excludes any damaged or incomplete tail.
+    // ID is the current value. Complete groups use packed tags to skip full headers;
+    // the newest incomplete group and any untrusted map use full-header checks.
     while (address > records_start) {
         if (address - records_start < record_size)
             return FLASH_ERROR;
         address -= record_size;
 
+        const uint16_t record_index = (uint16_t)((address - records_start) / record_size);
+        const uint16_t tag_group = record_index >> 3;
+        bool has_tag = pool->tag_map_valid && tag_group < (pool->record_count >> 3);
+        uint8_t record_tag = 0;
+
+        if (has_tag) {
+            if (!tag_group_cached || cached_tag_group != tag_group) {
+                if (HW_FLASH_READ(pool->active_block + sizeof(flash_block_header) +
+                                  (uint32_t)tag_group * sizeof(cached_tags),
+                                  &cached_tags, sizeof(cached_tags))
+                ) { // A failed hint read must not hide a valid record.
+                    pool->tag_map_valid = false;
+                    address = pool->record_end;
+                    tag_group_cached = false;
+                    continue;
+                }
+                cached_tag_group = tag_group;
+                tag_group_cached = true;
+            }
+
+            if (cached_tags != FLASH_ERASED_WORD) {
+                record_tag = (cached_tags >> ((record_index & 0b0111u) << 2)) & 0b1111u;
+                if (record_tag != wanted_tag)
+                    continue;
+            }
+            else {
+                // An all-ones tag group is unchanged erased flash; check its headers.
+                has_tag = false;
+            }
+        }
+
         if (HW_FLASH_READ(address, &record, sizeof(record)) ||
             get_record_len(record.marker) != requested_length
         ) return FLASH_ERROR;
+
+        if (has_tag && (record.logical_id & 0b1111u) != record_tag) {
+            // Metadata disagrees with the record. Restart without using the hint.
+            pool->tag_map_valid = false;
+            address = pool->record_end;
+            tag_group_cached = false;
+            continue;
+        }
 
         if (record.logical_id == logical_id) {
             if (requested_length > capacity)

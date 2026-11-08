@@ -2,11 +2,12 @@
 
 ## Base format
 
-`flash_log.h` currently uses this format without a per-record metadata table. Its
-read and GC paths scan record headers directly. `FLASH_RECORD_MARKER_4` and
+`flash_log.h` stores a packed 4-bit tag for each record slot. Eight tags share one
+32-bit word. The tag table follows the block header; records start after the
+class-specific table and alignment padding. `FLASH_RECORD_MARKER_4` and
 `FLASH_RECORD_MARKER_8` select the size class for the read/write API; the block
-header uses matching class-specific commit values. Existing flash data in the old
-format is not migrated by this version.
+header uses versioned class-specific commit values. Existing flash data in the old
+format is not migrated; initialization erases it when no current-format block is found.
 
 The API manages one global log. The CH5xx port header defines its pool-state
 array; applications call `flash_log_init()`, `flash_log_read(...)`, and
@@ -16,14 +17,22 @@ Keep the block header when simplifying the log. It records the block generation 
 whether the block contains 4-byte or 8-byte payloads. Startup uses the generation
 and commit marker to choose the newest complete copy after an interrupted GC.
 
-The base block layout should be:
+The block layout is:
 
 ```text
 [block header: generation | size-class commit]
+[tag table: 8 x 4-bit logical-ID tags per 32-bit word]
+[alignment padding]
 [record: CRC | logical ID | record marker | fixed-size payload | alignment padding]
 [record: CRC | logical ID | record marker | fixed-size payload | alignment padding]
 ...
 ```
+
+Each tag belongs to a record's position in the record area. Record strides remain
+class-specific: 12 bytes for 4-byte payloads and 16 bytes for 8-byte payloads. The
+tag table reserves one word for each group of eight record slots. For a 4 KB block,
+that leaves room for 327 4-byte records with a 164-byte tag table, or 248 8-byte
+records with a 124-byte tag table.
 
 The size class is part of the key. A 4-byte value and an 8-byte value with the same
 logical ID are independent values. Keep one active block for each size class and
@@ -70,34 +79,19 @@ each size can rotate between 2 blocks while the other size's active block is lef
 alone. With 4 total blocks, each size can rotate among 3 blocks while the other
 size's active block is left alone.
 
-## Re-adding per-record metadata later
+## Tag table behavior
 
-The per-record metadata table is an optional speed optimization. The record headers
-and payload CRCs remain authoritative; metadata must only help locate records or
-skip obsolete records. If restoring it:
+The 4-bit tag is the low nibble of `logical_id`. It filters candidates during
+newest-to-oldest reads; a matching tag still requires checking the full ID in the
+record header. Collisions cause extra header reads, never incorrect matches.
 
-1. Put the table after the block header and before the records. Calculate the table
-   size and record start offset from the maximum number of records for that block's
-   fixed payload size.
-2. Give the block format a new commit marker/version. The table changes record
-   offsets, so old blocks must not be interpreted using the new layout. Erase or
-   migrate old data before enabling the new format.
-3. Program a record and its commit marker first. Update the metadata only after the
-   record is complete. A failed metadata write must make reads and GC use a full
-   record scan; it must never hide a committed record.
-4. Treat metadata as untrusted until checked against record headers. Before acting
-   on an ID tag or live bit, confirm the record's full logical ID and size class.
-   Tag collisions are hints to keep scanning, not proof of a match.
-5. On an update, mark the previous record obsolete only when both the logical ID
-   and size class match. Flash metadata updates must only clear programmed bits;
-   restoring a cleared bit requires erasing the block.
-6. During GC, copy every current record of the selected size class, write its new
-   metadata, and commit the destination block last. Keep the old block intact until
-   that commit succeeds. Startup can then select the newest committed generation
-   and reclaim an interrupted or older copy.
+The writer accumulates eight tags in RAM and writes their 32-bit table word only
+after all eight corresponding record markers are committed. This avoids rewriting
+the same flash word for each tag. A final group with fewer than eight records has
+no table word yet, so reads check those tail records' full headers.
 
-For the current fixed 4-byte and 8-byte classes, a useful metadata byte could hold
-one live bit and a short logical-ID tag. The block header already supplies the
-payload size, so a per-record length bit is redundant. The tag is only a filter:
-always confirm the complete ID in the record header before returning data or
-marking a record obsolete.
+On startup, the scan recomputes tags from record headers and verifies every
+complete table word. If any word is unreadable or disagrees, the block's tag table
+is treated as untrusted and reads fall back to scanning full record headers. GC
+builds a fresh table as it copies records and commits the destination block only
+after the copied records and complete tag words are written.

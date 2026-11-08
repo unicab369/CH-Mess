@@ -51,12 +51,26 @@ extern uint8_t __flash_log_start[];
 // This port header is included by one C file and owns the global pool-state array.
 log_pool_state flash_log_pools[FLASH_LOG_POOL_COUNT];
 
+#ifdef FLASH_LOG_BENCH_READ_COUNTERS
+// Enabled only by the flash-log read benchmark; count calls and requested bytes.
+extern volatile uint32_t flash_log_bench_read_calls;
+extern volatile uint32_t flash_log_bench_read_bytes;
+extern volatile uint8_t flash_log_bench_count_reads;
+#endif
+
 // Read any byte range using the CH5xx's memory-mapped 32-bit CodeFlash reads.
 __HIGH_CODE int HW_FLASH_READ(uint32_t address, void *dest, size_t length) {
     // Keep the request inside the reserved log region and require a destination.
     if (address < FLASH_BASE_ADDR || address > FLASH_LOG_END ||
         length > FLASH_LOG_END - address || (length && !dest)
     ) return -1;
+
+#ifdef FLASH_LOG_BENCH_READ_COUNTERS
+    if (flash_log_bench_count_reads) {
+        ++flash_log_bench_read_calls;
+        flash_log_bench_read_bytes += (uint32_t)length;
+    }
+#endif
 
     // Copy whole words directly when the flash address, output, and length are
     // all word aligned. memcpy keeps writes to arbitrary output objects valid.
