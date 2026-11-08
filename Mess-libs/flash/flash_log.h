@@ -1,15 +1,17 @@
 #ifndef FUN_FLASH_LOG_H
 #define FUN_FLASH_LOG_H
 
-// Flash layout: erase blocks contain pages; pages hold bytes from the record log.
-// Record header: [CRC | logical_id | marker (payload size + commit)]
-// Before garbage collection, later flash addresses contain newer records for
-// the same logical ID.
+// Flash layout: each erase block starts with a 4-byte block header
+// [generation: 2 bytes | commit: 2 bytes].
+// The active block then holds append-only records. Each record starts with an 8-byte
+// header [CRC: 2 bytes | logical_id: 2 bytes | marker: 4 bytes], followed by its
+// payload and alignment padding.
+// GC copies the newest record for each ID into another block before committing it.
 //
 // [erase block - 4KB (configurable)]
-//   [page: [header] [payload] [alignment padding] ...]
-//   [page: [header] [payload] [alignment padding] ...]
-//   [page: ...record bytes continue...]
+//   [block header: generation (2) | commit (2)]
+//   [record header: CRC (2) | logical_id (2) | marker (4)] [payload] [padding]
+//   [record header: CRC (2) | logical_id (2) | marker (4)] [payload] [padding] ...
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -88,7 +90,7 @@ enum {
 #define FLASH_RECORD_MARKER_8  (((uint32_t)FLASH_RECORD_COMMIT << 16) | 0xBA08u)
 #define FLASH_RECORD_MARKER_16 (((uint32_t)FLASH_RECORD_COMMIT << 16) | 0xBA10u)
 
-#define FLASH_BLOCK_HEADER_COMMIT 0xB10CCAFEu
+#define FLASH_BLOCK_HEADER_COMMIT 0xBABEu
 
 
 // Tracks erase usage and the next write position for one flash block.
@@ -111,16 +113,16 @@ typedef struct {
 
 // Block metadata for power-safe garbage collection.
 // Write generation first and commit last; a block is usable only with a valid commit.
-// Size: 8 bytes, stored at the start of an erase block.
+// Size: 4 bytes, stored at the start of an erase block.
 typedef struct {
-    uint32_t generation; // Increases when GC installs a copied block.
-    uint32_t commit;     // FLASH_BLOCK_HEADER_COMMIT when the block copy is complete.
+    uint16_t generation; // Increases when GC installs a copied block.
+    uint16_t commit;     // FLASH_BLOCK_HEADER_COMMIT when the block copy is complete.
 } flash_block_header;
 
 typedef struct {
     uint32_t next_address;  // Address where the next record will be written.
     uint32_t active_block;  // Block selected by its committed generation header.
-    uint32_t generation;
+    uint16_t generation;
 #if FLASH_REC_MAP_LEN > 0
     uint32_t map_end;       // End address of the newest mapped record.
     uint16_t map_count;
@@ -211,15 +213,20 @@ static inline bool flash_record_is_erased(const flash_record *record) {
 }
 
 static inline flash_status block_header_write(
-    uint32_t address, uint32_t generation
+    uint32_t address, uint16_t generation
 ) {
-    const flash_block_header header = {
+    // Program an erased commit field first, then program the complete 4-byte
+    // word. Both writes stay 4-byte aligned; the second write commits the block.
+    const flash_block_header pending = {
+        .generation = generation,
+        .commit = 0xFFFFu
+    };
+    const flash_block_header committed = {
         .generation = generation,
         .commit = FLASH_BLOCK_HEADER_COMMIT
     };
-    if (HW_FLASH_WRITE(address, &header.generation, sizeof(header.generation)) ||
-        HW_FLASH_WRITE(address + offsetof(flash_block_header, commit),
-                       &header.commit, sizeof(header.commit)))
+    if (HW_FLASH_WRITE(address, &pending, sizeof(pending)) ||
+        HW_FLASH_WRITE(address, &committed, sizeof(committed)))
         return FLASH_ERROR;
     return FLASH_OK;
 }
@@ -242,8 +249,9 @@ static inline flash_status flash_log_init(flash_log *log) {
         if (header.commit != FLASH_BLOCK_HEADER_COMMIT)
             continue;
 
-        // Signed subtraction handles generation wraparound when blocks are compared.
-        if (!found || (int32_t)(header.generation - log->generation) > 0) {
+        // Signed subtraction handles 16-bit wraparound while valid block
+        // generations remain fewer than 32768 increments apart.
+        if (!found || (int16_t)(header.generation - log->generation) > 0) {
             log->active_block = block;
             log->generation = header.generation;
             found = true;
@@ -432,7 +440,7 @@ static inline flash_status flash_log_gc(flash_log *log) {
     }
 
     // Keep this after the copy loop: startup accepts a block only after this commit.
-    const uint32_t new_generation = log->generation + 1u;
+    const uint16_t new_generation = (uint16_t)(log->generation + 1u);
     if (block_header_write(new_block, new_generation) != FLASH_OK)
         return FLASH_ERROR;
 
