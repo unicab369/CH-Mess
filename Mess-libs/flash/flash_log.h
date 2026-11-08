@@ -2,17 +2,30 @@
 #define FUN_FLASH_LOG_H
 
 // Flash layout: each erase block starts with a 4-byte block header
-// [generation: 2 bytes | commit: 2 bytes], followed by a packed record metadata table.
-// The active block then holds append-only records. Each record starts with an 8-byte
-// header [CRC: 2 bytes | logical_id: 2 bytes | marker: 4 bytes], followed by its
-// payload and alignment padding.
+// [generation: 2 bytes | commit: 2 bytes], followed by aligned record metadata.
+// The metadata has one byte per record: live (1 bit), length (1 bit), and ID tag (6 bits).
+// Append-only records follow the metadata. Each starts with an 8-byte header
+// [CRC: 2 bytes | logical_id: 2 bytes | marker: 4 bytes], then its payload and alignment padding.
 // GC copies the newest record for each ID into another block before committing it.
 //
 // [erase block - 4KB (configurable)]
-//   [block header: generation (2) | commit (2)]
-//   [record metadata: one byte per record: live (1) | length (1) | ID tag (6)]
-//   [record header: CRC (2) | logical_id (2) | marker (4)] [payload] [padding]
-//   [record header: CRC (2) | logical_id (2) | marker (4)] [payload] [padding] ...
+//   [block header: generation (2 bytes) | commit (2 bytes)]
+//   [record metadata table: one byte per record:
+//       live (1 bit) | length (1 bit) | ID tag (6 bits)]
+//   [alignment padding]
+//   [record header: CRC (2 bytes) | logical_id (2 bytes) | marker (4 bytes)] [payload] [padding]
+//   [record header: CRC (2 bytes) | logical_id (2 bytes) | marker (4 bytes)] [payload] [padding] ...
+//
+// Capacity for the default 4 KB block and 4-byte alignment:
+//
+// | Payload | Block metadata | Record header | Record size | Records/block | Unused space |
+// |---------|----------------|---------------|-------------|---------------|--------------|
+// | 4 bytes | 320 bytes      | 8 bytes       | 12 bytes    | 314           | 8-byte tail  |
+// | 8 bytes | 320 bytes      | 8 bytes       | 16 bytes    | 236           | 78 meta slots|
+//
+// Block metadata is 4 bytes for the block header plus 314 per-record metadata
+// bytes and 2 alignment bytes. For 8-byte payloads, 236 records use all 3,776
+// bytes after metadata; 78 bytes reserved for record metadata are unused.
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -639,11 +652,11 @@ static inline flash_status flash_log_write(
                 }
 
                 const uint16_t old_length = (entry & (1u << FLASH_META_LENGTH_BIT)) ? 8u : 4u;
-                const bool is_live = (entry & (1u << FLASH_META_LIVE_BIT)) != 0;
-                const bool tag_match = ((entry >> FLASH_META_TAG_SHIFT) & FLASH_META_TAG_MASK) == tag;
 
-                //! Read the old header only if it is live and its tag matches.
-                if (is_live && tag_match) {
+                //! Read the old header only if it is current and its tag matches.
+                if ((entry & (1u << FLASH_META_LIVE_BIT)) &&
+                    ((entry >> FLASH_META_TAG_SHIFT) & FLASH_META_TAG_MASK) == tag
+                ) {
                     flash_record old_record;
 
                     //! Validate the header before trusting its tag or changing its metadata entry.
@@ -726,11 +739,10 @@ static inline flash_status flash_log_read_fast(
             const uint16_t payload_len = (entry & (1u << FLASH_META_LENGTH_BIT)) ? 8u : 4u;
             address -= get_record_size(payload_len);
 
-            //! Skip obsolete entries and tag mismatches; check the next older record.
-            const bool is_live = (entry & (1u << FLASH_META_LIVE_BIT)) != 0;
-            const bool tag_matches = ((entry >> FLASH_META_TAG_SHIFT) & FLASH_META_TAG_MASK) == tag;
-            if (!is_live || !tag_matches)
-                continue;
+            //! Skip outdated entries first; || avoids checking their tag when the live bit is clear.
+            if (!(entry & (1u << FLASH_META_LIVE_BIT)) ||
+                ((entry >> FLASH_META_TAG_SHIFT) & FLASH_META_TAG_MASK) != tag
+            ) continue;
 
             flash_record candidate;
             if (HW_FLASH_READ(address, &candidate, sizeof(candidate)))
