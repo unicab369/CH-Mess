@@ -2,7 +2,7 @@
 #define FUN_FLASH_LOG_H
 
 // Flash layout: each erase block starts with a 4-byte block header
-// [generation: 2 bytes | commit: 2 bytes].
+// [generation: 2 bytes | commit: 2 bytes], followed by a packed record bitmap.
 // The active block then holds append-only records. Each record starts with an 8-byte
 // header [CRC: 2 bytes | logical_id: 2 bytes | marker: 4 bytes], followed by its
 // payload and alignment padding.
@@ -10,6 +10,7 @@
 //
 // [erase block - 4KB (configurable)]
 //   [block header: generation (2) | commit (2)]
+//   [record bitmap: one byte per record: outdated (1) | length (1) | ID tag (6)]
 //   [record header: CRC (2) | logical_id (2) | marker (4)] [payload] [padding]
 //   [record header: CRC (2) | logical_id (2) | marker (4)] [payload] [padding] ...
 
@@ -39,16 +40,6 @@ enum {
 
 #if FLASH_BLOCK_COUNT < 2
 #error "FLASH_BLOCK_COUNT must be at least 2"
-#endif
-
-#ifndef FLASH_REC_MAP_LEN
-// One byte per recent record; 0 disables the reverse lookup map.
-#define FLASH_REC_MAP_LEN 32
-#endif
-
-#if FLASH_REC_MAP_LEN > 0 && \
-    (FLASH_REC_MAP_LEN & (FLASH_REC_MAP_LEN - 1)) != 0
-#error "FLASH_REC_MAP_LEN must be a power of two or zero"
 #endif
 
 #ifndef FLASH_BLOCK_SIZE
@@ -88,9 +79,9 @@ enum {
 #define FLASH_RECORD_MAGIC  0xBA00u
 #define FLASH_RECORD_MARKER_4  (((uint32_t)FLASH_RECORD_COMMIT << 16) | 0xBA04u)
 #define FLASH_RECORD_MARKER_8  (((uint32_t)FLASH_RECORD_COMMIT << 16) | 0xBA08u)
-#define FLASH_RECORD_MARKER_16 (((uint32_t)FLASH_RECORD_COMMIT << 16) | 0xBA10u)
 
-#define FLASH_BLOCK_HEADER_COMMIT 0xBABEu
+// New marker distinguishes the bitmap layout from older block formats.
+#define FLASH_BLOCK_HEADER_COMMIT 0xBA8Bu
 
 
 // Tracks erase usage and the next write position for one flash block.
@@ -119,16 +110,40 @@ typedef struct {
     uint16_t commit;     // FLASH_BLOCK_HEADER_COMMIT when the block copy is complete.
 } flash_block_header;
 
+// Each record uses six ID-tag bits, one size bit (4 or 8 bytes), and one outdated bit.
+// This bitmap format therefore supports only 4-byte and 8-byte payload records.
+#define FLASH_BITMAP_TAG_BITS       6u
+#define FLASH_BITMAP_TAG_MASK       ((1u << FLASH_BITMAP_TAG_BITS) - 1u)
+#define FLASH_BITMAP_OUTDATED_BIT   0u
+#define FLASH_BITMAP_LENGTH_BIT     1u
+#define FLASH_BITMAP_TAG_SHIFT      2u
+#define FLASH_BITMAP_ENTRY_BITS     (FLASH_BITMAP_TAG_BITS + 2u)
+#define FLASH_BITMAP_MIN_REC_SIZE  ((sizeof(flash_record) + 4u + FLASH_ALIGNMENT - 1u) & \
+                                    ~((uint32_t)FLASH_ALIGNMENT - 1u))
+#define FLASH_BITMAP_MAX_RECORDS   (((FLASH_BLOCK_SIZE - sizeof(flash_block_header)) * 8u) / \
+                                    (FLASH_BITMAP_MIN_REC_SIZE * 8u + FLASH_BITMAP_ENTRY_BITS))
+#define FLASH_BITMAP_RAW_BYTES     ((FLASH_BITMAP_MAX_RECORDS * FLASH_BITMAP_ENTRY_BITS + 7u) / 8u)
+#define FLASH_BITMAP_ALIGNMENT     ((FLASH_ALIGNMENT < 4u) ? 4u : FLASH_ALIGNMENT)
+#define FLASH_BITMAP_BYTES         (((sizeof(flash_block_header) + FLASH_BITMAP_RAW_BYTES + \
+                                      FLASH_BITMAP_ALIGNMENT - 1u) & \
+                                     ~((uint32_t)FLASH_BITMAP_ALIGNMENT - 1u)) - \
+                                    sizeof(flash_block_header))
+
+// With a 4 KB block and 4-byte minimum payloads, these evaluate to 314 slots
+// and a 316-byte bitmap; records then start at byte offset 320.
+
+typedef char flash_bitmap_must_fit_block[
+    sizeof(flash_block_header) + FLASH_BITMAP_BYTES +
+    FLASH_BITMAP_MAX_RECORDS * FLASH_BITMAP_MIN_REC_SIZE <= FLASH_BLOCK_SIZE ? 1 : -1
+];
+
 typedef struct {
     uint32_t next_address;  // Address where the next record will be written.
+    uint32_t record_end;    // End of committed records, even if a damaged tail fills the block.
     uint32_t active_block;  // Block selected by its committed generation header.
     uint16_t generation;
-#if FLASH_REC_MAP_LEN > 0
-    uint32_t map_end;       // End address of the newest mapped record.
-    uint16_t map_count;
-    uint16_t map_next;
-    uint8_t record_map[FLASH_REC_MAP_LEN];
-#endif
+    uint16_t record_count;  // Number of committed records in the active block.
+    uint8_t bitmap_valid;   // False if bitmap metadata needs the slower header-scan path.
 } flash_log;
 
 // Hardware interface; implement these functions for the target flash device.
@@ -160,38 +175,149 @@ static inline uint16_t flash_record_len(uint32_t marker) {
     switch (marker) {
     case FLASH_RECORD_MARKER_4:  return 4;
     case FLASH_RECORD_MARKER_8:  return 8;
-    case FLASH_RECORD_MARKER_16: return 16;
     default: return 0;
     }
 }
 
-#if FLASH_REC_MAP_LEN > 0
-// Keep a size code and six-bit ID hint for each of the newest contiguous records.
-static inline void flash_map_store(
-    flash_log *log, uint16_t logical_id, uint32_t address, uint16_t size
-) {
-    // If this record doesn't follow the previous one in flash, discard the map.
-    if (log->map_count && address != log->map_end) {
-        log->map_count = 0;
-        log->map_next = 0;
-    }
-
-    //! Store a six-bit ID hint and a two-bit code for the payload size.
-    const uint8_t id_hint = (uint8_t)((logical_id ^ (logical_id >> 6) ^
-                                       (logical_id >> 12)) & 0x3fu);
-    const uint8_t size_code = size == 4 ? 0 : size == 8 ? 1 : 2;
-    log->record_map[log->map_next] = (uint8_t)((id_hint << 2) | size_code);
-
-    //! Advance the circular map slot and cap its count at its capacity.
-    log->map_next = (log->map_next + 1u) & (FLASH_REC_MAP_LEN - 1u);
-    if (log->map_count < FLASH_REC_MAP_LEN)
-        ++log->map_count;
-
-    //! Remember where the next contiguous record should begin.
-    log->map_end = address + ((sizeof(flash_record) + size + FLASH_ALIGNMENT - 1u) &
-                              ~((uint32_t)FLASH_ALIGNMENT - 1u));
+static inline uint8_t flash_bitmap_id_tag(uint16_t logical_id) {
+    const uint16_t mixed = logical_id ^ (logical_id >> 6) ^ (logical_id >> 12);
+    return (uint8_t)(mixed & FLASH_BITMAP_TAG_MASK);
 }
+
+static inline uint32_t flash_records_start(uint32_t block) {
+    return block + sizeof(flash_block_header) + FLASH_BITMAP_BYTES;
+}
+
+static inline uint32_t flash_bitmap_address(uint32_t block) {
+    return block + sizeof(flash_block_header);
+}
+
+// CH5xx CodeFlash can read an erased word as a value other than 0xFFFFFFFF.
+// Establish and verify the all-ones bitmap state before writing any records.
+static inline int flash_bitmap_prepare(uint32_t block) {
+#if FLASH_ERASED_WORD == 0xFFFFFFFFu
+    (void)block;
+    return 0;
+#else
+    uint32_t fill[8];
+    uint32_t check[8];
+    for (size_t i = 0; i < sizeof(fill) / sizeof(fill[0]); ++i)
+        fill[i] = 0xFFFFFFFFu;
+
+    const uint32_t start = flash_bitmap_address(block);
+    for (uint32_t offset = 0; offset < FLASH_BITMAP_BYTES; offset += sizeof(fill)) {
+        const size_t remaining = FLASH_BITMAP_BYTES - offset;
+        const size_t count = remaining < sizeof(fill) ? remaining : sizeof(fill);
+        if (HW_FLASH_WRITE(start + offset, fill, count) ||
+            HW_FLASH_READ(start + offset, check, count))
+            return -1;
+        for (size_t i = 0; i < count / sizeof(check[0]); ++i)
+            if (check[i] != 0xFFFFFFFFu)
+                return -1;
+    }
+    return 0;
 #endif
+}
+
+static inline int flash_bitmap_write_word(uint32_t address, uint32_t word) {
+    if (HW_FLASH_WRITE(address, &word, sizeof(word)))
+        return -1;
+#if FLASH_ERASED_WORD != 0xFFFFFFFFu
+    uint32_t check;
+    if (HW_FLASH_READ(address, &check, sizeof(check)) || check != word)
+        return -1;
+#endif
+    return 0;
+}
+
+// A set outdated bit means the record is live; clearing it marks the record obsolete.
+// The length bit selects 4 or 8 payload bytes, and the six tag bits filter ID scans.
+static inline int flash_bitmap_read_entry(uint32_t block, uint16_t index, uint8_t *entry) {
+    if (!entry || index >= FLASH_BITMAP_MAX_RECORDS)
+        return -1;
+    return HW_FLASH_READ(flash_bitmap_address(block) + index, entry, sizeof(*entry));
+}
+
+// Program only 1-to-0 transitions in the word containing this byte.
+static inline int flash_bitmap_program_entry(
+    uint32_t block, uint16_t index, uint8_t entry
+) {
+    if (index >= FLASH_BITMAP_MAX_RECORDS)
+        return -1;
+
+    const uint32_t word_address = flash_bitmap_address(block) + (index & ~3u);
+    const uint8_t shift = (uint8_t)((index & 3u) * 8u);
+    uint32_t word;
+    if (HW_FLASH_READ(word_address, &word, sizeof(word)))
+        return -1;
+
+    const uint8_t current_entry = (uint8_t)(word >> shift);
+    if ((current_entry & entry) != entry)
+        return -1; // Flash cannot change a programmed zero back to one.
+
+    const uint32_t updated = word & ~((uint32_t)(~entry & 0xffu) << shift);
+    return updated == word ? 0 : flash_bitmap_write_word(word_address, updated);
+}
+
+static inline int flash_bitmap_store_record(
+    uint32_t block, uint16_t index, uint16_t logical_id, uint16_t length
+) {
+    if (length != 4u && length != 8u)
+        return -1;
+    const uint8_t entry = (uint8_t)((1u << FLASH_BITMAP_OUTDATED_BIT) |
+                                    (length == 8u ? (1u << FLASH_BITMAP_LENGTH_BIT) : 0u) |
+                                    (flash_bitmap_id_tag(logical_id) << FLASH_BITMAP_TAG_SHIFT));
+    return flash_bitmap_program_entry(block, index, entry);
+}
+
+static inline int flash_bitmap_mark_outdated(uint32_t block, uint16_t index) {
+    if (index >= FLASH_BITMAP_MAX_RECORDS)
+        return -1;
+
+    const uint32_t word_address = flash_bitmap_address(block) + (index & ~3u);
+    const uint32_t mask = 1u << ((index & 3u) * 8u + FLASH_BITMAP_OUTDATED_BIT);
+    uint32_t word;
+    if (HW_FLASH_READ(word_address, &word, sizeof(word)))
+        return -1;
+    if (!(word & mask))
+        return 0;
+
+    word &= ~mask;
+    return flash_bitmap_write_word(word_address, word);
+}
+
+// Mark earlier live records for this ID obsolete, checking full IDs after tag matches.
+static inline int flash_bitmap_mark_previous(
+    flash_log *log, uint16_t logical_id, uint16_t record_limit
+) {
+    if (!log->bitmap_valid)
+        return 0;
+
+    const uint8_t tag = flash_bitmap_id_tag(logical_id);
+    uint32_t address = flash_records_start(log->active_block);
+    for (uint16_t index = 0; index < record_limit; ++index) {
+        uint8_t entry;
+        if (flash_bitmap_read_entry(log->active_block, index, &entry))
+            return -1;
+
+        const uint16_t length = (entry & (1u << FLASH_BITMAP_LENGTH_BIT)) ? 8u : 4u;
+        if ((entry & (1u << FLASH_BITMAP_OUTDATED_BIT)) &&
+            ((entry >> FLASH_BITMAP_TAG_SHIFT) & FLASH_BITMAP_TAG_MASK) == tag
+        ) {
+            flash_record record;
+            if (HW_FLASH_READ(address, &record, sizeof(record)) ||
+                flash_record_len(record.marker) != length ||
+                flash_bitmap_id_tag(record.logical_id) != tag
+            ) return -1;
+            if (record.logical_id == logical_id &&
+                flash_bitmap_mark_outdated(log->active_block, index))
+                return -1;
+        }
+        address += (sizeof(flash_record) + length + FLASH_ALIGNMENT - 1u) &
+                   ~((uint32_t)FLASH_ALIGNMENT - 1u);
+    }
+    return 0;
+}
 
 // Move an address to the start of the next erase block.
 static inline uint32_t flash_get_next_block(uint32_t address) {
@@ -267,21 +393,25 @@ static inline flash_status flash_log_init(flash_log *log) {
         // Make the first block active. The helper writes its commit marker last.
         log->active_block = FLASH_BASE_ADDR;
         log->generation = 1;
+        if (flash_bitmap_prepare(log->active_block))
+            return FLASH_ERROR;
         if (block_header_write(log->active_block, log->generation) != FLASH_OK)
             return FLASH_ERROR;
     }
 
     flash_record record;
     const uint32_t block_end = log->active_block + FLASH_BLOCK_SIZE;
-    log->next_address = log->active_block + sizeof(flash_block_header);
-#if FLASH_REC_MAP_LEN > 0
-    log->map_count = 0;
-    log->map_next = 0;
-    log->map_end = log->next_address;
-#endif
-
-    //! Scan records in the selected block until the first unused slot.
+    log->next_address = flash_records_start(log->active_block);
+    log->record_end = log->next_address;
+    log->record_count = 0;
+    log->bitmap_valid = 1;
+    //! Scan committed records until the first unused slot.
     while (log->next_address + sizeof(record) <= block_end) {
+        if (log->record_count >= FLASH_BITMAP_MAX_RECORDS) {
+            log->next_address = block_end;
+            break;
+        }
+
         if (HW_FLASH_READ(log->next_address, &record, sizeof(record)))
             return FLASH_ERROR;
 
@@ -317,24 +447,38 @@ static inline flash_status flash_log_init(flash_log *log) {
             break;
         }
 
-        uint8_t crc_chunk[16];
+        uint8_t crc_chunk[8];
         uint32_t crc_address = log->next_address + sizeof(record);
         uint16_t crc_remaining = record_length;
 
-        //! Payloads are at most 16 bytes, so read and checksum the payload at once.
-        if (HW_FLASH_READ(crc_address, crc_chunk, crc_remaining))
+        uint8_t bitmap_entry;
+        if (flash_bitmap_read_entry(log->active_block, log->record_count, &bitmap_entry))
             return FLASH_ERROR;
 
-        if (flash_crc_calculate(crc_chunk, crc_remaining) != record.crc) {
-            log->next_address = block_end;
-            break;
+        if (((bitmap_entry >> FLASH_BITMAP_LENGTH_BIT) & 1u ? 8u : 4u) != record_length ||
+            ((bitmap_entry >> FLASH_BITMAP_TAG_SHIFT) & FLASH_BITMAP_TAG_MASK) !=
+                flash_bitmap_id_tag(record.logical_id)
+        ) {
+            // A committed record without matching bitmap metadata falls back to header scans.
+            log->bitmap_valid = 0;
         }
 
-#if FLASH_REC_MAP_LEN > 0
-        flash_map_store(log, record.logical_id, log->next_address, record_length);
-#endif
+        // Outdated records cannot be returned, so their payload CRC need not be read at startup.
+        if (!log->bitmap_valid ||
+            (bitmap_entry & (1u << FLASH_BITMAP_OUTDATED_BIT))) {
+            //! Payloads are at most 8 bytes, so read and checksum the payload at once.
+            if (HW_FLASH_READ(crc_address, crc_chunk, crc_remaining))
+                return FLASH_ERROR;
+
+            if (flash_crc_calculate(crc_chunk, crc_remaining) != record.crc) {
+                log->next_address = block_end;
+                break;
+            }
+        }
 
         log->next_address += record_size;
+        log->record_end = log->next_address;
+        ++log->record_count;
     }
 
     return FLASH_OK;
@@ -373,18 +517,24 @@ static inline flash_status flash_log_gc(flash_log *log) {
     // The destination must be erased before any copied records are written.
     if (HW_ERASE_BLOCK(new_block))
         return FLASH_ERROR;
+    if (flash_bitmap_prepare(new_block))
+        return FLASH_ERROR;
 
-    // Reserve the destination header; records are copied after it.
-    uint32_t write_address = new_block + sizeof(flash_block_header);
+    // Reserve the block header and bitmap; copied records follow both.
+    uint32_t write_address = flash_records_start(new_block);
     const uint32_t new_end = new_block + FLASH_BLOCK_SIZE;
-    uint32_t address = old_block + sizeof(flash_block_header);
+    uint32_t address = flash_records_start(old_block);
     flash_record record;
-    uint8_t payload[16];
+    uint8_t payload[8];
     // Keep the source scan bound fixed while the active log state is unchanged.
     const uint32_t old_end = log->next_address;
+    const uint16_t old_record_count = log->record_count;
+    uint16_t source_index = 0;
+    uint16_t copied_count = 0;
+    bool source_bitmap_valid = log->bitmap_valid != 0;
 
     // Walk the old log in append order.
-    while (address + sizeof(record) <= old_end) {
+    while (source_index < old_record_count && address + sizeof(record) <= old_end) {
         if (HW_FLASH_READ(address, &record, sizeof(record)))
             return FLASH_ERROR;
 
@@ -400,27 +550,45 @@ static inline flash_status flash_log_gc(flash_log *log) {
         if (record_size > src_remaining)
             break;
 
-        // True when a later record has the same ID, so this older value can be skipped.
-        bool has_newer_record = false;
-        uint32_t later_address = address + record_size;
-
-        // Search later records for the same ID; if found, copy that newer record instead.
-        while (later_address + sizeof(record) <= old_end) {
-            flash_record candidate;
-            if (HW_FLASH_READ(later_address, &candidate, sizeof(candidate)))
+        bool outdated = false;
+        uint8_t bitmap_entry = 0xffu;
+        if (source_bitmap_valid) {
+            if (flash_bitmap_read_entry(old_block, source_index, &bitmap_entry))
                 return FLASH_ERROR;
-
-            const uint16_t later_length = flash_record_len(candidate.marker);
-            if (!later_length || later_length > old_end - later_address - sizeof(candidate))
-                break;
-            if (candidate.logical_id == record.logical_id) {
-                has_newer_record = true;
-                break;
+            if (((bitmap_entry >> FLASH_BITMAP_LENGTH_BIT) & 1u ? 8u : 4u) != payload_len ||
+                ((bitmap_entry >> FLASH_BITMAP_TAG_SHIFT) & FLASH_BITMAP_TAG_MASK) !=
+                    flash_bitmap_id_tag(record.logical_id)
+            ) {
+                // Do not trust a mismatched hint; use the full-ID fallback for this GC.
+                source_bitmap_valid = false;
+            } else {
+                outdated = !(bitmap_entry & (1u << FLASH_BITMAP_OUTDATED_BIT));
             }
-            later_address += flash_record_size(later_length);
         }
 
-        if (!has_newer_record) {
+        // If metadata is unavailable, preserve correctness by checking later full IDs.
+        bool has_newer_record = false;
+        if (!source_bitmap_valid && !outdated) {
+            uint16_t later_index = (uint16_t)(source_index + 1u);
+            uint32_t later_address = address + record_size;
+            while (later_index < old_record_count && later_address + sizeof(record) <= old_end) {
+                flash_record candidate;
+                if (HW_FLASH_READ(later_address, &candidate, sizeof(candidate)))
+                    return FLASH_ERROR;
+
+                const uint16_t later_length = flash_record_len(candidate.marker);
+                if (!later_length || later_length > old_end - later_address - sizeof(candidate))
+                    break;
+                if (candidate.logical_id == record.logical_id) {
+                    has_newer_record = true;
+                    break;
+                }
+                later_address += flash_record_size(later_length);
+                ++later_index;
+            }
+        }
+
+        if (!outdated && !has_newer_record) {
             // Check destination capacity before reading the source payload.
             if (write_address + record_size > new_end)
                 return FLASH_FULL;
@@ -432,11 +600,17 @@ static inline flash_status flash_log_gc(flash_log *log) {
                                       payload_len, record.marker) != FLASH_OK
             ) return FLASH_ERROR;
 
+            if (flash_bitmap_store_record(new_block, copied_count,
+                                          record.logical_id, payload_len))
+                return FLASH_ERROR;
+
             // Advance the destination cursor to the next free record position.
             write_address += record_size;
+            ++copied_count;
         }
         // Advance through the source log whether this record was copied or skipped.
         address += record_size;
+        ++source_index;
     }
 
     // Keep this after the copy loop: startup accepts a block only after this commit.
@@ -448,25 +622,9 @@ static inline flash_status flash_log_gc(flash_log *log) {
     log->active_block = new_block;
     log->generation = new_generation;
     log->next_address = write_address;
-
-#if FLASH_REC_MAP_LEN > 0
-    // Rebuild the RAM reverse map so it points into the newly active block.
-    log->map_count = 0;
-    log->map_next = 0;
-    log->map_end = new_block + sizeof(flash_block_header);
-    address = log->map_end;
-
-    // Read headers only while a full header remains in the copied records.
-    while (address + sizeof(record) <= log->next_address) {
-        if (HW_FLASH_READ(address, &record, sizeof(record)))
-            return FLASH_ERROR;
-        const uint16_t length = flash_record_len(record.marker);
-        if (!length) break;
-
-        flash_map_store(log, record.logical_id, address, length);
-        address += flash_record_size(length);
-    }
-#endif
+    log->record_end = write_address;
+    log->record_count = copied_count;
+    log->bitmap_valid = 1;
 
     // The committed destination is recoverable now; erase the old copy last.
     if (HW_ERASE_BLOCK(old_block))
@@ -490,16 +648,21 @@ static inline flash_status flash_log_write(
     if (total > FLASH_BLOCK_SIZE)
         return FLASH_RECORD_TOO_LARGE;
 
-    // Run GC if the next record would extend past the active block's end.
-    if (log->next_address + total > log->active_block + FLASH_BLOCK_SIZE) {
+    // Run GC if data space or bitmap slots are exhausted.
+    if (log->next_address + total > log->active_block + FLASH_BLOCK_SIZE ||
+        log->record_count >= FLASH_BITMAP_MAX_RECORDS
+    ) {
         const flash_status gc_status = flash_log_gc(log);
 
         if (gc_status != FLASH_OK)
             return gc_status;
-        if (log->next_address + total > log->active_block + FLASH_BLOCK_SIZE)
+        if (log->next_address + total > log->active_block + FLASH_BLOCK_SIZE ||
+            log->record_count >= FLASH_BITMAP_MAX_RECORDS
+        )
             return FLASH_FULL;
     }
 
+    const uint16_t record_index = log->record_count;
     if (flash_write_at(log->next_address, logical_id,
         (const uint8_t *)data, length, marker) != FLASH_OK
     ) {
@@ -507,10 +670,17 @@ static inline flash_status flash_log_write(
         return FLASH_ERROR;
     }
 
+    // The record is committed. Bitmap failures disable the optimization but do not
+    // turn a successful value write into an apparent failure.
+    ++log->record_count;
+    if (log->bitmap_valid &&
+        (flash_bitmap_store_record(log->active_block, record_index,
+                                   logical_id, length) ||
+         flash_bitmap_mark_previous(log, logical_id, record_index))
+    ) log->bitmap_valid = 0;
+
     log->next_address += total;
-#if FLASH_REC_MAP_LEN > 0
-    flash_map_store(log, logical_id, log->next_address - total, length);
-#endif
+    log->record_end = log->next_address;
     return FLASH_OK;
 }
 
@@ -521,60 +691,54 @@ static inline flash_status flash_log_read_fast(
     flash_log *log, uint16_t logical_id, void *data,
     uint16_t capacity, uint16_t *length
 ) {
-#if FLASH_REC_MAP_LEN > 0
-    // Start just past the newest mapped record and walk toward older records.
-    uint32_t candidate_addr = log->map_end;
-    // Each map byte packs a six-bit ID hint (which can collide) and a two-bit payload-size code.
-    const uint8_t id_hint = (uint8_t)((logical_id ^ (logical_id >> 6) ^
-                                       (logical_id >> 12)) & 0x3fu);
+    // Walk newest-to-oldest using the bitmap to skip obsolete records and tag mismatches.
+    if (log->bitmap_valid) {
+        uint32_t address = log->record_end;
+        uint16_t index = log->record_count;
+        const uint8_t tag = flash_bitmap_id_tag(logical_id);
 
-    // map_next changes as records are added; it points to the next slot to write.
-    // Walk backward from the latest entry, wrapping around the ring as needed.
-    const uint16_t map_count = log->map_count;
+        while (index) {
+            uint8_t entry;
+            --index;
+            if (flash_bitmap_read_entry(log->active_block, index, &entry))
+                return FLASH_ERROR;
 
-    for (uint16_t n = 0; n < map_count; ++n) {
-        // The map is a ring; map_next points to the next slot to overwrite.
-        const uint16_t index = (log->map_next - 1u - n) & (FLASH_REC_MAP_LEN - 1u);
+            const uint16_t payload_len =
+                (entry & (1u << FLASH_BITMAP_LENGTH_BIT)) ? 8u : 4u;
+            address -= flash_record_size(payload_len);
+            if (!(entry & (1u << FLASH_BITMAP_OUTDATED_BIT)) ||
+                ((entry >> FLASH_BITMAP_TAG_SHIFT) & FLASH_BITMAP_TAG_MASK) != tag
+            )
+                continue;
 
-        //! The map entry contains a six-bit ID hint and a two-bit payload-size code.
-        const uint8_t map_entry = log->record_map[index];
-        //! The low two bits encode payload sizes 4, 8, and 16.
-        const uint16_t payload_len = (uint16_t)(4u << (map_entry & 3u));
-        //! Move back to this record's start so the next iteration can check the older record.
-        candidate_addr -= (sizeof(flash_record) + payload_len + FLASH_ALIGNMENT - 1u) &
-                       ~((uint32_t)FLASH_ALIGNMENT - 1u);
+            flash_record candidate;
+            if (HW_FLASH_READ(address, &candidate, sizeof(candidate)))
+                return FLASH_ERROR;
+            if (flash_record_len(candidate.marker) != payload_len ||
+                flash_bitmap_id_tag(candidate.logical_id) != tag
+            ) {
+                // Ignore suspect metadata and retry using authoritative record headers.
+                log->bitmap_valid = 0;
+                break;
+            }
+            if (candidate.logical_id != logical_id)
+                continue;
+            if (payload_len > capacity)
+                return FLASH_BUFFER_TOO_SMALL;
+            if (HW_FLASH_READ(address + sizeof(candidate), data, payload_len) ||
+                flash_crc_calculate((const uint8_t *)data, payload_len) != candidate.crc
+            ) return FLASH_ERROR;
+            *length = payload_len;
+            return FLASH_OK;
+        }
 
-        //! Skip this entry if its ID hint doesn't match; check older entries.
-        if ((map_entry >> 2) != id_hint)
-            continue;
-
-        //! Read the header first so a hint collision needs no payload read.
-        flash_record candidate;
-        if (HW_FLASH_READ(candidate_addr, &candidate, sizeof(candidate)))
-            return FLASH_ERROR;
-
-        //! Confirm the full header before using this payload.
-        if (candidate.logical_id != logical_id ||
-            flash_record_len(candidate.marker) != payload_len
-        ) continue;
-
-        //! confirm the full ID before reporting that this matching record needs a larger buffer.
-        if (payload_len > capacity)
-            return FLASH_BUFFER_TOO_SMALL;
-
-        //! Read the matched record's payload into the caller's buffer.
-        if (HW_FLASH_READ(candidate_addr + sizeof(candidate), data, payload_len))
-            return FLASH_ERROR;
-        if (flash_crc_calculate((const uint8_t *)data, payload_len) != candidate.crc)
-            return FLASH_ERROR;
-        *length = payload_len;
-        return FLASH_OK;
+        if (log->bitmap_valid)
+            return FLASH_NOT_FOUND;
     }
-#endif
 
     // An ID older than the mapped range still needs the full flash scan.
     // Scan records and remember the newest matching logical ID.
-    uint32_t address = log->active_block + sizeof(flash_block_header);
+    uint32_t address = flash_records_start(log->active_block);
     uint32_t new_address = 0;
     uint16_t new_crc = 0;
     uint16_t new_length = 0;
