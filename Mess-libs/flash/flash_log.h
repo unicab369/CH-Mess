@@ -1,31 +1,23 @@
 #ifndef FUN_FLASH_LOG_H
 #define FUN_FLASH_LOG_H
 
-// Flash layout: each erase block starts with a 4-byte block header
-// [generation: 2 bytes | commit: 2 bytes], followed by aligned record metadata.
-// The metadata has one byte per record: live (1 bit), length (1 bit), and ID tag (6 bits).
-// Append-only records follow the metadata. Each starts with an 8-byte header
+// Each block starts with a 4-byte header [generation: 2 bytes | size-class commit: 2 bytes].
+// The header fixes the payload size for every record in the block (4 or 8 bytes).
+// Records start immediately after it. Each record has an 8-byte header
 // [CRC: 2 bytes | logical_id: 2 bytes | marker: 4 bytes], then its payload and alignment padding.
-// GC copies the newest record for each ID into another block before committing it.
+// GC copies the newest value for each (logical ID, size class) into a shared spare block.
 //
 // [erase block - 4KB (configurable)]
-//   [block header: generation (2 bytes) | commit (2 bytes)]
-//   [record metadata table: one byte per record:
-//       live (1 bit) | length (1 bit) | ID tag (6 bits)]
-//   [alignment padding]
+//   [block header: generation (2 bytes) | size-class commit (2 bytes)]
 //   [record header: CRC (2 bytes) | logical_id (2 bytes) | marker (4 bytes)] [payload] [padding]
 //   [record header: CRC (2 bytes) | logical_id (2 bytes) | marker (4 bytes)] [payload] [padding] ...
 //
 // Capacity for the default 4 KB block and 4-byte alignment:
 //
-// | Payload | Block metadata | Record header | Record size | Records/block | Unused space |
-// |---------|----------------|---------------|-------------|---------------|--------------|
-// | 4 bytes | 320 bytes      | 8 bytes       | 12 bytes    | 314           | 8-byte tail  |
-// | 8 bytes | 320 bytes      | 8 bytes       | 16 bytes    | 236           | 78 meta slots|
-//
-// Block metadata is 4 bytes for the block header plus 314 per-record metadata
-// bytes and 2 alignment bytes. For 8-byte payloads, 236 records use all 3,776
-// bytes after metadata; 78 bytes reserved for record metadata are unused.
+// | Payload | Block header | Record header | Record size | Records/block | Unused space |
+// |---------|--------------|---------------|-------------|---------------|--------------|
+// | 4 bytes | 4 bytes      | 8 bytes       | 12 bytes    | 341           | no tail      |
+// | 8 bytes | 4 bytes      | 8 bytes       | 16 bytes    | 255           | 12-byte tail |
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -54,6 +46,7 @@ enum {
 #if FLASH_BLOCK_COUNT < 2
 #error "FLASH_BLOCK_COUNT must be at least 2"
 #endif
+// Two active size classes need at least one additional block for shared GC scratch.
 
 #ifndef FLASH_BLOCK_SIZE
 #define FLASH_BLOCK_SIZE   4096
@@ -90,11 +83,13 @@ enum {
 
 #define FLASH_RECORD_COMMIT 0xCAFEu
 #define FLASH_RECORD_MAGIC  0xBA00u
+// Pass one of these as the size selector to flash_log_read() and flash_log_write().
 #define FLASH_RECORD_MARKER_4  (((uint32_t)FLASH_RECORD_COMMIT << 16) | 0xBA04u)
 #define FLASH_RECORD_MARKER_8  (((uint32_t)FLASH_RECORD_COMMIT << 16) | 0xBA08u)
 
-// New marker distinguishes the record metadata layout from older block formats.
-#define FLASH_BLOCK_HEADER_COMMIT 0xBA8Bu
+// These values commit the block and identify its fixed payload size.
+#define FLASH_BLOCK_HEADER_COMMIT_4 0xBA84u
+#define FLASH_BLOCK_HEADER_COMMIT_8 0xBA88u
 
 
 // Header stored before each value in the append-only flash log.
@@ -112,37 +107,11 @@ typedef struct {
 // Size: 4 bytes, stored at the start of an erase block.
 typedef struct {
     uint16_t generation; // Increases when GC installs a copied block.
-    uint16_t commit;     // FLASH_BLOCK_HEADER_COMMIT when the block copy is complete.
+    uint16_t commit;     // Size-class commit value, written after records are copied.
 } flash_block_header;
 
-// Each record uses six ID-tag bits, one size bit (4 or 8 bytes), and one live bit.
-// This record metadata format therefore supports only 4-byte and 8-byte payload records.
-#define FLASH_META_TAG_BITS       6u
-#define FLASH_META_TAG_MASK       ((1u << FLASH_META_TAG_BITS) - 1u)
-#define FLASH_META_LIVE_BIT       0u
-#define FLASH_META_LENGTH_BIT     1u
-#define FLASH_META_TAG_SHIFT      2u
-#define FLASH_META_ENTRY_BITS     (FLASH_META_TAG_BITS + 2u)
-#define FLASH_META_MIN_REC_SIZE  ((sizeof(flash_record) + 4u + FLASH_ALIGNMENT - 1u) & \
-                                    ~((uint32_t)FLASH_ALIGNMENT - 1u))
-#define FLASH_META_MAX_RECORDS   (((FLASH_BLOCK_SIZE - sizeof(flash_block_header)) * 8u) / \
-                                    (FLASH_META_MIN_REC_SIZE * 8u + FLASH_META_ENTRY_BITS))
-#define FLASH_META_RAW_BYTES     ((FLASH_META_MAX_RECORDS * FLASH_META_ENTRY_BITS + 7u) / 8u)
-#define FLASH_META_ALIGNMENT     ((FLASH_ALIGNMENT < 4u) ? 4u : FLASH_ALIGNMENT)
-#define FLASH_META_BYTES         (((sizeof(flash_block_header) + FLASH_META_RAW_BYTES + \
-                                      FLASH_META_ALIGNMENT - 1u) & \
-                                     ~((uint32_t)FLASH_META_ALIGNMENT - 1u)) - \
-                                    sizeof(flash_block_header))
-
-// With a 4 KB block and 4-byte minimum payloads, these evaluate to 314 slots
-// and a 316-byte record metadata table; records then start at byte offset 320.
-
-// Compile-time check: the header, record metadata table, and minimum-size record slots must
-// all fit inside one erase block; otherwise this typedef fails to compile.
-typedef char record_meta_must_fit_block[
-    sizeof(flash_block_header) + FLASH_META_BYTES +
-    FLASH_META_MAX_RECORDS * FLASH_META_MIN_REC_SIZE <= FLASH_BLOCK_SIZE ? 1 : -1
-];
+#define FLASH_RECORDS_OFFSET \
+    ((sizeof(flash_block_header) + FLASH_ALIGNMENT - 1u) & ~((uint32_t)FLASH_ALIGNMENT - 1u))
 
 typedef struct {
     uint32_t next_address;  // Address where the next record will be written.
@@ -150,7 +119,17 @@ typedef struct {
     uint32_t active_block;  // Block selected by its committed generation header.
     uint16_t generation;
     uint16_t record_count;  // Number of committed records in the active block.
-    uint8_t record_meta_trusted; // False if record metadata needs the slower header-scan path.
+} flash_log_pool;
+
+enum {
+    FLASH_LOG_POOL_4,
+    FLASH_LOG_POOL_8,
+    FLASH_LOG_POOL_COUNT
+};
+
+// Each size class has one active block. Any erased non-active block can be shared by GC.
+typedef struct {
+    flash_log_pool pools[FLASH_LOG_POOL_COUNT];
 } flash_log;
 
 // Hardware interface; implement these functions for the target flash device.
@@ -186,90 +165,26 @@ static inline uint16_t get_record_len(uint32_t marker) {
     }
 }
 
-static inline uint8_t get_id_tag(uint16_t logical_id) {
-    const uint16_t mixed = logical_id ^ (logical_id >> 6) ^ (logical_id >> 12);
-    return (uint8_t)(mixed & FLASH_META_TAG_MASK);
-}
-
-// CH5xx CodeFlash can read an erased word as a value other than 0xFFFFFFFF.
-// Establish and verify the all-ones record metadata state before writing records.
-static inline int record_meta_init(uint32_t block) {
-#if FLASH_ERASED_WORD == 0xFFFFFFFFu
-    (void)block;
-    return 0;
-#else
-    uint32_t fill[8];
-    uint32_t check[8];
-    for (size_t i = 0; i < sizeof(fill) / sizeof(fill[0]); ++i)
-        fill[i] = 0xFFFFFFFFu;
-
-    const uint32_t start = block + sizeof(flash_block_header);
-
-    //! Write record metadata as all 1s in chunks, then read each chunk back to verify it.
-    for (uint32_t offset = 0; offset < FLASH_META_BYTES; offset += sizeof(fill)) {
-        const size_t remaining = FLASH_META_BYTES - offset;
-        const size_t count = remaining < sizeof(fill) ? remaining : sizeof(fill);
-
-        if (HW_FLASH_WRITE(start + offset, fill, count) ||
-            HW_FLASH_READ(start + offset, check, count)
-        ) return -1;
-
-        for (size_t i = 0; i < count / sizeof(check[0]); ++i)
-            if (check[i] != 0xFFFFFFFFu)
-                return -1;
+static inline uint16_t block_commit_for_size(uint32_t size_code) {
+    switch (size_code) {
+    case FLASH_RECORD_MARKER_4: return FLASH_BLOCK_HEADER_COMMIT_4;
+    case FLASH_RECORD_MARKER_8: return FLASH_BLOCK_HEADER_COMMIT_8;
+    default: return 0;
     }
-    return 0;
-#endif
 }
 
-static inline int write_record_meta_word(uint32_t address, uint32_t word) {
-    if (HW_FLASH_WRITE(address, &word, sizeof(word)))
-        return -1;
-#if FLASH_ERASED_WORD != 0xFFFFFFFFu
-    uint32_t check;
-    if (HW_FLASH_READ(address, &check, sizeof(check)) || check != word)
-        return -1;
-#endif
+static inline uint32_t block_size_for_commit(uint16_t commit) {
+    if (commit == FLASH_BLOCK_HEADER_COMMIT_4) return FLASH_RECORD_MARKER_4;
+    if (commit == FLASH_BLOCK_HEADER_COMMIT_8) return FLASH_RECORD_MARKER_8;
     return 0;
-}
-
-static inline int store_record_meta(
-    uint32_t block, uint16_t record_index, uint16_t logical_id, uint16_t length
-) {
-    if (record_index >= FLASH_META_MAX_RECORDS || (length != 4u && length != 8u))
-        return -1;
-
-    // Metadata byte layout: 1 live bit, 1 payload-length bit, and 6 logical-ID tag bits.
-    const uint8_t entry = (uint8_t)((1u << FLASH_META_LIVE_BIT) |
-                                    (length == 8u ? (1u << FLASH_META_LENGTH_BIT) : 0u) |
-                                    (get_id_tag(logical_id) << FLASH_META_TAG_SHIFT));
-
-    // Metadata bytes are read in 4-byte words: [A B C D] [E F G H] ...
-    // `record_index & ~0b11u` rounds down to a multiple of 4 to find the word's start.
-    // For index 6(G), this rounds down to E.
-    const uint32_t word_address = block + sizeof(flash_block_header) +
-                                  (record_index & ~0b11u);
-    uint32_t record_meta_word;
-    if (HW_FLASH_READ(word_address, &record_meta_word, sizeof(record_meta_word)))
-        return -1;
-
-    // For index 6(G), 0b110 & 0b11 = 0b10 (2), selecting G (3rd byte) in [E F G H].
-    // G is 2 bytes after E, so its bit offset from the word start is 2 * 8 = 16.
-    const uint8_t entry_shift = (uint8_t)((record_index & 0b11u) * 8u);
-    if (((record_meta_word >> entry_shift) & entry) != entry)
-        return -1;
-
-    //! NOTE: Flash can change bits from 1 to 0, but not from 0 back to 1 without erasing the block.
-    // Example: entry 0b10110000 gives `~entry & 0xffu` = 0b01001111, marking bits to clear.
-    // `<< entry_shift` moves that 8-bit mask into this record's byte (G uses a 16-bit shift).
-    // The outer `~` flips the mask so `&` clears the marked bits and preserves all others.
-    const uint32_t updated = record_meta_word & ~((uint32_t)(~entry & 0xffu) << entry_shift);
-    return updated == record_meta_word ? 0 : write_record_meta_word(word_address, updated);
 }
 
 static inline flash_status block_header_write(
-    uint32_t address, uint16_t generation
+    uint32_t address, uint16_t generation, uint32_t size_code
 ) {
+    const uint16_t commit = block_commit_for_size(size_code);
+    if (!commit)
+        return FLASH_RECORD_INVALID_SIZE;
     // Program an erased commit field first, then program the complete 4-byte
     // word. Both writes stay 4-byte aligned; the second write commits the block.
     const flash_block_header pending = {
@@ -278,151 +193,122 @@ static inline flash_status block_header_write(
     };
     const flash_block_header committed = {
         .generation = generation,
-        .commit = FLASH_BLOCK_HEADER_COMMIT
+        .commit = commit
     };
     return (HW_FLASH_WRITE(address, &pending, sizeof(pending)) ||
             HW_FLASH_WRITE(address, &committed, sizeof(committed)))
             ? FLASH_ERROR : FLASH_OK;
 }
 
-// Select the newest committed block and find its next unused record slot.
+static inline flash_log_pool *flash_log_pool_for_size(flash_log *log, uint32_t size_code) {
+    if (size_code == FLASH_RECORD_MARKER_4) return &log->pools[FLASH_LOG_POOL_4];
+    if (size_code == FLASH_RECORD_MARKER_8) return &log->pools[FLASH_LOG_POOL_8];
+    return NULL;
+}
+
+static inline uint32_t flash_log_free_blocks(const flash_log *log) {
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < FLASH_BLOCK_COUNT; ++i) {
+        const uint32_t block = FLASH_BASE_ADDR + i * FLASH_BLOCK_SIZE;
+        if (block != log->pools[FLASH_LOG_POOL_4].active_block &&
+            block != log->pools[FLASH_LOG_POOL_8].active_block)
+            ++count;
+    }
+    return count;
+}
+
+static inline uint32_t get_record_size(uint16_t payload_length);
+
+// Rebuild one class's append cursor by scanning its committed record headers.
+static inline flash_status flash_log_pool_scan(flash_log_pool *pool, uint32_t size_code) {
+    const uint16_t expected_length = get_record_len(size_code);
+    const uint32_t block_end = pool->active_block + FLASH_BLOCK_SIZE;
+    pool->next_address = pool->active_block + FLASH_RECORDS_OFFSET;
+    pool->record_end = pool->next_address;
+    pool->record_count = 0;
+    flash_record record;
+
+    while (pool->next_address + sizeof(record) <= block_end) {
+        if (HW_FLASH_READ(pool->next_address, &record, sizeof(record)))
+            return FLASH_ERROR;
+
+        const uint16_t length = get_record_len(record.marker);
+        if (!length) {
+            const uint8_t *bytes = (const uint8_t *)&record;
+            for (size_t i = 0; i < sizeof(record); ++i) {
+                if (bytes[i] != (uint8_t)(FLASH_ERASED_WORD >> ((i & 3u) * 8u))) {
+                    pool->next_address = block_end;
+                    return FLASH_OK;
+                }
+            }
+            return FLASH_OK;
+        }
+
+        if (length != expected_length ||
+            length > block_end - pool->next_address - sizeof(record)) {
+            pool->next_address = block_end;
+            return FLASH_OK;
+        }
+
+        const uint32_t record_size = get_record_size(length);
+        if (record_size > block_end - pool->next_address) {
+            pool->next_address = block_end;
+            return FLASH_OK;
+        }
+
+        uint8_t payload[8];
+        if (HW_FLASH_READ(pool->next_address + sizeof(record), payload, length) ||
+            calculate_crc(payload, length) != record.crc) {
+            pool->next_address = block_end;
+            return FLASH_OK;
+        }
+
+        pool->next_address += record_size;
+        pool->record_end = pool->next_address;
+        ++pool->record_count;
+    }
+    return FLASH_OK;
+}
+
+// Find the newest committed block in each size class. Blank storage is formatted lazily.
 static inline flash_status flash_log_init(flash_log *log) {
     if (!log)
         return FLASH_ERROR;
 
+    log->pools[FLASH_LOG_POOL_4] = (flash_log_pool){0};
+    log->pools[FLASH_LOG_POOL_8] = (flash_log_pool){0};
     flash_block_header header;
     bool found = false;
 
-    //! Find the newest block whose header says its contents were committed.
     for (uint32_t i = 0; i < FLASH_BLOCK_COUNT; ++i) {
-        const uint32_t block = FLASH_BASE_ADDR + (uint32_t)i * FLASH_BLOCK_SIZE;
-
+        const uint32_t block = FLASH_BASE_ADDR + i * FLASH_BLOCK_SIZE;
         if (HW_FLASH_READ(block, &header, sizeof(header)))
             return FLASH_ERROR;
-        //! Ignore erased or incomplete headers, such as a GC interrupted before commit.
-        if (header.commit != FLASH_BLOCK_HEADER_COMMIT)
+        const uint32_t size_code = block_size_for_commit(header.commit);
+        flash_log_pool *pool = flash_log_pool_for_size(log, size_code);
+        if (!pool)
             continue;
 
-        // Signed subtraction handles 16-bit wraparound while valid block
-        // generations remain fewer than 32768 increments apart.
-        if (!found || (int16_t)(header.generation - log->generation) > 0) {
-            log->active_block = block;
-            log->generation = header.generation;
-            found = true;
+        found = true;
+        if (!pool->active_block || (int16_t)(header.generation - pool->generation) > 0) {
+            pool->active_block = block;
+            pool->generation = header.generation;
         }
     }
+
     if (!found) {
-        // No committed block exists; erase the region and start a fresh format.
-        for (uint32_t i = 0; i < FLASH_BLOCK_COUNT; ++i) {
-            const uint32_t block = FLASH_BASE_ADDR + (uint32_t)i * FLASH_BLOCK_SIZE;
-            if (HW_ERASE_BLOCK(block))
+        // No valid block exists; erase stale or unformatted contents before first use.
+        for (uint32_t i = 0; i < FLASH_BLOCK_COUNT; ++i)
+            if (HW_ERASE_BLOCK(FLASH_BASE_ADDR + i * FLASH_BLOCK_SIZE))
                 return FLASH_ERROR;
-        }
-        // Make the first block active. The helper writes its commit marker last.
-        log->active_block = FLASH_BASE_ADDR;
-        log->generation = 1;
-
-        if (record_meta_init(log->active_block) ||
-            block_header_write(log->active_block, log->generation) != FLASH_OK
-        ) return FLASH_ERROR;
     }
 
-    flash_record record;
-    const uint32_t block_end = log->active_block + FLASH_BLOCK_SIZE;
-    log->next_address = log->active_block + sizeof(flash_block_header) + FLASH_META_BYTES;
-    log->record_end = log->next_address;
-    log->record_count = 0;
-    log->record_meta_trusted = 1;
-
-    //! Scan committed records until the first unused slot.
-    while (log->next_address + sizeof(record) <= block_end) {
-        if (log->record_count >= FLASH_META_MAX_RECORDS) {
-            log->next_address = block_end;
-            break;
-        }
-
-        if (HW_FLASH_READ(log->next_address, &record, sizeof(record)))
-            return FLASH_ERROR;
-
-        const uint16_t record_length = get_record_len(record.marker);
-
-        if (!record_length) {
-            // Check whether every header byte still has the flash's erased value.
-            const uint8_t *record_bytes = (const uint8_t *)&record;
-            bool record_erased = true;
-
-            // Compare each header byte with the erased pattern; stop at the first programmed byte.
-            for (size_t i = 0; i < sizeof(record); ++i) {
-                if (record_bytes[i] != (uint8_t)(FLASH_ERASED_WORD >> ((i & 0b11u) * 8u))) {
-                    record_erased = false;
-                    break;
-                }
-            }
-            if (record_erased) {
-                break;
-            } else {
-                // An incomplete record consumes the rest of this block.
-                log->next_address = block_end;
-                break;
-            }
-        }
-
-        // Check whether this record fits before reading its payload for the CRC.
-        if (record_length > block_end - log->next_address - sizeof(record)) {
-            log->next_address = block_end;
-            break;
-        }
-
-        // Check whether this record fits before reading its payload for the CRC.
-        const uint32_t record_size = (sizeof(record) + record_length + FLASH_ALIGNMENT - 1u) &
-                                    ~((uint32_t)FLASH_ALIGNMENT - 1u);
-        if (record_size > block_end - log->next_address)
-            break;
-
-        // Calculate the bytes left between next_address and the end of this block.
-        const uint32_t block_remaining = FLASH_BLOCK_SIZE -
-                                ((log->next_address - log->active_block) & (FLASH_BLOCK_SIZE - 1u));
-        if (record_size > block_remaining) {
-            log->next_address = block_end;
-            break;
-        }
-
-        uint8_t crc_chunk[8];
-        uint32_t crc_address = log->next_address + sizeof(record);
-        uint16_t crc_remaining = record_length;
-
-        uint8_t meta_entry;
-        if (log->record_count >= FLASH_META_MAX_RECORDS ||
-            HW_FLASH_READ(log->active_block + sizeof(flash_block_header) + log->record_count,
-                          &meta_entry, sizeof(meta_entry))
-        ) return FLASH_ERROR;
-
-        // Check that metadata's stored length and ID tag match the record header.
-        if (((meta_entry >> FLASH_META_LENGTH_BIT) & 1u ? 8u : 4u) != record_length ||
-            ((meta_entry >> FLASH_META_TAG_SHIFT) & FLASH_META_TAG_MASK) !=
-                get_id_tag(record.logical_id)
-        ) {
-            // A committed record without matching metadata falls back to header scans.
-            log->record_meta_trusted = 0;
-        }
-
-        // If trusted metadata marks this record outdated, skip reading its payload for CRC validation;
-        // reads will never return that record.
-        if (!log->record_meta_trusted || (meta_entry & (1u << FLASH_META_LIVE_BIT))) {
-            if (HW_FLASH_READ(crc_address, crc_chunk, crc_remaining))
-                return FLASH_ERROR;
-
-            if (calculate_crc(crc_chunk, crc_remaining) != record.crc) {
-                log->next_address = block_end;
-                break;
-            }
-        }
-
-        log->next_address += record_size;
-        log->record_end = log->next_address;
-        ++log->record_count;
-    }
-
+    if (log->pools[FLASH_LOG_POOL_4].active_block &&
+        flash_log_pool_scan(&log->pools[FLASH_LOG_POOL_4], FLASH_RECORD_MARKER_4) != FLASH_OK)
+        return FLASH_ERROR;
+    if (log->pools[FLASH_LOG_POOL_8].active_block &&
+        flash_log_pool_scan(&log->pools[FLASH_LOG_POOL_8], FLASH_RECORD_MARKER_8) != FLASH_OK)
+        return FLASH_ERROR;
     return FLASH_OK;
 }
 
@@ -448,390 +334,209 @@ static inline flash_status store_record_at(
     return FLASH_OK;
 }
 
-// Copy only the newest record for each ID, then commit the destination block.
-static inline flash_status flash_log_gc(flash_log *log) {
-    // Rotate to the following erase block, wrapping at the end of the log region.
-    const uint32_t old_block = log->active_block;
-    uint32_t new_block = old_block + FLASH_BLOCK_SIZE;
-    if (new_block >= FLASH_LOG_END)
-        new_block = FLASH_BASE_ADDR;
-
-    // The destination must be erased before any copied records are written.
-    if (HW_ERASE_BLOCK(new_block) || record_meta_init(new_block))
+// Copy current values of one size class into an erased shared spare block.
+static inline flash_status flash_log_gc(
+    flash_log *owner, flash_log_pool *pool, uint32_t size_code
+) {
+    const uint32_t old_block = pool->active_block;
+    uint32_t new_block = 0;
+    for (uint32_t i = 0; i < FLASH_BLOCK_COUNT; ++i) {
+        const uint32_t candidate = FLASH_BASE_ADDR + i * FLASH_BLOCK_SIZE;
+        if (candidate != owner->pools[FLASH_LOG_POOL_4].active_block &&
+            candidate != owner->pools[FLASH_LOG_POOL_8].active_block) {
+            new_block = candidate;
+            break;
+        }
+    }
+    if (!new_block)
+        return FLASH_FULL;
+    if (HW_ERASE_BLOCK(new_block))
         return FLASH_ERROR;
 
-    // Reserve the block header and record metadata table; copied records follow both.
-    uint32_t write_address = new_block + sizeof(flash_block_header) + FLASH_META_BYTES;
+    uint32_t write_address = new_block + FLASH_RECORDS_OFFSET;
     const uint32_t new_end = new_block + FLASH_BLOCK_SIZE;
-    uint32_t address = old_block + sizeof(flash_block_header) + FLASH_META_BYTES;
+    uint32_t address = old_block + FLASH_RECORDS_OFFSET;
+    const uint32_t old_end = pool->next_address;
+    const uint16_t old_count = pool->record_count;
+    const uint16_t payload_len = get_record_len(size_code);
+    const uint32_t record_size = get_record_size(payload_len);
+    uint16_t copied_count = 0;
     flash_record record;
     uint8_t payload[8];
 
-    // Keep the source scan bound fixed while the active log state is unchanged.
-    const uint32_t old_end = log->next_address;
-    const uint16_t old_record_count = log->record_count;
-    uint16_t source_index = 0;
-    uint16_t copied_count = 0;
-    bool src_meta_ok = log->record_meta_trusted != 0;
-    uint8_t meta_entries[sizeof(uint32_t)];
-    uint16_t cached_meta_group = 0xFFFFu;
-
-    // Walk the old log in append order.
-    while (source_index < old_record_count && address + sizeof(record) <= old_end) {
+    // For each record, scan later records to determine whether its ID was updated.
+    for (uint16_t i = 0; i < old_count && address + sizeof(record) <= old_end; ++i) {
         if (HW_FLASH_READ(address, &record, sizeof(record)))
             return FLASH_ERROR;
-
-        const uint32_t src_remaining = old_end - address;
-        const uint16_t payload_len = get_record_len(record.marker);
-
-        // Ensure the payload fits after the header.
-        if (!payload_len || payload_len > src_remaining - sizeof(record))
+        if (get_record_len(record.marker) != payload_len ||
+            payload_len > old_end - address - sizeof(record))
             break;
 
-        // Stop if the full record exceeds the remaining source bytes.
-        const uint32_t record_size = get_record_size(payload_len);
-        if (record_size > src_remaining)
-            break;
-
-        bool outdated = false;
-        uint8_t meta_entry = 0xffu;
-
-        if (src_meta_ok) {
-            if (source_index >= FLASH_META_MAX_RECORDS)
+        bool replaced = false;
+        uint32_t later_address = address + record_size;
+        for (uint16_t j = (uint16_t)(i + 1u);
+             j < old_count && later_address + sizeof(record) <= old_end; ++j) {
+            flash_record later;
+            if (HW_FLASH_READ(later_address, &later, sizeof(later)))
                 return FLASH_ERROR;
-
-            // Read each aligned 4-entry metadata group once as the scan moves forward.
-            const uint16_t meta_group = source_index & ~0b11u;
-            if (meta_group != cached_meta_group) {
-                if (HW_FLASH_READ(old_block + sizeof(flash_block_header) + meta_group,
-                                  meta_entries, sizeof(meta_entries))
-                ) return FLASH_ERROR;
-                cached_meta_group = meta_group;
+            if (get_record_len(later.marker) != payload_len ||
+                payload_len > old_end - later_address - sizeof(later))
+                break;
+            if (later.logical_id == record.logical_id) {
+                replaced = true;
+                break;
             }
-            meta_entry = meta_entries[source_index & 0b11u];
-
-            // Check the payload length and metadata tag against the source record before trusting its live bit.
-            if (((meta_entry >> FLASH_META_LENGTH_BIT) & 1u ? 8u : 4u) != payload_len ||
-                ((meta_entry >> FLASH_META_TAG_SHIFT) & FLASH_META_TAG_MASK) !=
-                    get_id_tag(record.logical_id)
-            ) {
-                // Do not trust a mismatched hint; use the full-ID fallback for this GC.
-                src_meta_ok = false;
-            } else {
-                outdated = !(meta_entry & (1u << FLASH_META_LIVE_BIT));
-            }
+            later_address += record_size;
         }
 
-        // If metadata is unavailable, preserve correctness by checking later full IDs.
-        bool has_newer_record = false;
-        // Outdated records need neither duplicate checks nor copying.
-        if (!outdated) {
-            if (!src_meta_ok) {
-                uint16_t later_index = (uint16_t)(source_index + 1u);
-                uint32_t later_addr = address + record_size;
-
-                //! Search later records; a later record with the same ID replaces this one.
-                while (later_index < old_record_count && later_addr + sizeof(record) <= old_end) {
-                    flash_record candidate;
-                    if (HW_FLASH_READ(later_addr, &candidate, sizeof(candidate)))
-                        return FLASH_ERROR;
-
-                     // Stop if this later record has an invalid marker or extends past written data.
-                    const uint16_t later_length = get_record_len(candidate.marker);
-                    if (!later_length || later_length > old_end - later_addr - sizeof(candidate))
-                        break;
-
-                    //! A valid later record with this ID replaces the current record.
-                    if (candidate.logical_id == record.logical_id) {
-                        has_newer_record = true;
-                        break;
-                    }
-                    later_addr += get_record_size(later_length);
-                    ++later_index;
-                }
-            }
-
-            if (!has_newer_record) {
-                // Check destination capacity before reading the source payload.
-                if (write_address + record_size > new_end)
-                    return FLASH_FULL;
-
-                //! Validate the source, then append the copy with its marker last.
-                if (HW_FLASH_READ(address + sizeof(record), payload, payload_len) ||
-                    calculate_crc(payload, payload_len) != record.crc ||
-                    store_record_at(write_address, record.logical_id, payload,
-                                  payload_len, record.marker) != FLASH_OK
-                ) return FLASH_ERROR;
-
-                if (store_record_meta(new_block, copied_count, record.logical_id, payload_len))
-                    return FLASH_ERROR;
-
-                // Advance the destination cursor to the next free record position.
-                write_address += record_size;
-                ++copied_count;
-            }
+        if (!replaced) {
+            if (write_address + record_size > new_end)
+                return FLASH_FULL;
+            if (HW_FLASH_READ(address + sizeof(record), payload, payload_len) ||
+                calculate_crc(payload, payload_len) != record.crc ||
+                store_record_at(write_address, record.logical_id, payload,
+                                payload_len, size_code) != FLASH_OK)
+                return FLASH_ERROR;
+            write_address += record_size;
+            ++copied_count;
         }
-        // Advance through the source log whether this record was copied or skipped.
         address += record_size;
-        ++source_index;
     }
 
-    // Keep this after the copy loop: startup accepts a block only after this commit.
-    const uint16_t new_generation = (uint16_t)(log->generation + 1u);
-    if (block_header_write(new_block, new_generation) != FLASH_OK)
+    // Commit the size class and generation after all copied records are complete.
+    const uint16_t new_generation = (uint16_t)(pool->generation + 1u);
+    if (block_header_write(new_block, new_generation, size_code) != FLASH_OK)
         return FLASH_ERROR;
 
-    // The new copy is committed. Switch to it before erasing the old block.
-    log->active_block = new_block;
-    log->generation = new_generation;
-    log->next_address = write_address;
-    log->record_end = write_address;
-    log->record_count = copied_count;
-    log->record_meta_trusted = 1;
-
-    // The committed destination is recoverable now; erase the old copy last.
+    pool->active_block = new_block;
+    pool->generation = new_generation;
+    pool->next_address = write_address;
+    pool->record_end = write_address;
+    pool->record_count = copied_count;
+    // Keep the old block until the destination header is committed; it becomes spare after erase.
     return HW_ERASE_BLOCK(old_block) ? FLASH_ERROR : FLASH_OK;
 }
 
-// Append one value, committing the record only after its header and payload are written.
+// Append one value to its fixed-size class; size is part of the logical key.
 static inline flash_status flash_log_write(
-    flash_log *log, uint16_t logical_id, const void *data, uint32_t marker
+    flash_log *owner, uint16_t logical_id, const void *data, uint32_t size_code
 ) {
-    if (!log || !data) return FLASH_ERROR;
+    if (!owner || !data)
+        return FLASH_ERROR;
 
-    const uint16_t length = get_record_len(marker);
-    if (!length)
+    flash_log_pool *pool = flash_log_pool_for_size(owner, size_code);
+    const uint16_t length = get_record_len(size_code);
+    if (!pool || !length)
         return FLASH_RECORD_INVALID_SIZE;
 
-    // Equivalent to ((size + FLASH_ALIGNMENT - 1) / FLASH_ALIGNMENT) * FLASH_ALIGNMENT.
-    const uint32_t total = (sizeof(flash_record) + length + FLASH_ALIGNMENT - 1u) &
-                            ~((uint32_t)FLASH_ALIGNMENT - 1u);
-    if (total > FLASH_BLOCK_SIZE)
+    // The first class can use one block and leave one spare. A second class needs
+    // a block of its own while preserving a shared spare, so it needs two free blocks.
+    if (!pool->active_block) {
+        flash_log_pool *other_pool =
+            pool == &owner->pools[FLASH_LOG_POOL_4]
+            ? &owner->pools[FLASH_LOG_POOL_8] : &owner->pools[FLASH_LOG_POOL_4];
+        const uint32_t needed_free = other_pool->active_block ? 2u : 1u;
+        if (flash_log_free_blocks(owner) < needed_free)
+            return FLASH_FULL;
+        for (uint32_t i = 0; i < FLASH_BLOCK_COUNT; ++i) {
+            const uint32_t block = FLASH_BASE_ADDR + i * FLASH_BLOCK_SIZE;
+            if (block == owner->pools[FLASH_LOG_POOL_4].active_block ||
+                block == owner->pools[FLASH_LOG_POOL_8].active_block)
+                continue;
+            if (HW_ERASE_BLOCK(block))
+                return FLASH_ERROR;
+            pool->active_block = block;
+            pool->generation = 1;
+            if (block_header_write(block, pool->generation, size_code) != FLASH_OK) {
+                pool->active_block = 0;
+                return FLASH_ERROR;
+            }
+            pool->next_address = block + FLASH_RECORDS_OFFSET;
+            pool->record_end = pool->next_address;
+            pool->record_count = 0;
+            break;
+        }
+    }
+
+    const uint32_t record_size = get_record_size(length);
+    if (record_size > FLASH_BLOCK_SIZE - FLASH_RECORDS_OFFSET)
         return FLASH_RECORD_TOO_LARGE;
-
-    const uint32_t max_offset = FLASH_BLOCK_SIZE - total;
-
-    //! Run GC if data space or record metadata slots are exhausted.
-    bool no_room = log->next_address - log->active_block > max_offset;
-    if (no_room || log->record_count >= FLASH_META_MAX_RECORDS) {
-        const flash_status gc_status = flash_log_gc(log);
-        if (gc_status != FLASH_OK)
-            return gc_status;
-
-        // GC changes the active block and next address, so check the new space again.
-        no_room = log->next_address - log->active_block > max_offset;
-        if (no_room || log->record_count >= FLASH_META_MAX_RECORDS)
+    if (pool->next_address + record_size > pool->active_block + FLASH_BLOCK_SIZE) {
+        const flash_status status = flash_log_gc(owner, pool, size_code);
+        if (status != FLASH_OK)
+            return status;
+        if (pool->next_address + record_size > pool->active_block + FLASH_BLOCK_SIZE)
             return FLASH_FULL;
     }
 
-    if (store_record_at(log->next_address, logical_id,
-        (const uint8_t *)data, length, marker) != FLASH_OK
-    ) {
-        log->next_address = log->active_block + FLASH_BLOCK_SIZE;
+    if (store_record_at(pool->next_address, logical_id, data, length, size_code) != FLASH_OK) {
+        pool->next_address = pool->active_block + FLASH_BLOCK_SIZE;
         return FLASH_ERROR;
     }
-
-    const uint16_t record_index = log->record_count;
-    ++log->record_count;
-
-    if (log->record_meta_trusted) {
-        if (store_record_meta(log->active_block, record_index, logical_id, length)) {
-            log->record_meta_trusted = 0;
-        } else {
-            // Scan older entries: the tag avoids reading most full record headers.
-            const uint8_t tag = get_id_tag(logical_id);
-            uint32_t old_address = log->active_block + sizeof(flash_block_header) + FLASH_META_BYTES;
-
-            for (uint16_t i = 0; i < record_index; ++i) {
-                uint8_t entry;
-                if (i >= FLASH_META_MAX_RECORDS ||
-                    HW_FLASH_READ(log->active_block + sizeof(flash_block_header) + i,
-                                  &entry, sizeof(entry))) {
-                    log->record_meta_trusted = 0;
-                    break;
-                }
-
-                const uint16_t old_length = (entry & (1u << FLASH_META_LENGTH_BIT)) ? 8u : 4u;
-
-                //! Read the old header only if it is current and its tag matches.
-                if ((entry & (1u << FLASH_META_LIVE_BIT)) &&
-                    ((entry >> FLASH_META_TAG_SHIFT) & FLASH_META_TAG_MASK) == tag
-                ) {
-                    flash_record old_record;
-
-                    //! Validate the header before trusting its tag or changing its metadata entry.
-                    if (HW_FLASH_READ(old_address, &old_record, sizeof(old_record)) ||
-                        get_record_len(old_record.marker) != old_length) {
-                        log->record_meta_trusted = 0;
-                        break;
-                    }
-
-                    if (old_record.logical_id == logical_id) {
-                        // Clear this record's live bit in its containing 32-bit metadata word.
-                        const uint32_t word_address = log->active_block + sizeof(flash_block_header) +
-                                                      (i & ~0b11u);
-                        const uint32_t mask = 1u << ((i & 0b11u) * 8u + FLASH_META_LIVE_BIT);
-                        uint32_t word;
-
-                        if (i >= FLASH_META_MAX_RECORDS ||
-                            HW_FLASH_READ(word_address, &word, sizeof(word))) {
-                            log->record_meta_trusted = 0;
-                            break;
-                        }
-                        if (word & mask) {
-                            word &= ~mask;
-                            if (write_record_meta_word(word_address, word)) {
-                                log->record_meta_trusted = 0;
-                                break;
-                            }
-                        }
-                    } else if (get_id_tag(old_record.logical_id) != tag) {
-                        // The header's tag disagrees with the metadata hint; use full scans.
-                        log->record_meta_trusted = 0;
-                        break;
-                    }
-                }
-
-                old_address += get_record_size(old_length);
-            }
-        }
-    }
-
-    log->next_address += total;
-    log->record_end = log->next_address;
+    pool->next_address += record_size;
+    pool->record_end = pool->next_address;
+    ++pool->record_count;
     return FLASH_OK;
 }
 
-// Fast read for callers that guarantee valid pointers and arguments.
+// Read the newest value for a logical ID from the requested size class.
 static inline flash_status flash_log_read_fast(
-    flash_log *log, uint16_t logical_id, void *data,
+    flash_log *owner, uint16_t logical_id, uint32_t size_code, void *data,
     uint16_t capacity, uint16_t *length
 ) {
-    //! Search from the newest record backward; metadata skips obsolete records and most IDs.
-    if (log->record_meta_trusted) {
-        // Begin at the end of valid record data and one past its last metadata entry.
-        uint32_t address = log->record_end;
-        uint16_t index = log->record_count;
-        // Compute the requested ID's short tag for quick candidate filtering.
-        const uint8_t tag = get_id_tag(logical_id);
-        uint8_t meta_entries[sizeof(uint32_t)];
-        uint16_t cached_meta_group = 0xFFFFu;
+    if (!owner || !length || (!data && capacity))
+        return FLASH_ERROR;
 
-        // Each pass examines one record, moving toward older entries.
-        while (index) {
-            // Select the next older record's metadata entry.
-            --index;
-            if (index >= FLASH_META_MAX_RECORDS)
-                return FLASH_ERROR;
+    flash_log_pool *pool = flash_log_pool_for_size(owner, size_code);
+    const uint16_t requested_length = get_record_len(size_code);
+    if (!pool || !requested_length)
+        return FLASH_RECORD_INVALID_SIZE;
+    if (!pool->active_block)
+        return FLASH_NOT_FOUND;
 
-            // Read each aligned 4-entry metadata group once as the scan moves backward.
-            const uint16_t meta_group = index & ~0b11u;
-            if (meta_group != cached_meta_group) {
-                if (HW_FLASH_READ(log->active_block + sizeof(flash_block_header) + meta_group,
-                                  meta_entries, sizeof(meta_entries))
-                ) return FLASH_ERROR;
-
-                cached_meta_group = meta_group;
-            }
-            const uint8_t entry = meta_entries[index & 0b11u];
-
-            //! The length bit tells us the record size so we can step backward.
-            const uint16_t payload_len = (entry & (1u << FLASH_META_LENGTH_BIT)) ? 8u : 4u;
-            address -= get_record_size(payload_len);
-
-            //! Skip outdated entries first; || avoids checking their tag when the live bit is clear.
-            if (!(entry & (1u << FLASH_META_LIVE_BIT)) ||
-                ((entry >> FLASH_META_TAG_SHIFT) & FLASH_META_TAG_MASK) != tag
-            ) continue;
-
-            flash_record candidate;
-            if (HW_FLASH_READ(address, &candidate, sizeof(candidate)))
-                return FLASH_ERROR;
-
-            //! 1. Validate metadata length and tag against the record before treating it as a
-            //    tag collision; inconsistent metadata requires the full header scan below.
-            if (get_record_len(candidate.marker) != payload_len ||
-                get_id_tag(candidate.logical_id) != tag
-            ) {
-                log->record_meta_trusted = 0;
-                break;
-            }
-
-            //! 2. Compare the full ID only after the metadata entry is known to be consistent.
-            if (candidate.logical_id != logical_id)
-                continue;
-
-            //! 3. Check capacity only after the full ID matches, so a tag collision cannot
-            //    report a buffer error for a different record.
-            if (payload_len > capacity)
-                return FLASH_BUFFER_TOO_SMALL;
-
-            //! 4. Read the payload and verify its CRC before returning the value.
-            if (HW_FLASH_READ(address + sizeof(candidate), data, payload_len) ||
-                calculate_crc((const uint8_t *)data, payload_len) != candidate.crc
-            ) return FLASH_ERROR;
-
-            *length = payload_len;
-            return FLASH_OK;
-        }
-
-        // If record_meta_trusted is true, and the search finds no matching ID, returns FLASH_NOT_FOUND.
-        if (log->record_meta_trusted)
-            return FLASH_NOT_FOUND;
-    }
-
-    uint32_t address = log->active_block + sizeof(flash_block_header) + FLASH_META_BYTES;
-    uint32_t new_address = 0;
-    uint16_t new_crc = 0;
-    uint16_t new_length = 0;
+    uint32_t address = pool->active_block + FLASH_RECORDS_OFFSET;
+    uint32_t newest_address = 0;
+    uint16_t newest_crc = 0;
     bool found = false;
     flash_record record;
 
-    //! Scan in address order; the last matching record is the newest.
-    // Stop before reading a header that extends beyond the written records.
-    while (address + sizeof(record) <= log->next_address) {
+    // Later records with the same ID replace earlier values in this size class.
+    // record_end excludes any damaged or incomplete tail that must be skipped by future writes.
+    while (address + sizeof(record) <= pool->record_end) {
         if (HW_FLASH_READ(address, &record, sizeof(record)))
             return FLASH_ERROR;
+        if (get_record_len(record.marker) != requested_length ||
+            requested_length > pool->record_end - address - sizeof(record))
+            break;
 
-        const uint16_t record_length = get_record_len(record.marker);
-        if (!record_length ||
-            record_length > log->next_address - address - sizeof(record)
-        ) break;
-
-        // Later addresses represent later writes for this logical ID.
         if (record.logical_id == logical_id) {
-            new_crc = record.crc;
-            new_length = record_length;
-            new_address = address;
+            newest_address = address;
+            newest_crc = record.crc;
             found = true;
         }
-
-        // Equivalent to ((size + FLASH_ALIGNMENT - 1) / FLASH_ALIGNMENT) * FLASH_ALIGNMENT.
-        const uint32_t record_size = (sizeof(record) + record_length + FLASH_ALIGNMENT - 1u) &
-                                    ~((uint32_t)FLASH_ALIGNMENT - 1u);
-        address += record_size;
+        address += get_record_size(requested_length);
     }
 
-    if (!found) return FLASH_NOT_FOUND;
-    if (new_length > capacity)
+    if (!found)
+        return FLASH_NOT_FOUND;
+    if (requested_length > capacity)
         return FLASH_BUFFER_TOO_SMALL;
+    if (HW_FLASH_READ(newest_address + sizeof(record), data, requested_length) ||
+        calculate_crc((const uint8_t *)data, requested_length) != newest_crc)
+        return FLASH_ERROR;
 
-    //! Read the selected payload and verify its CRC before returning it.
-    if ((new_length && HW_FLASH_READ(new_address + sizeof(record), data, new_length)) ||
-        calculate_crc((const uint8_t *)data, new_length) != new_crc
-    ) return FLASH_ERROR;
-
-    *length = new_length;
+    *length = requested_length;
     return FLASH_OK;
 }
 
 // Read a value after checking that required pointers are valid.
 static inline flash_status flash_log_read(
-    flash_log *log, uint16_t logical_id, void *data,
+    flash_log *log, uint16_t logical_id, uint32_t size_code, void *data,
     uint16_t capacity, uint16_t *length
 ) {
-    if (!log || !length || (!data && capacity)) return FLASH_ERROR;
-    return flash_log_read_fast(log, logical_id, data, capacity, length);
+    if (!log || !length || (!data && capacity))
+        return FLASH_ERROR;
+    return flash_log_read_fast(log, logical_id, size_code, data, capacity, length);
 }
 
 #endif // FUN_FLASH_LOG_H
