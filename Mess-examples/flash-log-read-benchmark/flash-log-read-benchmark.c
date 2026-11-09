@@ -17,7 +17,7 @@ static uint32_t tag4_ram[FLASH_LOG_POOL_COUNT][TAG4_WORDS_PER_CLASS];
 static volatile uint32_t scan_header_reads;
 static uint32_t baseline_ticks[FLASH_LOG_POOL_COUNT][3];
 
-typedef flash_status (*read_fn)(uint16_t, uint32_t, void *, uint16_t, uint16_t *);
+typedef flash_status (*read_fn)(uint16_t, flash_pool_id, void *, uint16_t, uint16_t *);
 
 static void print_text_column(const char *text, uint8_t width) {
     uint8_t length = 0;
@@ -51,16 +51,13 @@ static void print_table_header(void) {
 // Baseline implementation: scan every full record header, newest to oldest.
 __attribute__((noinline))
 static flash_status read_full_scan(
-    uint16_t logical_id, uint32_t size_code, void *data,
+    uint16_t logical_id, flash_pool_id pool_id, void *data,
     uint16_t capacity, uint16_t *length
 ) {
-    log_pool_state *pool = size_code == FLASH_RECORD_MARKER_4
-                         ? &flash_log_pools[FLASH_LOG_POOL_4]
-                         : size_code == FLASH_RECORD_MARKER_8
-                         ? &flash_log_pools[FLASH_LOG_POOL_8] : NULL;
-    const uint16_t payload_len = get_record_len(size_code);
-    if (!pool || !payload_len)
+    if (pool_id >= FLASH_LOG_POOL_COUNT)
         return FLASH_RECORD_INVALID_SIZE;
+    log_pool_state *pool = &flash_log_pools[pool_id];
+    const uint16_t payload_len = pool_id == FLASH_LOG_POOL_4 ? 4u : 8u;
     if (!pool->active_block)
         return FLASH_NOT_FOUND;
 
@@ -95,22 +92,17 @@ static flash_status read_full_scan(
 // location differ; both variants use the same candidate checks and CRC path.
 __attribute__((noinline))
 static flash_status read_tag_scan(
-    uint16_t logical_id, uint32_t size_code, void *data,
+    uint16_t logical_id, flash_pool_id pool_id, void *data,
     uint16_t capacity, uint16_t *length, uint8_t tag_bits,
     const uint32_t *ram_tag_words
 ) {
-    log_pool_state *pool = size_code == FLASH_RECORD_MARKER_4
-                         ? &flash_log_pools[FLASH_LOG_POOL_4]
-                         : size_code == FLASH_RECORD_MARKER_8
-                         ? &flash_log_pools[FLASH_LOG_POOL_8] : NULL;
-    const uint16_t payload_len = get_record_len(size_code);
-    if (!pool || !payload_len)
+    if (pool_id >= FLASH_LOG_POOL_COUNT)
         return FLASH_RECORD_INVALID_SIZE;
+    log_pool_state *pool = &flash_log_pools[pool_id];
+    const uint16_t payload_len = pool_id == FLASH_LOG_POOL_4 ? 4u : 8u;
     if (!pool->active_block)
         return FLASH_NOT_FOUND;
 
-    const uint8_t pool_index = size_code == FLASH_RECORD_MARKER_4
-                             ? FLASH_LOG_POOL_4 : FLASH_LOG_POOL_8;
     const uint8_t entries_per_word = (uint8_t)(32u / tag_bits);
     const uint8_t tag_group_shift = tag_bits == 2u ? 4u : tag_bits == 4u ? 3u : 2u;
     const uint8_t tag_position_mask = entries_per_word - 1u;
@@ -120,8 +112,8 @@ static flash_status read_tag_scan(
     const uint8_t wanted_tag = (uint8_t)logical_id & tag_mask;
     const uint32_t tag_base = tag_bits == 4u
         ? pool->active_block + sizeof(flash_block_header)
-        : tag_bits == 2u ? tag2_map_base[pool_index]
-                         : tag8_map_base[pool_index];
+        : tag_bits == 2u ? tag2_map_base[pool_id]
+                         : tag8_map_base[pool_id];
     const uint32_t stride = get_record_size(payload_len);
     uint32_t address = pool->record_end;
     uint16_t cached_group = UINT16_MAX;
@@ -176,30 +168,28 @@ static flash_status read_tag_scan(
 }
 
 static flash_status read_tag4_same(
-    uint16_t id, uint32_t code, void *data, uint16_t capacity, uint16_t *length
+    uint16_t id, flash_pool_id pool_id, void *data, uint16_t capacity, uint16_t *length
 ) {
-    return read_tag_scan(id, code, data, capacity, length, 4u, NULL);
+    return read_tag_scan(id, pool_id, data, capacity, length, 4u, NULL);
 }
 
 static flash_status read_tag2_same(
-    uint16_t id, uint32_t code, void *data, uint16_t capacity, uint16_t *length
+    uint16_t id, flash_pool_id pool_id, void *data, uint16_t capacity, uint16_t *length
 ) {
-    return read_tag_scan(id, code, data, capacity, length, 2u, NULL);
+    return read_tag_scan(id, pool_id, data, capacity, length, 2u, NULL);
 }
 
 static flash_status read_tag8_same(
-    uint16_t id, uint32_t code, void *data, uint16_t capacity, uint16_t *length
+    uint16_t id, flash_pool_id pool_id, void *data, uint16_t capacity, uint16_t *length
 ) {
-    return read_tag_scan(id, code, data, capacity, length, 8u, NULL);
+    return read_tag_scan(id, pool_id, data, capacity, length, 8u, NULL);
 }
 
 static flash_status read_tag4_ram(
-    uint16_t id, uint32_t code, void *data, uint16_t capacity, uint16_t *length
+    uint16_t id, flash_pool_id pool_id, void *data, uint16_t capacity, uint16_t *length
 ) {
-    const uint8_t pool_index = code == FLASH_RECORD_MARKER_4
-                             ? FLASH_LOG_POOL_4 : FLASH_LOG_POOL_8;
-    return read_tag_scan(id, code, data, capacity, length, 4u,
-                         tag4_ram[pool_index]);
+    return read_tag_scan(id, pool_id, data, capacity, length, 4u,
+                         tag4_ram[pool_id]);
 }
 
 // Store one 8-bit ID tag per record before the 2-bit table at the block end.
@@ -296,12 +286,12 @@ static flash_status load_tag4_map_to_ram(uint8_t pool_index) {
     return FLASH_OK;
 }
 
-static flash_status write_dataset(uint32_t size_code, uint16_t payload_len) {
+static flash_status write_dataset(flash_pool_id pool_id, uint16_t payload_len) {
     uint8_t payload[8];
     for (uint16_t id = 0; id < RECORDS_PER_CLASS; ++id) {
         for (uint16_t i = 0; i < payload_len; ++i)
             payload[i] = (uint8_t)(id + i * 17u);
-        const flash_status status = flash_log_write(id, payload, size_code);
+        const flash_status status = flash_log_write(id, payload, pool_id);
         if (status != FLASH_OK)
             return status;
     }
@@ -310,7 +300,8 @@ static flash_status write_dataset(uint32_t size_code, uint16_t payload_len) {
 
 static void benchmark_case(
     const char *class_name, const char *case_name,
-    uint16_t wanted_id, uint32_t size_code, read_fn reader, bool show_header_count
+    uint16_t wanted_id, flash_pool_id pool_id,
+    read_fn reader, bool show_header_count
 ) {
     uint8_t output[8];
     uint16_t length = 0;
@@ -320,14 +311,13 @@ static void benchmark_case(
     const uint32_t start = funSysTick32();
     flash_status status = FLASH_OK;
     for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
-        status = reader(wanted_id, size_code, output, sizeof(output), &length);
+        status = reader(wanted_id, pool_id, output, sizeof(output), &length);
         checksum += (uint32_t)status + length + output[0];
     }
     const uint32_t ticks = (uint32_t)(funSysTick32() - start) / BENCH_RUNS;
     benchmark_sink = checksum;
 
-    const uint8_t pool_index = size_code == FLASH_RECORD_MARKER_4
-                             ? FLASH_LOG_POOL_4 : FLASH_LOG_POOL_8;
+    const uint8_t pool_index = pool_id;
     const uint8_t case_index = wanted_id == RECORDS_PER_CLASS - 1u ? 0u
                              : wanted_id == 0u ? 1u : 2u;
     if (reader == read_full_scan)
@@ -343,7 +333,7 @@ static void benchmark_case(
     flash_log_bench_read_bytes = 0;
     scan_header_reads = 0;
     flash_log_bench_count_reads = 1;
-    (void)reader(wanted_id, size_code, output, sizeof(output), &length);
+    (void)reader(wanted_id, pool_id, output, sizeof(output), &length);
     flash_log_bench_count_reads = 0;
     const uint32_t read_calls = flash_log_bench_read_calls;
     const uint32_t read_bytes = flash_log_bench_read_bytes;
@@ -365,13 +355,14 @@ static void benchmark_case(
 }
 
 static void benchmark_class(
-    const char *class_name, uint32_t size_code, read_fn reader, bool show_header_count
+    const char *class_name, flash_pool_id pool_id,
+    read_fn reader, bool show_header_count
 ) {
     benchmark_case(class_name, "newest", RECORDS_PER_CLASS - 1u,
-                   size_code, reader, show_header_count);
-    benchmark_case(class_name, "oldest", 0u, size_code, reader, show_header_count);
+                   pool_id, reader, show_header_count);
+    benchmark_case(class_name, "oldest", 0u, pool_id, reader, show_header_count);
     benchmark_case(class_name, "missing", RECORDS_PER_CLASS,
-                   size_code, reader, show_header_count);
+                   pool_id, reader, show_header_count);
 }
 
 static void benchmark_read_paths(void) {
@@ -385,33 +376,33 @@ static void benchmark_read_paths(void) {
 
     printf("\nBaseline full-header scan:\n");
     print_table_header();
-    benchmark_class("4B", FLASH_RECORD_MARKER_4, read_full_scan, true);
-    benchmark_class("8B", FLASH_RECORD_MARKER_8, read_full_scan, true);
+    benchmark_class("4B", FLASH_LOG_POOL_4, read_full_scan, true);
+    benchmark_class("8B", FLASH_LOG_POOL_8, read_full_scan, true);
 
     printf("\nProduction flash_log_read_fast (4-bit tags):\n");
     print_table_header();
-    benchmark_class("4B", FLASH_RECORD_MARKER_4, flash_log_read_fast, false);
-    benchmark_class("8B", FLASH_RECORD_MARKER_8, flash_log_read_fast, false);
+    benchmark_class("4B", FLASH_LOG_POOL_4, flash_log_read_fast, false);
+    benchmark_class("8B", FLASH_LOG_POOL_8, flash_log_read_fast, false);
 
     printf("\nSame scanner, 4-bit tags:\n");
     print_table_header();
-    benchmark_class("4B", FLASH_RECORD_MARKER_4, read_tag4_same, true);
-    benchmark_class("8B", FLASH_RECORD_MARKER_8, read_tag4_same, true);
+    benchmark_class("4B", FLASH_LOG_POOL_4, read_tag4_same, true);
+    benchmark_class("8B", FLASH_LOG_POOL_8, read_tag4_same, true);
 
     printf("\nSame scanner, 4-bit tags copied to RAM:\n");
     print_table_header();
-    benchmark_class("4B", FLASH_RECORD_MARKER_4, read_tag4_ram, true);
-    benchmark_class("8B", FLASH_RECORD_MARKER_8, read_tag4_ram, true);
+    benchmark_class("4B", FLASH_LOG_POOL_4, read_tag4_ram, true);
+    benchmark_class("8B", FLASH_LOG_POOL_8, read_tag4_ram, true);
 
     printf("\nSame scanner, 8-bit tags:\n");
     print_table_header();
-    benchmark_class("4B", FLASH_RECORD_MARKER_4, read_tag8_same, true);
-    benchmark_class("8B", FLASH_RECORD_MARKER_8, read_tag8_same, true);
+    benchmark_class("4B", FLASH_LOG_POOL_4, read_tag8_same, true);
+    benchmark_class("8B", FLASH_LOG_POOL_8, read_tag8_same, true);
 
     printf("\nSame scanner, 2-bit tags:\n");
     print_table_header();
-    benchmark_class("4B", FLASH_RECORD_MARKER_4, read_tag2_same, true);
-    benchmark_class("8B", FLASH_RECORD_MARKER_8, read_tag2_same, true);
+    benchmark_class("4B", FLASH_LOG_POOL_4, read_tag2_same, true);
+    benchmark_class("8B", FLASH_LOG_POOL_8, read_tag2_same, true);
 }
 
 int main(void) {
@@ -429,9 +420,9 @@ int main(void) {
 
     flash_status status = flash_log_init();
     if (status == FLASH_OK)
-        status = write_dataset(FLASH_RECORD_MARKER_4, 4);
+        status = write_dataset(FLASH_LOG_POOL_4, 4);
     if (status == FLASH_OK)
-        status = write_dataset(FLASH_RECORD_MARKER_8, 8);
+        status = write_dataset(FLASH_LOG_POOL_8, 8);
     if (status == FLASH_OK)
         status = prepare_tag2_map(FLASH_LOG_POOL_4);
     if (status == FLASH_OK)

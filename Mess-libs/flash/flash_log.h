@@ -95,14 +95,14 @@ enum {
 
 #define FLASH_RECORD_COMMIT 0xCAFEu
 #define FLASH_RECORD_MAGIC  0xBA00u
-// Pass one of these as the size selector to flash_log_read() and flash_log_write().
+// Record markers identify stored 4-byte and 8-byte records internally.
 #define FLASH_RECORD_MARKER_4  (((uint32_t)FLASH_RECORD_COMMIT << 16) | 0xBA04u)
 #define FLASH_RECORD_MARKER_8  (((uint32_t)FLASH_RECORD_COMMIT << 16) | 0xBA08u)
 
 // These version-3 values commit the block, identify its payload size, and
 // distinguish newest-first tag packing from the previous block format.
-#define FLASH_BLOCK_HEADER_COMMIT_4 0xBB94u
-#define FLASH_BLOCK_HEADER_COMMIT_8 0xBB98u
+#define FLASH_BLOCK_COMMIT_4 0xBB94u
+#define FLASH_BLOCK_COMMIT_8 0xBB98u
 
 
 // Header stored before each value in the append-only flash log.
@@ -134,7 +134,9 @@ typedef struct {
     bool tag_map_valid;     // False means reads must scan full record headers.
 } log_pool_state;
 
-// Indexes into the library's single global pool-state array.
+// Pool selectors accepted by flash_log_read() and flash_log_write().
+// These values also index the library's global pool-state array.
+typedef uint8_t flash_pool_id;
 enum {
     FLASH_LOG_POOL_4,
     FLASH_LOG_POOL_8,
@@ -180,9 +182,9 @@ static inline flash_status block_header_write(
     uint32_t address, uint16_t generation, uint32_t size_code
 ) {
     const uint16_t commit = size_code == FLASH_RECORD_MARKER_4
-                          ? FLASH_BLOCK_HEADER_COMMIT_4
+                          ? FLASH_BLOCK_COMMIT_4
                           : size_code == FLASH_RECORD_MARKER_8
-                          ? FLASH_BLOCK_HEADER_COMMIT_8 : 0;
+                          ? FLASH_BLOCK_COMMIT_8 : 0;
     if (!commit)
         return FLASH_RECORD_INVALID_SIZE;
     // Program an erased commit field first, then program the complete 4-byte
@@ -247,10 +249,10 @@ static inline flash_status log_pool_scan(log_pool_state *pool, uint32_t size_cod
     pool->tag_map_valid = true;
     flash_record record;
 
+    // Read each record header in append order until the block tail is reached.
     while (pool->record_count < max_records &&
            pool->next_address + sizeof(record) <= block_end
     ) {
-        // Read each record header in append order until the block tail is reached.
         if (HW_FLASH_READ(pool->next_address, &record, sizeof(record)))
             return FLASH_ERROR;
 
@@ -332,9 +334,9 @@ static inline flash_status flash_log_init(void) {
             return FLASH_ERROR;
 
         log_pool_state *pool;
-        if (header.commit == FLASH_BLOCK_HEADER_COMMIT_4)
+        if (header.commit == FLASH_BLOCK_COMMIT_4)
             pool = &flash_log_pools[FLASH_LOG_POOL_4];
-        else if (header.commit == FLASH_BLOCK_HEADER_COMMIT_8)
+        else if (header.commit == FLASH_BLOCK_COMMIT_8)
             pool = &flash_log_pools[FLASH_LOG_POOL_8];
         else
             continue;
@@ -421,7 +423,7 @@ static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t size_code
     const uint16_t old_count = pool->record_count;
     const uint16_t payload_len = get_record_len(size_code);
     const uint32_t record_size = get_record_size(payload_len);
-    uint32_t write_address = records_start_for_length(new_block, get_record_len(size_code));
+    uint32_t write_address = records_start_for_length(new_block, payload_len);
     uint32_t copied_tags = 0xFFFFFFFFu;
     uint32_t address = pool->records_start;
     uint16_t copied_count = 0;
@@ -508,25 +510,28 @@ static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t size_code
 
 // Append one value to its fixed-size class; size is part of the logical key.
 static inline flash_status flash_log_write(
-    uint16_t logical_id, const void *data, uint32_t size_code
+    uint16_t logical_id, const void *data, flash_pool_id pool_id
 ) {
     // A payload pointer is required because every successful write stores data.
     if (!data) return FLASH_ERROR;
 
     log_pool_state *pool;
     log_pool_state *other_pool;
-    uint16_t length;
+    uint16_t payload_len;
+    uint32_t marker;
 
     // Select the matching size-class pool and its fixed payload length.
-    if (size_code == FLASH_RECORD_MARKER_4) {
+    if (pool_id == FLASH_LOG_POOL_4) {
         pool = &flash_log_pools[FLASH_LOG_POOL_4];
         other_pool = &flash_log_pools[FLASH_LOG_POOL_8];
-        length = 4;
+        payload_len = 4;
+        marker = FLASH_RECORD_MARKER_4;
     }
-    else if (size_code == FLASH_RECORD_MARKER_8) {
+    else if (pool_id == FLASH_LOG_POOL_8) {
         pool = &flash_log_pools[FLASH_LOG_POOL_8];
         other_pool = &flash_log_pools[FLASH_LOG_POOL_4];
-        length = 8;
+        payload_len = 8;
+        marker = FLASH_RECORD_MARKER_8;
     }
     else {
         return FLASH_RECORD_INVALID_SIZE;
@@ -563,11 +568,11 @@ static inline flash_status flash_log_write(
         pool->generation = 1;
 
         // Mark the erased block with this pool's size class; undo the assignment on failure.
-        if (block_header_write(first_free_block, pool->generation, size_code) != FLASH_OK) {
+        if (block_header_write(first_free_block, pool->generation, marker) != FLASH_OK) {
             pool->active_block = 0;
             return FLASH_ERROR;
         }
-        pool->records_start = records_start_for_length(first_free_block, length);
+        pool->records_start = records_start_for_length(first_free_block, payload_len);
         pool->next_address = pool->records_start;
         pool->record_end = pool->next_address;
         pool->pending_tags = 0xFFFFFFFFu;
@@ -575,7 +580,7 @@ static inline flash_status flash_log_write(
         pool->tag_map_valid = true;
     }
 
-    const uint32_t record_size = get_record_size(length);
+    const uint32_t record_size = get_record_size(payload_len);
     const uint32_t max_start_offset = FLASH_BLOCK_SIZE - record_size;
     uint32_t max_start_addr = pool->active_block + max_start_offset;
 
@@ -584,7 +589,7 @@ static inline flash_status flash_log_write(
 
     // If the append position is past that limit, GC copies live records to a spare block.
     if (pool->next_address > max_start_addr) {
-        const flash_status status = flash_log_gc(pool, size_code);
+        const flash_status status = flash_log_gc(pool, marker);
 
         if (status != FLASH_OK)
             return status;
@@ -595,7 +600,7 @@ static inline flash_status flash_log_write(
     }
 
     // Append the record; its marker is programmed last to mark it as committed.
-    if (store_record_at(pool->next_address, logical_id, data, length, size_code) != FLASH_OK) {
+    if (store_record_at(pool->next_address, logical_id, data, payload_len, marker) != FLASH_OK) {
         // Do not retry at a possibly partially programmed address; skip to block end.
         pool->next_address = pool->active_block + FLASH_BLOCK_SIZE;
         return FLASH_ERROR;
@@ -626,17 +631,13 @@ static inline flash_status flash_log_write(
 
 // Read the newest value for a logical ID from the requested size class.
 static inline flash_status flash_log_read_fast(
-    uint16_t logical_id, uint32_t size_code, void *data,
+    uint16_t logical_id, flash_pool_id pool_id, void *data,
     uint16_t capacity, uint16_t *length
 ) {
-    log_pool_state *pool = size_code == FLASH_RECORD_MARKER_4
-                         ? &flash_log_pools[FLASH_LOG_POOL_4]
-                         : size_code == FLASH_RECORD_MARKER_8
-                         ? &flash_log_pools[FLASH_LOG_POOL_8] : NULL;
-    const uint16_t requested_length = get_record_len(size_code);
-
-    if (!pool || !requested_length)
+    if (pool_id >= FLASH_LOG_POOL_COUNT)
         return FLASH_RECORD_INVALID_SIZE;
+    log_pool_state *pool = &flash_log_pools[pool_id];
+    const uint16_t requested_length = pool_id == FLASH_LOG_POOL_4 ? 4u : 8u;
     if (!pool->active_block)
         return FLASH_NOT_FOUND;
 
@@ -735,11 +736,11 @@ static inline flash_status flash_log_read_fast(
 
 // Read a value after checking that required pointers are valid.
 static inline flash_status flash_log_read(
-    uint16_t logical_id, uint32_t size_code, void *data,
+    uint16_t logical_id, flash_pool_id pool_id, void *data,
     uint16_t capacity, uint16_t *length
 ) {
     if (!length || (!data && capacity)) return FLASH_ERROR;
-    return flash_log_read_fast(logical_id, size_code, data, capacity, length);
+    return flash_log_read_fast(logical_id, pool_id, data, capacity, length);
 }
 
 #endif // FUN_FLASH_LOG_H

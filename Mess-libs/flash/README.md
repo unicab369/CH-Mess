@@ -4,10 +4,11 @@
 
 `flash_log.h` stores a packed 4-bit tag for each record slot. Eight tags share one
 32-bit word. The tag table follows the block header; records start after the
-class-specific table and alignment padding. `FLASH_RECORD_MARKER_4` and
-`FLASH_RECORD_MARKER_8` select the size class for the read/write API; the block
-header uses versioned class-specific commit values. Existing flash data in the old
-format is not migrated; initialization erases it when no current-format block is found.
+class-specific table and alignment padding. Pass `FLASH_LOG_POOL_4` or
+`FLASH_LOG_POOL_8` to the read/write API to select a size class. The record
+markers are internal format values; the block header stores a versioned
+class-specific commit. Existing flash data in the old format is not migrated;
+initialization erases it when no current-format block is found.
 
 The API manages one global log. The CH5xx port header defines its pool-state
 array; applications call `flash_log_init()`, `flash_log_read(...)`, and

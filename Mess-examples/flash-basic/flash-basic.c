@@ -16,7 +16,7 @@ static __HIGH_CODE void run_flash_demo(void) {
 
     uint32_t value = 0;
     uint16_t length = 0;
-    status = flash_log_read(DEMO_LOGICAL_ID, FLASH_RECORD_MARKER_4,
+    status = flash_log_read(DEMO_LOGICAL_ID, FLASH_LOG_POOL_4,
                             &value, sizeof(value), &length);
 
     if (status == FLASH_OK && length != sizeof(value)) {
@@ -29,7 +29,7 @@ static __HIGH_CODE void run_flash_demo(void) {
     }
 
     ++value;
-    status = flash_log_write(DEMO_LOGICAL_ID, &value, FLASH_RECORD_MARKER_4);
+    status = flash_log_write(DEMO_LOGICAL_ID, &value, FLASH_LOG_POOL_4);
     if (status != FLASH_OK) {
         if (status == FLASH_FULL)
             printf("Flash log is full; next address: 0x%08lx\n",
@@ -40,7 +40,7 @@ static __HIGH_CODE void run_flash_demo(void) {
     }
 
     uint32_t readback = 0;
-    status = flash_log_read(DEMO_LOGICAL_ID, FLASH_RECORD_MARKER_4,
+    status = flash_log_read(DEMO_LOGICAL_ID, FLASH_LOG_POOL_4,
                             &readback, sizeof(readback), &length);
     if (status == FLASH_OK)
         printf("Flash counter: %lu\n", (unsigned long)readback);
