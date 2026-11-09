@@ -54,7 +54,10 @@ static flash_status read_full_scan(
     uint16_t logical_id, uint32_t size_code, void *data,
     uint16_t capacity, uint16_t *length
 ) {
-    log_pool_state *pool = log_pool_for_size(size_code);
+    log_pool_state *pool = size_code == FLASH_RECORD_MARKER_4
+                         ? &flash_log_pools[FLASH_LOG_POOL_4]
+                         : size_code == FLASH_RECORD_MARKER_8
+                         ? &flash_log_pools[FLASH_LOG_POOL_8] : NULL;
     const uint16_t payload_len = get_record_len(size_code);
     if (!pool || !payload_len)
         return FLASH_RECORD_INVALID_SIZE;
@@ -96,7 +99,10 @@ static flash_status read_tag_scan(
     uint16_t capacity, uint16_t *length, uint8_t tag_bits,
     const uint32_t *ram_tag_words
 ) {
-    log_pool_state *pool = log_pool_for_size(size_code);
+    log_pool_state *pool = size_code == FLASH_RECORD_MARKER_4
+                         ? &flash_log_pools[FLASH_LOG_POOL_4]
+                         : size_code == FLASH_RECORD_MARKER_8
+                         ? &flash_log_pools[FLASH_LOG_POOL_8] : NULL;
     const uint16_t payload_len = get_record_len(size_code);
     if (!pool || !payload_len)
         return FLASH_RECORD_INVALID_SIZE;

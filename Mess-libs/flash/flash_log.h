@@ -176,24 +176,13 @@ static inline uint16_t get_record_len(uint32_t marker) {
     }
 }
 
-static inline uint16_t block_commit_for_size(uint32_t size_code) {
-    switch (size_code) {
-    case FLASH_RECORD_MARKER_4: return FLASH_BLOCK_HEADER_COMMIT_4;
-    case FLASH_RECORD_MARKER_8: return FLASH_BLOCK_HEADER_COMMIT_8;
-    default: return 0;
-    }
-}
-
-static inline uint32_t block_size_for_commit(uint16_t commit) {
-    if (commit == FLASH_BLOCK_HEADER_COMMIT_4) return FLASH_RECORD_MARKER_4;
-    if (commit == FLASH_BLOCK_HEADER_COMMIT_8) return FLASH_RECORD_MARKER_8;
-    return 0;
-}
-
 static inline flash_status block_header_write(
     uint32_t address, uint16_t generation, uint32_t size_code
 ) {
-    const uint16_t commit = block_commit_for_size(size_code);
+    const uint16_t commit = size_code == FLASH_RECORD_MARKER_4
+                          ? FLASH_BLOCK_HEADER_COMMIT_4
+                          : size_code == FLASH_RECORD_MARKER_8
+                          ? FLASH_BLOCK_HEADER_COMMIT_8 : 0;
     if (!commit)
         return FLASH_RECORD_INVALID_SIZE;
     // Program an erased commit field first, then program the complete 4-byte
@@ -211,26 +200,14 @@ static inline flash_status block_header_write(
             ? FLASH_ERROR : FLASH_OK;
 }
 
-static inline log_pool_state *log_pool_for_size(uint32_t size_code) {
-    if (size_code == FLASH_RECORD_MARKER_4) return &flash_log_pools[FLASH_LOG_POOL_4];
-    if (size_code == FLASH_RECORD_MARKER_8) return &flash_log_pools[FLASH_LOG_POOL_8];
-    return NULL;
-}
-
-static inline uint32_t log_free_blocks(void) {
-    uint32_t count = 0;
-    for (uint32_t i = 0; i < FLASH_BLOCK_COUNT; ++i) {
-        const uint32_t block = FLASH_BASE_ADDR + i * FLASH_BLOCK_SIZE;
-        if (block != flash_log_pools[FLASH_LOG_POOL_4].active_block &&
-            block != flash_log_pools[FLASH_LOG_POOL_8].active_block
-        ) ++count;
-    }
-    return count;
-}
-
 static inline uint32_t get_record_size(uint16_t payload_length) {
+#if FLASH_ALIGNMENT <= 4
+    // The 8-byte header and supported 4-/8-byte payloads are already aligned.
+    return sizeof(flash_record) + payload_length;
+#else
     return (sizeof(flash_record) + payload_length + FLASH_ALIGNMENT - 1u) &
            ~((uint32_t)FLASH_ALIGNMENT - 1u);
+#endif
 }
 
 // Reserve one 32-bit tag word for each group of eight record slots.
@@ -261,21 +238,24 @@ static inline flash_status log_pool_scan(log_pool_state *pool, uint32_t size_cod
     const uint16_t expected_length = get_record_len(size_code);
     const uint32_t block_end = pool->active_block + FLASH_BLOCK_SIZE;
     const uint16_t max_records = max_records_for_length(expected_length);
+    // Rebuild the record area and reset the runtime scan state for this block.
     pool->records_start = records_start_for_length(pool->active_block, expected_length);
     pool->next_address = pool->records_start;
     pool->record_end = pool->next_address;
-    pool->record_count = 0;
     pool->pending_tags = 0xFFFFFFFFu;
+    pool->record_count = 0;
     pool->tag_map_valid = true;
     flash_record record;
 
     while (pool->record_count < max_records &&
            pool->next_address + sizeof(record) <= block_end
     ) {
+        // Read each record header in append order until the block tail is reached.
         if (HW_FLASH_READ(pool->next_address, &record, sizeof(record)))
             return FLASH_ERROR;
 
         const uint16_t length = get_record_len(record.marker);
+        // An erased header ends the log; a non-erased invalid header makes the tail unusable.
         if (!length) {
             const uint8_t *bytes = (const uint8_t *)&record;
             for (size_t i = 0; i < sizeof(record); ++i) {
@@ -287,6 +267,7 @@ static inline flash_status log_pool_scan(log_pool_state *pool, uint32_t size_cod
             return FLASH_OK;
         }
 
+        // Reject a wrong-size or truncated record and prevent later writes over that tail.
         if (length != expected_length ||
             length > block_end - pool->next_address - sizeof(record)
         ) {
@@ -300,6 +281,7 @@ static inline flash_status log_pool_scan(log_pool_state *pool, uint32_t size_cod
             return FLASH_OK;
         }
 
+        // Verify payload contents before counting this record as committed.
         uint8_t payload[8];
         if (HW_FLASH_READ(pool->next_address + sizeof(record), payload, length) ||
             calculate_crc(payload, length) != record.crc
@@ -308,6 +290,7 @@ static inline flash_status log_pool_scan(log_pool_state *pool, uint32_t size_cod
             return FLASH_OK;
         }
 
+        // Add the verified record's tag and advance the in-memory record cursors.
         const uint16_t record_index = pool->record_count;
         // Reverse nibble order so backward reads consume the low nibble first.
         const uint8_t tag_shift = (uint8_t)((0b0111u - (record_index & 0b0111u)) << 2);
@@ -318,7 +301,7 @@ static inline flash_status log_pool_scan(log_pool_state *pool, uint32_t size_cod
         ++pool->record_count;
 
         // A tag word is committed only after all eight records it describes.
-        // A mismatch disables the accelerator; full-header reads remain correct.
+        // Compare it with tags rebuilt from headers; a mismatch disables the shortcut.
         if (!(pool->record_count & 0b0111u)) {
             uint32_t stored_tags;
             if (HW_FLASH_READ(pool->active_block + sizeof(flash_block_header) +
@@ -348,9 +331,12 @@ static inline flash_status flash_log_init(void) {
         if (HW_FLASH_READ(block, &header, sizeof(header)))
             return FLASH_ERROR;
 
-        const uint32_t size_code = block_size_for_commit(header.commit);
-        log_pool_state *pool = log_pool_for_size(size_code);
-        if (!pool)
+        log_pool_state *pool;
+        if (header.commit == FLASH_BLOCK_HEADER_COMMIT_4)
+            pool = &flash_log_pools[FLASH_LOG_POOL_4];
+        else if (header.commit == FLASH_BLOCK_HEADER_COMMIT_8)
+            pool = &flash_log_pools[FLASH_LOG_POOL_8];
+        else
             continue;
 
         found = true;
@@ -424,20 +410,21 @@ static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t size_code
             break;
         }
     }
+
     if (!found_spare)
         return FLASH_FULL;
     if (HW_ERASE_BLOCK(new_block))
         return FLASH_ERROR;
 
-    uint32_t write_address = records_start_for_length(new_block, get_record_len(size_code));
     const uint32_t new_end = new_block + FLASH_BLOCK_SIZE;
-    uint32_t address = pool->records_start;
     const uint32_t old_end = pool->record_end;
     const uint16_t old_count = pool->record_count;
     const uint16_t payload_len = get_record_len(size_code);
     const uint32_t record_size = get_record_size(payload_len);
-    uint16_t copied_count = 0;
+    uint32_t write_address = records_start_for_length(new_block, get_record_len(size_code));
     uint32_t copied_tags = 0xFFFFFFFFu;
+    uint32_t address = pool->records_start;
+    uint16_t copied_count = 0;
     flash_record record;
     uint8_t payload[8];
 
@@ -445,6 +432,7 @@ static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t size_code
     for (uint16_t i = 0; i < old_count && address + sizeof(record) <= old_end; ++i) {
         if (HW_FLASH_READ(address, &record, sizeof(record)))
             return FLASH_ERROR;
+
         if (get_record_len(record.marker) != payload_len ||
             payload_len > old_end - address - sizeof(record)
         ) break;
@@ -452,16 +440,19 @@ static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t size_code
         bool replaced = false;
         uint32_t later_address = address + record_size;
 
+        //! Search newer records for the same ID; if found, GC can skip this old value.
         for (uint16_t j = (uint16_t)(i + 1u);
              j < old_count && later_address + sizeof(record) <= old_end; ++j
         ) {
             flash_record later;
-
             if (HW_FLASH_READ(later_address, &later, sizeof(later)))
                 return FLASH_ERROR;
+
+            // Stop if this later header has the wrong size or its payload is truncated.
             if (get_record_len(later.marker) != payload_len ||
-                payload_len > old_end - later_address - sizeof(later))
-                break;
+                payload_len > old_end - later_address - sizeof(later)
+            ) break;
+
             if (later.logical_id == record.logical_id) {
                 replaced = true;
                 break;
@@ -469,9 +460,11 @@ static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t size_code
             later_address += record_size;
         }
 
+        //! Copy this value only if no newer record has the same ID.
         if (!replaced) {
             if (write_address + record_size > new_end)
                 return FLASH_FULL;
+
             if (HW_FLASH_READ(address + sizeof(record), payload, payload_len) ||
                 calculate_crc(payload, payload_len) != record.crc ||
                 store_record_at(write_address, record.logical_id, payload,
@@ -483,7 +476,7 @@ static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t size_code
             write_address += record_size;
             ++copied_count;
 
-            // Write each packed tag word once, after all eight destination records commit.
+            //! Write each packed tag word once, after all eight destination records commit.
             if (!(copied_count & 0b0111u)) {
                 if (copied_tags != 0xFFFFFFFFu &&
                     HW_FLASH_WRITE(new_block + sizeof(flash_block_header) +
@@ -517,45 +510,69 @@ static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t size_code
 static inline flash_status flash_log_write(
     uint16_t logical_id, const void *data, uint32_t size_code
 ) {
+    // A payload pointer is required because every successful write stores data.
     if (!data) return FLASH_ERROR;
 
-    log_pool_state *pool = log_pool_for_size(size_code);
-    const uint16_t length = get_record_len(size_code);
-    if (!pool || !length)
+    log_pool_state *pool;
+    log_pool_state *other_pool;
+    uint16_t length;
+
+    // Select the matching size-class pool and its fixed payload length.
+    if (size_code == FLASH_RECORD_MARKER_4) {
+        pool = &flash_log_pools[FLASH_LOG_POOL_4];
+        other_pool = &flash_log_pools[FLASH_LOG_POOL_8];
+        length = 4;
+    }
+    else if (size_code == FLASH_RECORD_MARKER_8) {
+        pool = &flash_log_pools[FLASH_LOG_POOL_8];
+        other_pool = &flash_log_pools[FLASH_LOG_POOL_4];
+        length = 8;
+    }
+    else {
         return FLASH_RECORD_INVALID_SIZE;
+    }
 
-    // The first class can use one block and leave one spare. A second class needs
-    // a block of its own while preserving a shared spare, so it needs two free blocks.
+    // If this class has no block yet, assign and initialize its first active block.
     if (!pool->active_block) {
-        log_pool_state *other_pool = (pool == &flash_log_pools[FLASH_LOG_POOL_4])
-                            ? &flash_log_pools[FLASH_LOG_POOL_8] : &flash_log_pools[FLASH_LOG_POOL_4];
-        const uint32_t needed_free = other_pool->active_block ? 2u : 1u;
-        if (log_free_blocks() < needed_free)
-            return FLASH_FULL;
+        uint32_t free_block_count = 0;
+        uint32_t first_free_block = 0;
 
+        // Count unused blocks and remember the first one for this pool.
         for (uint32_t i = 0; i < FLASH_BLOCK_COUNT; ++i) {
             const uint32_t block = FLASH_BASE_ADDR + i * FLASH_BLOCK_SIZE;
-            if (block == flash_log_pools[FLASH_LOG_POOL_4].active_block ||
-                block == flash_log_pools[FLASH_LOG_POOL_8].active_block
-            ) continue;
 
-            if (HW_ERASE_BLOCK(block))
-                return FLASH_ERROR;
-
-            pool->active_block = block;
-            pool->generation = 1;
-            if (block_header_write(block, pool->generation, size_code) != FLASH_OK) {
-                pool->active_block = 0;
-                return FLASH_ERROR;
+            // A block is free only if neither size-class pool currently uses it.
+            if (block != flash_log_pools[FLASH_LOG_POOL_4].active_block &&
+                block != flash_log_pools[FLASH_LOG_POOL_8].active_block
+            ) {
+                if (!free_block_count)
+                    first_free_block = block;
+                ++free_block_count;
             }
-            pool->records_start = records_start_for_length(block, length);
-            pool->next_address = pool->records_start;
-            pool->record_end = pool->next_address;
-            pool->record_count = 0;
-            pool->pending_tags = 0xFFFFFFFFu;
-            pool->tag_map_valid = true;
-            break;
         }
+        // Reserve one free block for GC after assigning this pool its active block.
+        if (free_block_count < (other_pool->active_block ? 2u : 1u))
+            return FLASH_FULL;
+
+        // Erase the selected block, commit its size-class header, then initialize
+        // the record cursors and tag-table state for an empty pool.
+        if (HW_ERASE_BLOCK(first_free_block))
+            return FLASH_ERROR;
+
+        pool->active_block = first_free_block;
+        pool->generation = 1;
+
+        // Mark the erased block with this pool's size class; undo the assignment on failure.
+        if (block_header_write(first_free_block, pool->generation, size_code) != FLASH_OK) {
+            pool->active_block = 0;
+            return FLASH_ERROR;
+        }
+        pool->records_start = records_start_for_length(first_free_block, length);
+        pool->next_address = pool->records_start;
+        pool->record_end = pool->next_address;
+        pool->pending_tags = 0xFFFFFFFFu;
+        pool->record_count = 0;
+        pool->tag_map_valid = true;
     }
 
     const uint32_t record_size = get_record_size(length);
@@ -565,6 +582,7 @@ static inline flash_status flash_log_write(
     if (pool->records_start > max_start_addr)
         return FLASH_RECORD_TOO_LARGE;
 
+    // If the append position is past that limit, GC copies live records to a spare block.
     if (pool->next_address > max_start_addr) {
         const flash_status status = flash_log_gc(pool, size_code);
 
@@ -576,11 +594,14 @@ static inline flash_status flash_log_write(
             return FLASH_FULL;
     }
 
+    // Append the record; its marker is programmed last to mark it as committed.
     if (store_record_at(pool->next_address, logical_id, data, length, size_code) != FLASH_OK) {
+        // Do not retry at a possibly partially programmed address; skip to block end.
         pool->next_address = pool->active_block + FLASH_BLOCK_SIZE;
         return FLASH_ERROR;
     }
 
+    // Add this ID's tag to RAM and advance the committed-record cursors.
     const uint16_t record_index = pool->record_count;
     // Reverse nibble order so backward reads consume the low nibble first.
     const uint8_t tag_shift = (uint8_t)((0b0111u - (record_index & 0b0111u)) << 2);
@@ -589,6 +610,7 @@ static inline flash_status flash_log_write(
     pool->record_end = pool->next_address;
     ++pool->record_count;
 
+    //! Commit one tag-table word after all eight described records are committed.
     if (!(pool->record_count & 0b0111u)) {
         if (pool->tag_map_valid &&
             HW_FLASH_WRITE(pool->active_block + sizeof(flash_block_header) +
@@ -607,7 +629,10 @@ static inline flash_status flash_log_read_fast(
     uint16_t logical_id, uint32_t size_code, void *data,
     uint16_t capacity, uint16_t *length
 ) {
-    log_pool_state *pool = log_pool_for_size(size_code);
+    log_pool_state *pool = size_code == FLASH_RECORD_MARKER_4
+                         ? &flash_log_pools[FLASH_LOG_POOL_4]
+                         : size_code == FLASH_RECORD_MARKER_8
+                         ? &flash_log_pools[FLASH_LOG_POOL_8] : NULL;
     const uint16_t requested_length = get_record_len(size_code);
 
     if (!pool || !requested_length)
