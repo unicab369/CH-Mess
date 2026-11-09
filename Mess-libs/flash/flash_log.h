@@ -213,7 +213,7 @@ static inline uint32_t get_record_size(uint16_t payload_len) {
 }
 
 // Reserve one 32-bit tag word for each group of eight record slots.
-static inline uint16_t max_records_for_length(uint16_t payload_len) {
+static inline uint16_t max_records_for_len(uint16_t payload_len) {
     const uint32_t record_size = get_record_size(payload_len);
     uint16_t count = 0;
 
@@ -230,7 +230,7 @@ static inline uint16_t max_records_for_length(uint16_t payload_len) {
 }
 
 static inline uint32_t records_start_for_length(uint32_t block, uint16_t payload_len) {
-    const uint32_t tag_words = ((uint32_t)max_records_for_length(payload_len) + 7u) / 8u;
+    const uint32_t tag_words = ((uint32_t)max_records_for_len(payload_len) + 7u) / 8u;
     return block + ((sizeof(flash_block_header) + tag_words * sizeof(uint32_t) +
                     FLASH_ALIGNMENT - 1u) & ~((uint32_t)FLASH_ALIGNMENT - 1u));
 }
@@ -238,7 +238,7 @@ static inline uint32_t records_start_for_length(uint32_t block, uint16_t payload
 // Rebuild one class's append cursor by scanning its committed record headers.
 static inline flash_status log_pool_scan(log_pool_state *pool, uint16_t payload_len) {
     const uint32_t block_end = pool->active_block + FLASH_BLOCK_SIZE;
-    const uint16_t max_records = max_records_for_length(payload_len);
+    const uint16_t max_records = max_records_for_len(payload_len);
     // Rebuild the record area and reset the runtime scan state for this block.
     pool->records_start = records_start_for_length(pool->active_block, payload_len);
     pool->next_address = pool->records_start;
