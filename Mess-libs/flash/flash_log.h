@@ -559,16 +559,20 @@ static inline flash_status flash_log_write(
     }
 
     const uint32_t record_size = get_record_size(length);
-    if (record_size > FLASH_BLOCK_SIZE - (pool->records_start - pool->active_block))
+    const uint32_t max_start_offset = FLASH_BLOCK_SIZE - record_size;
+    uint32_t max_start_addr = pool->active_block + max_start_offset;
+
+    if (pool->records_start > max_start_addr)
         return FLASH_RECORD_TOO_LARGE;
 
-    if (pool->next_address + record_size > pool->active_block + FLASH_BLOCK_SIZE) {
+    if (pool->next_address > max_start_addr) {
         const flash_status status = flash_log_gc(pool, size_code);
 
         if (status != FLASH_OK)
             return status;
-        // GC may change active_block and next_address; check whether the new block fits.
-        if (pool->next_address + record_size > pool->active_block + FLASH_BLOCK_SIZE)
+        // GC changes the active block, so update the latest allowed record address.
+        max_start_addr = pool->active_block + max_start_offset;
+        if (pool->next_address > max_start_addr)
             return FLASH_FULL;
     }
 
@@ -577,8 +581,6 @@ static inline flash_status flash_log_write(
         return FLASH_ERROR;
     }
 
-    // Accumulate the tag in RAM. Flash stores each tag word once, after all eight
-    // corresponding records are committed, so a reset cannot leave a half-updated word.
     const uint16_t record_index = pool->record_count;
     // Reverse nibble order so backward reads consume the low nibble first.
     const uint8_t tag_shift = (uint8_t)((0b0111u - (record_index & 0b0111u)) << 2);
@@ -592,7 +594,9 @@ static inline flash_status flash_log_write(
             HW_FLASH_WRITE(pool->active_block + sizeof(flash_block_header) +
                            (uint32_t)(record_index >> 3) * sizeof(pool->pending_tags),
                            &pool->pending_tags, sizeof(pool->pending_tags))
-        ) pool->tag_map_valid = false;
+        )  {
+            pool->tag_map_valid = false;
+        }
         pool->pending_tags = 0xFFFFFFFFu;
     }
     return FLASH_OK;
@@ -640,6 +644,8 @@ static inline flash_status flash_log_read_fast(
 
         //! 1. Check the tag first so mismatches skip the full record-header read below.
         if (has_tag) {
+            // Each tag-table word stores tags for eight records. Load it when the
+            // scan enters a new group, then reuse it for the group's other records.
             if (!tag_group_cached || cached_tag_group != tag_group) {
                 if (HW_FLASH_READ(tag_base + (uint32_t)tag_group * sizeof(cached_tags),
                                   &cached_tags, sizeof(cached_tags))

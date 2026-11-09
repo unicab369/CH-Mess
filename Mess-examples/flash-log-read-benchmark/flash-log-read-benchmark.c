@@ -106,6 +106,10 @@ static flash_status read_tag_scan(
     const uint8_t pool_index = size_code == FLASH_RECORD_MARKER_4
                              ? FLASH_LOG_POOL_4 : FLASH_LOG_POOL_8;
     const uint8_t entries_per_word = (uint8_t)(32u / tag_bits);
+    const uint8_t tag_group_shift = tag_bits == 2u ? 4u : tag_bits == 4u ? 3u : 2u;
+    const uint8_t tag_position_mask = entries_per_word - 1u;
+    const uint8_t tag_order_xor = tag_bits == 4u ? 0b0111u : 0u;
+    const uint8_t tag_value_shift = tag_bits == 2u ? 1u : tag_bits == 4u ? 2u : 3u;
     const uint8_t tag_mask = (uint8_t)((1u << tag_bits) - 1u);
     const uint8_t wanted_tag = (uint8_t)logical_id & tag_mask;
     const uint32_t tag_base = tag_bits == 4u
@@ -123,7 +127,7 @@ static flash_status read_tag_scan(
         address -= stride;
         const uint16_t record_index = (uint16_t)(
             (address - pool->records_start) / stride);
-        const uint16_t tag_group = record_index / entries_per_word;
+        const uint16_t tag_group = record_index >> tag_group_shift;
         if (tag_group != cached_group) {
             if (ram_tag_words) {
                 cached_tags = ram_tag_words[tag_group];
@@ -135,8 +139,9 @@ static flash_status read_tag_scan(
             cached_group = tag_group;
         }
 
-        const uint8_t tag_shift = (uint8_t)(
-            (record_index % entries_per_word) * tag_bits);
+        // Apply the table's packing order using the precomputed mask and shifts.
+        const uint8_t tag_position = (uint8_t)((record_index & tag_position_mask) ^ tag_order_xor);
+        const uint8_t tag_shift = (uint8_t)(tag_position << tag_value_shift);
         const uint8_t record_tag = (uint8_t)(
             (cached_tags >> tag_shift) & tag_mask);
         if (record_tag != wanted_tag)
@@ -364,7 +369,7 @@ static void benchmark_class(
 }
 
 static void benchmark_read_paths(void) {
-    printf("Pld: payload size (4B or 8B).\n");
+    printf("\nPld: payload size (4B or 8B).\n");
     printf("Search: newest record, oldest record, or missing ID.\n");
     printf("Ticks: SysTick ticks per search.\n");
     printf("Reads: flash read calls per search.\n");
