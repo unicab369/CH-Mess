@@ -71,7 +71,7 @@ static flash_status read_full_scan(
         if (flash_log_bench_count_reads)
             ++scan_header_reads;
         if (HW_FLASH_READ(address, &record, sizeof(record)) ||
-            get_record_len(record.marker) != payload_len
+            get_payload_len(record.marker) != payload_len
         ) return FLASH_ERROR;
         if (record.logical_id != logical_id)
             continue;
@@ -148,7 +148,7 @@ static flash_status read_tag_scan(
         if (flash_log_bench_count_reads)
             ++scan_header_reads;
         if (HW_FLASH_READ(address, &record, sizeof(record)) ||
-            get_record_len(record.marker) != payload_len
+            get_payload_len(record.marker) != payload_len
         ) return FLASH_ERROR;
         if (((uint8_t)record.logical_id & tag_mask) != record_tag)
             return FLASH_ERROR;
@@ -205,7 +205,7 @@ static flash_status prepare_tag8_map(uint8_t pool_index) {
 
     const uint32_t size_code = pool_index == FLASH_LOG_POOL_4
                              ? FLASH_RECORD_MARKER_4 : FLASH_RECORD_MARKER_8;
-    const uint16_t payload_len = get_record_len(size_code);
+    const uint16_t payload_len = get_payload_len(size_code);
     const uint32_t stride = get_record_size(payload_len);
     const uint16_t group_count = (uint16_t)((pool->record_count + 3u) / 4u);
     for (uint16_t group = 0; group < group_count; ++group) {
@@ -244,7 +244,7 @@ static flash_status prepare_tag2_map(uint8_t pool_index) {
 
     const uint32_t size_code = pool_index == FLASH_LOG_POOL_4
                              ? FLASH_RECORD_MARKER_4 : FLASH_RECORD_MARKER_8;
-    const uint32_t stride = get_record_size(get_record_len(size_code));
+    const uint32_t stride = get_record_size(get_payload_len(size_code));
     for (uint16_t group = 0; group < group_count; ++group) {
         uint32_t tags = 0xFFFFFFFFu;
         for (uint8_t slot = 0; slot < 16; ++slot) {

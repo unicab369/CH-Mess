@@ -170,7 +170,7 @@ static inline uint16_t calculate_crc(const uint8_t *bytes, size_t length) {
     return (uint16_t)~crc;
 }
 
-static inline uint16_t get_record_len(uint32_t marker) {
+static inline uint16_t get_payload_len(uint32_t marker) {
     switch (marker) {
     case FLASH_RECORD_MARKER_4:  return 4;
     case FLASH_RECORD_MARKER_8:  return 8;
@@ -236,12 +236,11 @@ static inline uint32_t records_start_for_length(uint32_t block, uint16_t payload
 }
 
 // Rebuild one class's append cursor by scanning its committed record headers.
-static inline flash_status log_pool_scan(log_pool_state *pool, uint32_t marker) {
-    const uint16_t expected_length = get_record_len(marker);
+static inline flash_status log_pool_scan(log_pool_state *pool, uint16_t payload_len) {
     const uint32_t block_end = pool->active_block + FLASH_BLOCK_SIZE;
-    const uint16_t max_records = max_records_for_length(expected_length);
+    const uint16_t max_records = max_records_for_length(payload_len);
     // Rebuild the record area and reset the runtime scan state for this block.
-    pool->records_start = records_start_for_length(pool->active_block, expected_length);
+    pool->records_start = records_start_for_length(pool->active_block, payload_len);
     pool->next_address = pool->records_start;
     pool->record_end = pool->next_address;
     pool->pending_tags = 0xFFFFFFFFu;
@@ -256,7 +255,7 @@ static inline flash_status log_pool_scan(log_pool_state *pool, uint32_t marker) 
         if (HW_FLASH_READ(pool->next_address, &record, sizeof(record)))
             return FLASH_ERROR;
 
-        const uint16_t length = get_record_len(record.marker);
+        const uint16_t length = get_payload_len(record.marker);
         // An erased header ends the log; a non-erased invalid header makes the tail unusable.
         if (!length) {
             const uint8_t *bytes = (const uint8_t *)&record;
@@ -270,7 +269,7 @@ static inline flash_status log_pool_scan(log_pool_state *pool, uint32_t marker) 
         }
 
         // Reject a wrong-size or truncated record and prevent later writes over that tail.
-        if (length != expected_length ||
+        if (length != payload_len ||
             length > block_end - pool->next_address - sizeof(record)
         ) {
             pool->next_address = block_end;
@@ -356,9 +355,9 @@ static inline flash_status flash_log_init(void) {
     }
 
     if ((flash_log_pools[FLASH_LOG_POOL_4].active_block &&
-         log_pool_scan(&flash_log_pools[FLASH_LOG_POOL_4], FLASH_RECORD_MARKER_4) != FLASH_OK) ||
+         log_pool_scan(&flash_log_pools[FLASH_LOG_POOL_4], 4) != FLASH_OK) ||
         (flash_log_pools[FLASH_LOG_POOL_8].active_block &&
-         log_pool_scan(&flash_log_pools[FLASH_LOG_POOL_8], FLASH_RECORD_MARKER_8) != FLASH_OK)
+         log_pool_scan(&flash_log_pools[FLASH_LOG_POOL_8], 8) != FLASH_OK)
     ) return FLASH_ERROR;
 
     return FLASH_OK;
@@ -389,7 +388,10 @@ static inline flash_status store_record_at(
 // 4. Erase the old active block; it becomes the spare for a later GC.
 // With more than two blocks, starting each search after the old block rotates
 // this class through available blocks; the other class's active block is skipped.
-static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t marker) {
+static inline flash_status flash_log_gc(
+    log_pool_state *pool, uint32_t marker,
+    uint16_t payload_len, uint32_t record_size
+) {
     uint32_t new_block = 0;
     bool found_spare = false;
     const uint32_t old_block = pool->active_block;
@@ -421,8 +423,6 @@ static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t marker) {
     const uint32_t new_end = new_block + FLASH_BLOCK_SIZE;
     const uint32_t old_end = pool->record_end;
     const uint16_t old_count = pool->record_count;
-    const uint16_t payload_len = get_record_len(marker);
-    const uint32_t record_size = get_record_size(payload_len);
     uint32_t write_address = records_start_for_length(new_block, payload_len);
     uint32_t copied_tags = 0xFFFFFFFFu;
     uint32_t address = pool->records_start;
@@ -435,7 +435,7 @@ static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t marker) {
         if (HW_FLASH_READ(address, &record, sizeof(record)))
             return FLASH_ERROR;
 
-        if (get_record_len(record.marker) != payload_len ||
+        if (get_payload_len(record.marker) != payload_len ||
             payload_len > old_end - address - sizeof(record)
         ) break;
 
@@ -451,7 +451,7 @@ static inline flash_status flash_log_gc(log_pool_state *pool, uint32_t marker) {
                 return FLASH_ERROR;
 
             // Stop if this later header has the wrong size or its payload is truncated.
-            if (get_record_len(later.marker) != payload_len ||
+            if (get_payload_len(later.marker) != payload_len ||
                 payload_len > old_end - later_address - sizeof(later)
             ) break;
 
@@ -520,7 +520,7 @@ static inline flash_status flash_log_write(
     uint16_t payload_len;
     uint32_t marker;
 
-    // Select the matching size-class pool and its fixed payload length.
+    //! Select the matching size-class pool and its fixed payload length.
     if (pool_id == FLASH_LOG_POOL_4) {
         pool = &flash_log_pools[FLASH_LOG_POOL_4];
         other_pool = &flash_log_pools[FLASH_LOG_POOL_8];
@@ -537,7 +537,7 @@ static inline flash_status flash_log_write(
         return FLASH_RECORD_INVALID_SIZE;
     }
 
-    // If this class has no block yet, assign and initialize its first active block.
+    //! If this class has no block yet, assign and initialize its first active block.
     if (!pool->active_block) {
         uint32_t free_block_count = 0;
         uint32_t first_free_block = 0;
@@ -587,9 +587,9 @@ static inline flash_status flash_log_write(
     if (pool->records_start > max_start_addr)
         return FLASH_RECORD_TOO_LARGE;
 
-    // If the append position is past that limit, GC copies live records to a spare block.
+    //! If the append position is past that limit, GC copies live records to a spare block.
     if (pool->next_address > max_start_addr) {
-        const flash_status status = flash_log_gc(pool, marker);
+        const flash_status status = flash_log_gc(pool, marker, payload_len, record_size);
 
         if (status != FLASH_OK)
             return status;
@@ -703,7 +703,7 @@ static inline flash_status flash_log_read_fast(
         //! 2. Read and validate the header before using its ID, marker, or CRC.
         flash_record record;
         if (HW_FLASH_READ(address, &record, sizeof(record)) ||
-            get_record_len(record.marker) != payload_len
+            get_payload_len(record.marker) != payload_len
         ) return FLASH_ERROR;
 
         //! 3. Check the tag against the full ID before trusting it to skip records.
