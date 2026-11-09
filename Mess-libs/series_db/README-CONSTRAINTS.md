@@ -1,9 +1,31 @@
 # Series DB format constraints to define
 
-1. **Byte layout and CRC:** Specify byte order, field order, and CRC coverage for each block. Define the CRC-16 variant and whether the CRC field itself is excluded from the calculation.
-2. **Schema ID width:** Resolve the mismatch: schema entries use a 1-byte `schema_id`, while record blocks use a 2-byte Schema ID.
-3. **Schema table limits:** Define schema table limits and encoding. Each entry currently uses 11 bytes, and the 1-byte table length allows roughly 22–23 entries depending on whether it includes the table header. The fixed 8-byte `column_widths` array and 8 sign bits allow at most 8 columns; define how unused width slots are represented.
-4. **Payload and continuation blocks:** Define how readers determine the valid payload length or record count, and how continuation blocks are associated with and ordered after their record block.
-5. **Superblock recovery:** Define the superblock update and recovery procedure. If both copies are valid but differ, specify how to choose the current copy; consider a generation counter or sequence number.
-6. **Timing configuration:** Define the 8-byte Timing Config layout and explain how it relates to timestamps in the payload.
-7. **Block capacity:** Clarify how the stated 4,094 bytes of data relate to a 4 KiB block and its headers.
+
+1. **Schema table limits:** Define schema table limits and encoding. Each entry currently uses 11 bytes, and the table length includes the 4-byte header. The fixed 8-byte `column_widths` array and 8 sign bits allow at most 8 columns; define how unused width slots are represented.
+
+   | `table_length` size | Maximum table length | Maximum schema entries |
+   |---|---:|---:|
+   | 1 byte | 255 bytes | 22 |
+   | 2 bytes | 65,535 bytes | 5,957 |
+
+   These limits are based on table length alone. The current 1-byte `schema_count` limits the count to 255 entries, and the superblock's physical capacity may impose a lower limit.
+2. **Payload and continuation blocks:** Define how readers determine the valid payload length or record count, and how continuation blocks are associated with and ordered after their record block.
+
+## Superblock Recovery
+
+Define the superblock update and recovery procedure. If both copies are valid but differ, specify how to choose the current copy; consider a generation counter or sequence number.
+
+## Block Capacity
+
+Clarify how the stated 4,094 bytes of data relate to a 4 KiB block and its headers.
+
+## Record Configuration
+
+`record_config` occupies 7 bytes:
+
+| field | size | purpose |
+|---|---:|---|
+| `time_value` | 4 bytes | Stores the time value for records in the block. |
+| `time_format` | 1 byte | Identifies how the time value is represented. |
+| `flags` | 1 byte | Stores record configuration flags. |
+| `codec` | 1 byte | Identifies the codec used for the payload. |

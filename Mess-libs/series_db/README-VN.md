@@ -24,9 +24,9 @@ Mỗi superblock gồm:
 
 | Trường | Kích thước | Mục đích |
 |---|---:|---|
-| **magic_number\*** (`M`) | 2 byte | Xác định điểm bắt đầu của header superblock. |
-| **crc_16**<sup>(*)</sup> (`C`) | 2 byte | Phát hiện các thay đổi ngoài ý muốn hoặc dữ liệu superblock bị hỏng. |
-| **version\*** (`V`) | 1 byte | Xác định định dạng superblock. |
+| **magic_number** (`M`) | 2 byte<sup>*</sup> | Xác định điểm bắt đầu của header superblock. |
+| **crc_16** (`C`) | 2 byte<sup>(*)</sup> | Phát hiện các thay đổi ngoài ý muốn hoặc dữ liệu superblock bị hỏng. |
+| **version** (`V`) | 1 byte<sup>*</sup> | Xác định định dạng superblock. |
 | **flags** (`F`) | 1 byte | Lưu các cờ của superblock. |
 | **schema_table** (`S`) | Thay đổi | Ánh xạ schema ID sang bố cục payload. |
 
@@ -67,18 +67,18 @@ Header bảng (Th) gồm:
 
 | Trường | Kích thước | Mục đích |
 |---|---:|---|
-| **crc_16**<sup>(*)</sup> | 2 byte | Checksum được tính trên tất cả các mục schema. |
-| **schema_count\*** | 1 byte | Số lượng mục schema trong bảng. |
-| **table_length\*** | 1 byte | Độ dài của bảng schema. |
+| **crc_16** | 2 byte<sup>(*)</sup> | Checksum được tính trên tất cả các mục schema. |
+| **schema_count** | 1 byte<sup>*</sup> | Số lượng mục schema trong bảng. |
+| **table_length** | 1 byte<sup>*</sup> | Độ dài của bảng schema. |
 
 Một mục schema (S_en) gồm:
 
 | Trường | Kích thước | Mục đích |
 |---|---:|---|
-| **schema_id\*** | 1 byte | Định danh mục schema. |
-| **column_count\*** | 1 byte | Số cột trong schema. |
-| **column_widths**<sup>(*)</sup> | 8 byte | Lưu độ rộng của từng cột. |
-| **column_signs**<sup>(*)</sup> | 8 bit | Mỗi cột dùng một bit, từ bit có trọng số cao nhất đến thấp nhất; `1` = có dấu, `0` = không dấu. |
+| **schema_id** | 1 byte<sup>*</sup> | Định danh mục schema. |
+| **column_count** | 1 byte<sup>*</sup> | Số cột trong schema. |
+| **column_widths** | 8 byte<sup>(*)</sup> | Lưu độ rộng của từng cột. |
+| **column_signs** | 8 bit<sup>(*)</sup> | Mỗi cột dùng một bit, từ bit có trọng số cao nhất đến thấp nhất; `1` = có dấu, `0` = không dấu. |
 
 Ví dụ:
 
@@ -126,11 +126,10 @@ Một record block gồm:
 
 | Trường | Kích thước | Mục đích |
 |---|---:|---|
-| **magic_number\*** | 2 byte | Xác định điểm bắt đầu của record block. |
-| **crc_16**<sup>(*)</sup> | 2 byte | Phát hiện các thay đổi ngoài ý muốn hoặc dữ liệu trong khối bị hỏng. |
-| **schema_id**<sup>(*)</sup> | 2 byte | Xác định schema dùng để diễn giải payload. |
-| **flags**<sup>(*)</sup> | 8 bit | Lưu các cờ của record block. |
-| **timing_config**<sup>(*)</sup> | 8 byte | Lưu các thiết lập thời gian dùng để diễn giải timestamp của bản ghi. |
+| **magic_number** | 2 byte<sup>*</sup> | Xác định điểm bắt đầu của record block. |
+| **crc_16** | 2 byte<sup>(*)</sup> | Phát hiện các thay đổi ngoài ý muốn hoặc dữ liệu trong khối bị hỏng. |
+| **schema_id** | 1 byte<sup>(*)</sup> | Xác định schema dùng để diễn giải payload. |
+| **record_config** | 7 byte<sup>*</sup> | Lưu thời gian, định dạng, cờ và codec cho các bản ghi. |
 | **payload** | Thay đổi | Lưu các bản ghi. |
 
 ## Continuation block (C)
@@ -141,8 +140,8 @@ Một continuation block gồm:
 
 | Trường | Kích thước | Mục đích |
 |---|---:|---|
-| **magic_number\*** | 2 byte | Xác định điểm bắt đầu của continuation block. |
-| **crc_16**<sup>(*)</sup> | 2 byte | Phát hiện các thay đổi ngoài ý muốn hoặc dữ liệu trong khối bị hỏng. |
+| **magic_number** | 2 byte<sup>*</sup> | Xác định điểm bắt đầu của continuation block. |
+| **crc_16** | 2 byte<sup>(*)</sup> | Phát hiện các thay đổi ngoài ý muốn hoặc dữ liệu trong khối bị hỏng. |
 | **payload** | Thay đổi | Lưu các bản ghi tiếp nối từ khối trước đó. |
 
 Sau mỗi record block là các continuation block cần thiết để lưu phần bản ghi còn lại.

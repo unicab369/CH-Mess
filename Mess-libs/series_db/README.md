@@ -25,9 +25,9 @@ Each superblock contains:
 
 | field | size | purpose |
 |---|---:|---|
-| **magic_number\*** (`M`) | 2 bytes | Identifies the start of the superblock header. |
-| **crc_16(\*)** (`C`) | 2 bytes | Detects accidental changes or corruption in the superblock data. |
-| **version\*** (`V`) | 1 byte | Identifies the superblock format. |
+| **magic_number** (`M`) | 2 bytes<sup>*</sup> | Identifies the start of the superblock header. |
+| **crc_16** (`C`) | 2 bytes<sup>(*)</sup> | Detects accidental changes or corruption in the superblock data. |
+| **version** (`V`) | 1 byte<sup>*</sup> | Identifies the superblock format. |
 | **flags** (`F`) | 1 byte | Stores superblock flags. |
 | **schema_table** (`S`) | Variable | Maps schema IDs to payload layouts. |
 
@@ -67,18 +67,20 @@ The table header (Th) contains:
 
 | field | size | purpose |
 |---|---:|---|
-| **crc_16(\*)** | 2 bytes | Checksum calculated over all schema entries. |
-| **schema_count\*** | 1 byte | Number of schema entries in the table. |
-| **table_length\*** | 1 byte | Length of the schema table. |
+| **crc_16** | 2 bytes<sup>(*)</sup> | Checksum calculated over all schema entries. |
+| **schema_count** | 1 byte<sup>*</sup> | Number of schema entries in the table. |
+| **table_length** | 1 byte<sup>*</sup> | Length of the schema table. |
 
 A schema entry (S_en) contains:
 
 | field | size | purpose |
 |---|---:|---|
-| **schema_id\*** | 1 byte | Identifies the schema entry. |
-| **column_count\*** | 1 byte | Number of columns in the schema. |
-| **column_widths(*)** | 8 bytes | Stores the width of each column. |
-| **column_signs(*)** | 8 bits | One bit per column, from most to least significant; `1` = signed, `0` = unsigned. |
+| **schema_id** | 1 byte<sup>*</sup> | Identifies the schema entry. |
+| **column_count** | 1 byte<sup>*</sup> | Number of columns in the schema. |
+| **column_widths** | 8 bytes<sup>(*)</sup> | Stores the width of each column. |
+| **column_signs** | 8 bits<sup>(*)</sup> | One bit per column, from most to least significant; `1` = signed, `0` = unsigned. |
+
+> Each schema entry occupies 11 bytes: 1B `schema_id`, 1B `column_count`, 8B `column_widths`, and 1B `column_signs`.
 
 For example:
 
@@ -126,11 +128,10 @@ A record block contains:
 
 | field | size | purpose |
 |---|---:|---|
-| **magic_number\*** | 2 bytes | Identifies the start of the record block. |
-| **crc_16\(*)** | 2 bytes | Detects accidental changes or corruption in the block. |
-| **schema_id(\*)** | 2 bytes | Identifies the schema used to interpret the payload. |
-| **flags(\*)** | 8 bits | Stores record block flags. |
-| **timing_config(\*)** | 8 bytes | Stores the timing settings used to interpret record timestamps. |
+| **magic_number** | 2 bytes<sup>*</sup> | Identifies the start of the record block. |
+| **crc_16** | 2 bytes<sup>(*)</sup> | Detects accidental changes or corruption in the block. |
+| **schema_id** | 1 byte<sup>(*)</sup> | Identifies the schema used to interpret the payload. |
+| **record_config** | 7 bytes<sup>*</sup> | Stores the time, format, flags, and codec settings for the records. |
 | **payload** | Variable | Stores the records. |
 
 ## Continuation blocks (C)
@@ -141,8 +142,8 @@ A continuation block contains:
 
 | Field | Size | Purpose |
 |---|---:|---|
-| **magic_number\*** | 2 bytes | Identifies the start of the continuation block. |
-| **crc_16(\*)** | 2 bytes | Detects accidental changes or corruption in the block. |
+| **magic_number** | 2 bytes<sup>*</sup> | Identifies the start of the continuation block. |
+| **crc_16** | 2 bytes<sup>(*)</sup> | Detects accidental changes or corruption in the block. |
 | **payload** | Variable | Stores records that continue from the preceding block. |
 
 Each record block is followed by any continuation blocks needed to store its remaining records.
