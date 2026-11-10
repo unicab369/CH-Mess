@@ -25,111 +25,41 @@ Mỗi superblock gồm:
 | Trường | Kích thước | Mục đích |
 |---|---:|---|
 | **magic_number** (`M`) | 2 byte<sup>*</sup> | Xác định điểm bắt đầu của header superblock. |
-| **crc_16** (`C`) | 2 byte<sup>(*)</sup> | Phát hiện các thay đổi ngoài ý muốn hoặc dữ liệu superblock bị hỏng. |
+| **crc16** (`C`) | 2 byte<sup>(*)</sup> | Xác thực các trường cố định của superblock; các schema slot có CRC riêng. |
+| **config** (`G`) | 1 byte<sup>*</sup> | Lưu các tùy chọn cấu hình chung của cơ sở dữ liệu. |
 | **version** (`V`) | 1 byte<sup>*</sup> | Xác định định dạng superblock. |
 | **flags** (`F`) | 1 byte | Lưu các cờ của superblock. |
-| **schema_table** (`S`) | Thay đổi | Ánh xạ schema ID sang bố cục payload. |
+| **schema_slots** (`S`) | Phần còn lại | Các mục schema chỉ ghi nối tiếp. Mỗi mục có CRC và dấu đánh dấu đã ghi hoàn tất. |
 
-> Trong danh sách trường, `*` nghĩa là trường bắt buộc. `(*)` nghĩa là trường bắt buộc nhưng kích thước vẫn cần được xác định.
+Trong danh sách trường:
+
+- `*` nghĩa là trường bắt buộc.
+- `(*)` nghĩa là trường bắt buộc nhưng kích thước vẫn cần được xác định.
+- `**` nghĩa là kích thước trường có thể cấu hình.
 
 Superblock được lưu thành hai bản sao B0 và B1. Mỗi bản sao có cùng các trường:
 
 ```text
-[B0: M, V, C, F, S]
-[B1: M, V, C, F, S]
+[B0: M, C, G, V, F, S]
+[B1: M, C, G, V, F, S]
 ```
 
-## Bảng schema (S)
-
-Bảng schema nằm trong superblock. Khi đọc dữ liệu, bảng trả lời câu hỏi: “Với một `schema_id`, bố cục byte của payload là gì?”
-
-Ví dụ, giả sử payload có 4 byte và schema quy định 2 byte đầu là nhiệt độ, 2 byte tiếp theo là độ ẩm:
-
-```text
-payload     = 0x01 0x02 0x03 0x04
-temperature = 0x01 0x02
-humidity    = 0x03 0x04
-```
-
-Bảng schema gồm một header bảng, theo sau là các mục schema:
-
-```text
-B0 (M, V, C, F)
-└── Schema table (S)
-    ├── Table header (Th)
-    ├── Entry 0 (T_e0)
-    ├── Entry 1 (T_e1)
-    ├── Entry 2 (T_e2)
-    └── ...
-```
-
-Header bảng (Th) gồm:
-
-| Trường | Kích thước | Mục đích |
-|---|---:|---|
-| **crc_16** | 2 byte<sup>(*)</sup> | Checksum được tính trên tất cả các mục schema. |
-| **schema_count** | 1 byte<sup>*</sup> | Số lượng mục schema trong bảng. |
-| **table_length** | 1 byte<sup>*</sup> | Độ dài của bảng schema. |
-
-Một mục schema (S_en) gồm:
-
-| Trường | Kích thước | Mục đích |
-|---|---:|---|
-| **schema_id** | 1 byte<sup>*</sup> | Định danh mục schema. |
-| **column_count** | 1 byte<sup>*</sup> | Số cột trong schema. |
-| **column_widths** | 8 byte<sup>(*)</sup> | Lưu độ rộng của từng cột. |
-| **column_signs** | 8 bit<sup>(*)</sup> | Mỗi cột dùng một bit, từ bit có trọng số cao nhất đến thấp nhất; `1` = có dấu, `0` = không dấu. |
-
-Ví dụ:
-
-```text
-schema_id     = 0
-column_count  = 3
-column_widths = [8, 16, 32]
-column_signs  = 0b01000000
-```
-
-Mục này mô tả 3 cột:
-
-- Cột 1: giá trị 8 bit không dấu.
-- Cột 2: giá trị 16 bit có dấu, có thể nhận giá trị âm.
-- Cột 3: giá trị 32 bit không dấu.
-
-Tóm lại, mỗi cơ sở dữ liệu có một bảng schema. Bảng có một header và có thể chứa nhiều mục schema.
-
-```text
-B0 (M, V, C, F)
-└── schema_table (S)
-    ├── table_header (Th)
-    │   ├── crc_16 (2 byte)
-    │   ├── schema_count (1 byte)
-    │   └── table_length (1 byte)
-    ├── entry_0 (T_e0)
-    │   ├── schema_id (1 byte)
-    │   ├── column_count (1 byte)
-    │   ├── column_widths (8 byte)
-    │   └── column_signs (8 bit)
-    ├── entry_1 (T_e1)
-    │   └── ...
-    └── ...
-```
-
-Mỗi extent mang một `schema_id`. Bộ giải mã tra cứu ID này để xác định vị trí của từng cột trong payload. Khi schema thay đổi, các extent hiện có vẫn giữ ID ban đầu và có thể tiếp tục được giải mã theo bố cục cũ.
+Schema slot lưu bố cục payload mà record block tham chiếu đến. Mỗi cột dùng 1 byte trong `column_widths`; `column_signs` được suy ra từ `column_count` với một bit cho mỗi cột. Cấu trúc, cách ghi và dung lượng của chúng được mô tả trong [README-CONSTRAINTS.md](README-CONSTRAINTS.md#schema-log-slots).
 
 > Dữ liệu mới dùng schema ID mới và **phải được ghi vào một khối mới**. Thay đổi schema là ranh giới cứng: extent cũ kết thúc và extent mới bắt đầu. Vì một extent bắt đầu bằng một record block, việc bắt đầu extent luôn cần ghi ít nhất một khối mới.
 
 ## Record block (R)
 
-Các record block (`R0`–`Rn`) nằm sau hai superblock `B0` và `B1`. Chúng lưu các bản ghi, chẳng hạn các số đo nhiệt độ theo chuỗi thời gian.
+Các record block (`R0`–`Rn`) nằm sau hai superblock `B0` và `B1` trong log lưu trữ tuần tự. Mỗi record block dùng một `schema_id` có mục tương ứng đã được xác thực trong cả hai superblock.
 
 Một record block gồm:
 
 | Trường | Kích thước | Mục đích |
 |---|---:|---|
 | **magic_number** | 2 byte<sup>*</sup> | Xác định điểm bắt đầu của record block. |
-| **crc_16** | 2 byte<sup>(*)</sup> | Phát hiện các thay đổi ngoài ý muốn hoặc dữ liệu trong khối bị hỏng. |
+| **crc16** | 2 byte<sup>(*)</sup> | Phát hiện các thay đổi ngoài ý muốn hoặc dữ liệu trong khối bị hỏng. |
 | **schema_id** | 1 byte<sup>(*)</sup> | Xác định schema dùng để diễn giải payload. |
-| **record_config** | 7 byte<sup>*</sup> | Lưu thời gian, định dạng, cờ và codec cho các bản ghi. |
+| **record_config** | 6 byte<sup>*</sup> | Lưu thời gian, định dạng và các cờ cho bản ghi. |
 | **payload** | Thay đổi | Lưu các bản ghi. |
 
 ## Continuation block (C)
@@ -141,7 +71,7 @@ Một continuation block gồm:
 | Trường | Kích thước | Mục đích |
 |---|---:|---|
 | **magic_number** | 2 byte<sup>*</sup> | Xác định điểm bắt đầu của continuation block. |
-| **crc_16** | 2 byte<sup>(*)</sup> | Phát hiện các thay đổi ngoài ý muốn hoặc dữ liệu trong khối bị hỏng. |
+| **crc16** | 2 byte<sup>(*)</sup> | Phát hiện các thay đổi ngoài ý muốn hoặc dữ liệu trong khối bị hỏng. |
 | **payload** | Thay đổi | Lưu các bản ghi tiếp nối từ khối trước đó. |
 
 Sau mỗi record block là các continuation block cần thiết để lưu phần bản ghi còn lại.

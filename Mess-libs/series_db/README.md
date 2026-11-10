@@ -25,114 +25,62 @@ Each superblock contains:
 
 | field | size | purpose |
 |---|---:|---|
-| **magic_number** (`M`) | 2 bytes<sup>*</sup> | Identifies the start of the superblock header. |
-| **crc_16** (`C`) | 2 bytes<sup>(*)</sup> | Detects accidental changes or corruption in the superblock data. |
-| **version** (`V`) | 1 byte<sup>*</sup> | Identifies the superblock format. |
+| **config** (`G`) | 1 byte | Stores database-wide configuration options. |
+| **version** (`V`) | 1 byte | Identifies the superblock format. |
+| **magic_number** (`M`) | 2 bytes | Identifies the start of the superblock header. |
+| **crc16** (`C`) | 4 bytes** | Validates the fixed superblock fields; schema slots have their own CRCs. |
 | **flags** (`F`) | 1 byte | Stores superblock flags. |
-| **schema_table** (`S`) | Variable | Maps schema IDs to payload layouts. |
+| **schema_slots** (`S`) | Remaining space | Append-only schema entries. Each entry has its own CRC and commit marker. |
 
-> In the field lists, `*` means the field is required. `(*)` means the field is required, but its size still needs to be determined.
+In the field lists:
+
+- `*` means the field is required.
+- `(*)` means the field is required, but its size still needs to be determined.
+- `**` means the field size is configurable.
 
 This shows how the superblock is stored in 2 copies, B0 and B1. Each copy contains the same fields:
 ```text
-[B0: M, V, C, F, S]
-[B1: M, V, C, F, S]
+[B0: M, C, G, V, F, S]
+[B1: M, C, G, V, F, S]
 ```
 
-## Schema table (S)
-
-The schema table lives in the `superblock`. It answers this question when reading: “Given a `schema_id`, what is the byte layout of the payload?”
-
-For example, say the payload is 4 bytes and the schema says the first 2 bytes are temperature and the next 2 are humidity:
-
-```text
-payload     = 0x01 0x02 0x03 0x04
-temperature = 0x01 0x02
-humidity    = 0x03 0x04
-```
-
-The schema table contains a table header followed by schema entries:
-
-```text
-B0 (M, V, C, F)
-└── Schema table (S)
-    ├── Table header (Th)
-    ├── Entry 0 (T_e0)
-    ├── Entry 1 (T_e1)
-    ├── Entry 2 (T_e2)
-    └── ...
-```
-
-The table header (Th) contains:
-
-| field | size | purpose |
-|---|---:|---|
-| **crc_16** | 2 bytes<sup>(*)</sup> | Checksum calculated over all schema entries. |
-| **schema_count** | 1 byte<sup>*</sup> | Number of schema entries in the table. |
-| **table_length** | 1 byte<sup>*</sup> | Length of the schema table. |
-
-A schema entry (S_en) contains:
-
-| field | size | purpose |
-|---|---:|---|
-| **schema_id** | 1 byte<sup>*</sup> | Identifies the schema entry. |
-| **column_count** | 1 byte<sup>*</sup> | Number of columns in the schema. |
-| **column_widths** | 8 bytes<sup>(*)</sup> | Stores the width of each column. |
-| **column_signs** | 8 bits<sup>(*)</sup> | One bit per column, from most to least significant; `1` = signed, `0` = unsigned. |
-
-> Each schema entry occupies 11 bytes: 1B `schema_id`, 1B `column_count`, 8B `column_widths`, and 1B `column_signs`.
-
-For example:
-
-```text
-schema_id     = 0
-column_count  = 3
-column_widths = [8, 16, 32]
-column_signs  = 0b01000000
-```
-
-This entry describes 3 columns:
-
-- Column 1: unsigned 8-bit value.
-- Column 2: signed 16-bit value that can hold a negative number.
-- Column 3: unsigned 32-bit value.
-
-In summary, one database has one schema table. The table has one table header and can contain many schema entries.
-
-```text
-B0 (M, V, C, F)
-└── Schema table (S)
-    ├── Table header (Th)
-    │   ├── CRC-16 (2 bytes)
-    │   ├── Schema count (1 byte)
-    │   └── Table length (1 byte)
-    ├── Entry 0 (T_e0)
-    │   ├── Schema ID (1 byte)
-    │   ├── Column count (1 byte)
-    │   ├── Column widths (8 bytes)
-    │   └── Column signs (8 bits)
-    ├── Entry 1 (T_e1)
-    │   └── ...
-    └── ...
-```
-
-Each extent carries a `schema_id`. The decoder looks up the ID to determine where each column is located in the payload. When the schema changes, existing extents keep their original IDs and can still be decoded with their original layouts.
+Schema slots store the payload layouts referenced by record blocks. `column_widths` uses 1 byte per column, and `column_signs` is sized from `column_count` at one bit per column. Their structure, write procedure, and capacity constraints are documented in [README-CONSTRAINTS.md](README-CONSTRAINTS.md#schema-log-slots).
 
 > New data uses the new schema ID and **must be written to a new block**. A schema change is a hard boundary: the old extent ends and a new one begins. Since an extent starts with a record block, starting one always requires writing at least one new block.
 
 ## Record blocks (R)
 
-Record blocks (`R0`–`Rn`) follow superblocks `B0` and `B1`. They store records, such as a series of temperature readings.
+Record blocks (`R0`–`Rn`) follow superblocks `B0` and `B1` in the sequential storage log. Each record block uses a schema ID whose entry is committed in both superblocks.
 
 A record block contains:
 
 | field | size | purpose |
 |---|---:|---|
-| **magic_number** | 2 bytes<sup>*</sup> | Identifies the start of the record block. |
-| **crc_16** | 2 bytes<sup>(*)</sup> | Detects accidental changes or corruption in the block. |
-| **schema_id** | 1 byte<sup>(*)</sup> | Identifies the schema used to interpret the payload. |
-| **record_config** | 7 bytes<sup>*</sup> | Stores the time, format, flags, and codec settings for the records. |
+| **crc16** | 2 bytes* | Detects accidental changes or corruption in the block. |
+| **magic_number** | 2 bytes | Identifies the start of the record block. |
+| **schema_id** | 1 byte | Identifies the schema used to interpret the payload. |
+| **record_config** | 6 bytes | Stores the time, format, and flags for the records. |
 | **payload** | Variable | Stores the records. |
+
+The 1-byte `flags` field contains 8 bits. Its most significant 3 bits encode the payload codec; the remaining 5 bits are reserved and must be written as zero:
+
+```text
+bit:    7   6   5   4   3   2   1   0
+      +-----------+-------------------+
+      | codec (3) |    reserved (5)   |
+      +-----------+-------------------+
+```
+
+Codec IDs are:
+
+| ID | codec | meaning |
+|---:|---|---|
+| `0` | Raw | Store records exactly as described by the schema, with no transformation. This is the default. |
+| `1` | Run-length encoding (RLE) | Store a repeated record once with a count. Use only when the payload consists of consecutive identical records. |
+| `2` | Delta + varint | Store the first record as a raw value, then encode each subsequent numeric value as a signed difference from the previous record, using a variable-length integer. Requires a defined field order and integer encoding. |
+| `3`–`7` | Reserved | Must not be written. Readers encountering these IDs should treat the record block as unsupported. |
+
+Codec applies to the payload of the record block and its continuation blocks. A codec must define its record boundaries and decoding rules; until those rules are specified and implemented, use ID `0` (Raw).
 
 ## Continuation blocks (C)
 
@@ -143,7 +91,7 @@ A continuation block contains:
 | Field | Size | Purpose |
 |---|---:|---|
 | **magic_number** | 2 bytes<sup>*</sup> | Identifies the start of the continuation block. |
-| **crc_16** | 2 bytes<sup>(*)</sup> | Detects accidental changes or corruption in the block. |
+| **crc16** | 2 bytes<sup>(*)</sup> | Detects accidental changes or corruption in the block. |
 | **payload** | Variable | Stores records that continue from the preceding block. |
 
 Each record block is followed by any continuation blocks needed to store its remaining records.
