@@ -78,6 +78,28 @@ Approximate records per block, assuming each record is entirely contained in one
 
 Unused bytes are the remaining payload space after storing whole records. The counts assume records are packed consecutively with no alignment padding.
 
+Estimated continuation-block record capacity by storage size (using binary GiB, where 1 GiB = 1,073,741,824 bytes):
+
+| Storage size | Continuation blocks* | 4-byte records | 4-byte duration (1 record/sec) | 8-byte records | 8-byte duration (1 record/sec) |
+|---:|---:|---:|---:|---:|---:|
+| 1 GiB | 262,141 | 267,908,102 | ~8.49 years | 133,954,051 | ~4.24 years |
+| 16 GiB | 4,194,301 | 4,286,575,622 | ~135.83 years | 2,143,287,811 | ~67.92 years |
+| 32 GiB | 8,388,605 | 8,573,154,310 | ~271.67 years | 4,286,577,155 | ~135.83 years |
+
+\* Assumes two superblocks and one initial record block; all remaining 4 KiB blocks are continuation blocks. These estimates exclude records stored in record blocks and assume no additional blocks are needed for other purposes. Durations use 365.25 days per year.
+
+Estimated records and time until full for periodic data, using binary storage units and the same assumptions:
+
+| Storage size | 4-byte records | Time until full (4-byte records) | 8-byte records | Time until full (8-byte records) |
+|---:|---:|---|---:|---|
+| 256 MiB | 66,974,726 | 10s: ~21.2 years; 30s: ~63.7 years; 1m: ~127.3 years | 33,487,363 | 10s: ~10.6 years; 30s: ~31.8 years; 1m: ~63.7 years |
+| 512 MiB | 133,952,518 | 10s: ~42.4 years; 30s: ~127.3 years; 1m: ~254.7 years | 66,976,259 | 10s: ~21.2 years; 30s: ~63.7 years; 1m: ~127.3 years |
+| 1 GiB | 267,908,102 | 10s: ~84.9 years; 30s: ~254.7 years; 1m: ~509.4 years | 133,954,051 | 10s: ~42.4 years; 30s: ~127.3 years; 1m: ~254.7 years |
+| 4 GiB | 1,071,641,606 | 10s: ~339.6 years; 30s: ~1,018.7 years; 1m: ~2,037.5 years | 535,820,803 | 10s: ~169.8 years; 30s: ~509.4 years; 1m: ~1,018.7 years |
+| 8 GiB | 2,143,286,278 | 10s: ~679.2 years; 30s: ~2,037.5 years; 1m: ~4,075.0 years | 1,071,643,139 | 10s: ~339.6 years; 30s: ~1,018.7 years; 1m: ~2,037.5 years |
+
+Each duration assumes one record is stored at the stated interval. These are storage-capacity estimates, not flash-lifetime estimates.
+
 ## Superblock Recovery
 
 Define the superblock update and recovery procedure. If both copies are valid but differ, specify how to choose the current copy; consider a generation counter or sequence number.
