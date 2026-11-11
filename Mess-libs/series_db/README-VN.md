@@ -14,6 +14,11 @@ Khi truy cập cơ sở dữ liệu, cần ít nhất hai thứ:
 
   Nếu checksum trùng nhau, dữ liệu có khả năng giống nhau; nếu khác nhau, dữ liệu đã thay đổi hoặc bị hỏng.
 
+> Trong danh sách trường:
+>
+> - `*` nghĩa là trường dự kiến sẽ duy trì lâu dài trong định dạng.
+> - `**` nghĩa là kích thước trường có thể cấu hình.
+
 ## Superblock (B0, B1)
 
 Hai khối cố định dùng để cấu hình cơ sở dữ liệu là các bản sao của nhau. Nếu một khối bị hỏng, chẳng hạn **`magic number`** hoặc **`CRC`** không khớp, có thể dùng khối còn lại để khôi phục cấu hình.
@@ -24,27 +29,24 @@ Mỗi superblock gồm:
 
 | Trường | Kích thước | Mục đích |
 |---|---:|---|
-| **magic_number** (`M`) | 2 byte<sup>*</sup> | Xác định điểm bắt đầu của header superblock. |
-| **crc16** (`C`) | 2 byte<sup>(*)</sup> | Xác thực các trường cố định của superblock; các schema slot có CRC riêng. |
 | **config** (`G`) | 1 byte<sup>*</sup> | Lưu các tùy chọn cấu hình chung của cơ sở dữ liệu. |
 | **version** (`V`) | 1 byte<sup>*</sup> | Xác định định dạng superblock. |
+| **magic_number** (`M`) | 2 byte<sup>*</sup> | Xác định điểm bắt đầu của header superblock. |
 | **flags** (`F`) | 1 byte | Lưu các cờ của superblock. |
+| **crc16** (`C`) | 4 byte<sup>**</sup> | Bao gồm `config`, `version`, `magic_number` và `flags`; không bao gồm chính trường CRC hoặc `schema_slots`. |
 | **schema_slots** (`S`) | Phần còn lại | Các mục schema chỉ ghi nối tiếp. Mỗi mục có CRC và dấu đánh dấu đã ghi hoàn tất. |
 
-Trong danh sách trường:
-
-- `*` nghĩa là trường bắt buộc.
-- `(*)` nghĩa là trường bắt buộc nhưng kích thước vẫn cần được xác định.
-- `**` nghĩa là kích thước trường có thể cấu hình.
-
-Superblock được lưu thành hai bản sao B0 và B1. Mỗi bản sao có cùng các trường:
+Superblock được lưu thành hai bản sao B0 và B1. Mỗi bản sao có bố cục trường như sau:
 
 ```text
-[B0: M, C, G, V, F, S]
-[B1: M, C, G, V, F, S]
+       +---+---+---+---+---+---+
+B0:    | G | V | M | F | C | S |
+       +---+---+---+---+---+---+
+B1:    | G | V | M | F | C | S |
+       +---+---+---+---+---+---+
 ```
 
-Schema slot lưu bố cục payload mà record block tham chiếu đến. Mỗi cột dùng 1 byte trong `column_widths`; `column_signs` được suy ra từ `column_count` với một bit cho mỗi cột. Cấu trúc, cách ghi và dung lượng của chúng được mô tả trong [README-CONSTRAINTS.md](README-CONSTRAINTS.md#schema-log-slots).
+Schema slot lưu bố cục payload mà record block tham chiếu đến. `slot_config` cấu hình đơn vị độ rộng cột, thứ tự byte và việc có các trường tùy chọn `col_units`, các trường scale hoặc bitset `col_signs` hay không. Bit 7 được dành cho khả năng mở rộng trong tương lai. Xem chi tiết trong [README-CONSTRAINTS.md](README-CONSTRAINTS.md#slot-config).
 
 > Dữ liệu mới dùng schema ID mới và **phải được ghi vào một khối mới**. Thay đổi schema là ranh giới cứng: extent cũ kết thúc và extent mới bắt đầu. Vì một extent bắt đầu bằng một record block, việc bắt đầu extent luôn cần ghi ít nhất một khối mới.
 

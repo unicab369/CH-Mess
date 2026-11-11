@@ -15,6 +15,11 @@ When a database is accessed, it needs at least two things:
   If the checksums match, the data is likely the same; if they differ, the data is different or corrupted.
 
 
+> In the field lists:
+>
+> - `*` means the field is expected to remain part of the format long term.
+> - `**` means the field size is configurable.
+
 ## Superblocks (B0, B1)
 
 The 2 fixed blocks used to configure the database are copies of each other. If one block is corrupted, for example, its **`magic number`** or **`CRC`** does not match, the other block can be used to recover the configuration.
@@ -25,26 +30,23 @@ Each superblock contains:
 
 | field | size | purpose |
 |---|---:|---|
-| **config** (`G`) | 1 byte | Stores database-wide configuration options. |
-| **version** (`V`) | 1 byte | Identifies the superblock format. |
-| **magic_number** (`M`) | 2 bytes | Identifies the start of the superblock header. |
-| **crc16** (`C`) | 4 bytes** | Validates the fixed superblock fields; schema slots have their own CRCs. |
-| **flags** (`F`) | 1 byte | Stores superblock flags. |
+| **config** (`G`) | 1 byte* | Stores database-wide configuration options. |
+| **version** (`V`) | 1 byte* | Identifies the superblock format. |
+| **magic_number** (`M`) | 2 bytes* | Identifies the start of the superblock header. |
+| **flags** (`F`) | 1 byte* | Stores superblock flags. |
+| **crc16** (`C`) | 4 bytes** | Covers `config`, `version`, `magic_number`, and `flags`, excluding the CRC field itself and `schema_slots`. |
 | **schema_slots** (`S`) | Remaining space | Append-only schema entries. Each entry has its own CRC and commit marker. |
 
-In the field lists:
-
-- `*` means the field is required.
-- `(*)` means the field is required, but its size still needs to be determined.
-- `**` means the field size is configurable.
-
-This shows how the superblock is stored in 2 copies, B0 and B1. Each copy contains the same fields:
+The superblock is stored in 2 copies, B0 and B1. Each copy has this field layout:
 ```text
-[B0: M, C, G, V, F, S]
-[B1: M, C, G, V, F, S]
+       +---+---+---+---+---+---+
+B0:    | G | V | M | F | C | S |
+       +---+---+---+---+---+---+
+B1:    | G | V | M | F | C | S |
+       +---+---+---+---+---+---+
 ```
 
-Schema slots store the payload layouts referenced by record blocks. `column_widths` uses 1 byte per column, and `column_signs` is sized from `column_count` at one bit per column. Their structure, write procedure, and capacity constraints are documented in [README-CONSTRAINTS.md](README-CONSTRAINTS.md#schema-log-slots).
+Schema slots store the payload layouts referenced by record blocks. `slot_config` configures column width units, byte order, and whether optional `col_signs`, `col_units`, or scale fields are present. Bit 7 is reserved for a possible future extension. See [README-CONSTRAINTS.md](README-CONSTRAINTS.md#slot-config) for details.
 
 > New data uses the new schema ID and **must be written to a new block**. A schema change is a hard boundary: the old extent ends and a new one begins. Since an extent starts with a record block, starting one always requires writing at least one new block.
 
@@ -56,9 +58,9 @@ A record block contains:
 
 | field | size | purpose |
 |---|---:|---|
-| **crc16** | 2 bytes* | Detects accidental changes or corruption in the block. |
-| **magic_number** | 2 bytes | Identifies the start of the record block. |
-| **schema_id** | 1 byte | Identifies the schema used to interpret the payload. |
+| **magic_number** | 2 bytes* | Identifies the start of the record block. |
+| **crc16** | 2 bytes** | Detects accidental changes or corruption in the block. |
+| **schema_id** | 1 byte* | Identifies the schema used to interpret the payload. |
 | **record_config** | 6 bytes | Stores the time, format, and flags for the records. |
 | **payload** | Variable | Stores the records. |
 
@@ -90,8 +92,8 @@ A continuation block contains:
 
 | Field | Size | Purpose |
 |---|---:|---|
-| **magic_number** | 2 bytes<sup>*</sup> | Identifies the start of the continuation block. |
-| **crc16** | 2 bytes<sup>(*)</sup> | Detects accidental changes or corruption in the block. |
+| **magic_number** | 2 bytes* | Identifies the start of the continuation block. |
+| **crc16** | 2 bytes** | Detects accidental changes or corruption in the block. |
 | **payload** | Variable | Stores records that continue from the preceding block. |
 
 Each record block is followed by any continuation blocks needed to store its remaining records.
