@@ -46,13 +46,20 @@ B1:    | G | V | M | F | C | S |
        +---+---+---+---+---+---+
 ```
 
+Byte `config` của superblock dùng các bit như sau:
+
+| Bit | Ý nghĩa |
+|---|---|
+| 7–4 | Dành riêng; ghi bằng `0`. |
+| 3–0 | Dành riêng; ghi bằng `0`. |
+
 Schema slot lưu bố cục payload mà record block tham chiếu đến. `slot_config` cấu hình đơn vị độ rộng cột, thứ tự byte và việc có các trường tùy chọn `col_units`, các trường scale hoặc bitset `col_signs` hay không. Bit 7 được dành cho khả năng mở rộng trong tương lai. Xem chi tiết trong [README-CONSTRAINTS.md](README-CONSTRAINTS.md#slot-config).
 
 > Dữ liệu mới dùng schema ID mới và **phải được ghi vào một khối mới**. Thay đổi schema là ranh giới cứng: extent cũ kết thúc và extent mới bắt đầu. Vì một extent bắt đầu bằng một record block, việc bắt đầu extent luôn cần ghi ít nhất một khối mới.
 
 ## Record block (R)
 
-Các record block (`R0`–`Rn`) nằm sau hai superblock `B0` và `B1` trong log lưu trữ tuần tự. Mỗi record block dùng một `schema_id` có mục tương ứng đã được xác thực trong cả hai superblock.
+Các record block (`R0`–`Rn`) nằm sau hai superblock `B0` và `B1`. Mỗi record block thuộc một luồng độ phân giải được xác định bằng `stream_id` và dùng một `schema_id` có mục tương ứng đã được xác thực trong cả hai superblock. Các luồng dùng chung một vùng block khả dụng.
 
 Một record block gồm:
 
@@ -61,12 +68,14 @@ Một record block gồm:
 | **magic_number** | 2 byte<sup>*</sup> | Xác định điểm bắt đầu của record block. |
 | **crc16** | 2 byte<sup>(*)</sup> | Phát hiện các thay đổi ngoài ý muốn hoặc dữ liệu trong khối bị hỏng. |
 | **schema_id** | 1 byte<sup>(*)</sup> | Xác định schema dùng để diễn giải payload. |
+| **stream_id** | 1 byte<sup>*</sup> | Xác định luồng độ phân giải mà block này thuộc về. |
+| **stream_sequence** | 4 byte<sup>*</sup> | Xác định thứ tự block trong luồng. |
 | **record_config** | 6 byte<sup>*</sup> | Lưu thời gian, định dạng và các cờ cho bản ghi. |
 | **payload** | Thay đổi | Lưu các bản ghi. |
 
 ## Continuation block (C)
 
-Continuation block lưu các bản ghi tiếp nối record block `R` khi payload của nó đã đầy. Khi một continuation block `C` đầy, một continuation block khác `C_cont` sẽ được thêm vào. Chuỗi kết thúc khi một record block mới `R_new` được ghi, chẳng hạn sau khi schema thay đổi hoặc khôi phục sau khi mất điện. Continuation block tránh phải lặp lại metadata của record block trong mọi khối thuộc cùng một extent.
+Continuation block lưu các bản ghi tiếp nối record block `R` khi payload của nó đã đầy. Mỗi block có cùng `stream_id` và số thứ tự block trong luồng để xác định extent tiếp nối, ngay cả khi block của các luồng khác nằm xen kẽ trong flash. Khi một continuation block `C` đầy, một continuation block khác `C_cont` sẽ được thêm vào. Xem quy tắc thứ tự và khôi phục trong [README-CONSTRAINTS.md](README-CONSTRAINTS.md#continuation-block-association-and-order).
 
 Một continuation block gồm:
 
@@ -74,15 +83,15 @@ Một continuation block gồm:
 |---|---:|---|
 | **magic_number** | 2 byte<sup>*</sup> | Xác định điểm bắt đầu của continuation block. |
 | **crc16** | 2 byte<sup>(*)</sup> | Phát hiện các thay đổi ngoài ý muốn hoặc dữ liệu trong khối bị hỏng. |
+| **stream_id** | 1 byte<sup>*</sup> | Xác định luồng độ phân giải mà block này thuộc về. |
+| **stream_sequence** | 4 byte<sup>*</sup> | Xác định thứ tự block trong luồng. |
 | **payload** | Thay đổi | Lưu các bản ghi tiếp nối từ khối trước đó. |
 
-Sau mỗi record block là các continuation block cần thiết để lưu phần bản ghi còn lại.
+Các continuation block có thể nằm xen kẽ với block của luồng khác; `stream_sequence` xác định thứ tự logic của chúng trong từng luồng.
 
 ```text
 [B0] [B1]
-[R0] [R0-C0] [R0-C1] [R0-C2] ...
-[R1] [R1-C0] [R1-C1] [R1-C2] ...
-[R2] [R2-C0] [R2-C1] [R2-C2] ...
+[stream 0: R0] [stream 1: R0] [stream 0: C1] [stream 2: R0] ...
 ...
 ```
 

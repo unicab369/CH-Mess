@@ -33,8 +33,8 @@ Each superblock contains:
 | **config** (`G`) | 1 byte* | Stores database-wide configuration options. |
 | **version** (`V`) | 1 byte* | Identifies the superblock format. |
 | **magic_number** (`M`) | 2 bytes* | Identifies the start of the superblock header. |
-| **flags** (`F`) | 1 byte* | Stores superblock flags. |
 | **crc16** (`C`) | 4 bytes** | Covers `config`, `version`, `magic_number`, and `flags`, excluding the CRC field itself and `schema_slots`. |
+| **flags** (`F`) | 1 byte* | Stores superblock flags. |
 | **schema_slots** (`S`) | Remaining space | Append-only schema entries. Each entry has its own CRC and commit marker. |
 
 The superblock is stored in 2 copies, B0 and B1. Each copy has this field layout:
@@ -46,13 +46,21 @@ B1:    | G | V | M | F | C | S |
        +---+---+---+---+---+---+
 ```
 
+The superblock `config` byte uses these bits:
+
+| Bits | Meaning |
+|---|---|
+| 7–4 | Reserved; write as `0`. |
+| 3–0 | Reserved; write as `0`. |
+
+
 Schema slots store the payload layouts referenced by record blocks. `slot_config` configures column width units, byte order, and whether optional `col_signs`, `col_units`, or scale fields are present. Bit 7 is reserved for a possible future extension. See [README-CONSTRAINTS.md](README-CONSTRAINTS.md#slot-config) for details.
 
 > New data uses the new schema ID and **must be written to a new block**. A schema change is a hard boundary: the old extent ends and a new one begins. Since an extent starts with a record block, starting one always requires writing at least one new block.
 
 ## Record blocks (R)
 
-Record blocks (`R0`–`Rn`) follow superblocks `B0` and `B1` in the sequential storage log. Each record block uses a schema ID whose entry is committed in both superblocks.
+Record blocks (`R0`–`Rn`) follow superblocks `B0` and `B1`. Each record block belongs to a logical resolution stream, identified by `stream_id`, and uses a `schema_id` whose entry is committed in both superblocks. Different streams can allocate blocks from the same shared pool.
 
 A record block contains:
 
@@ -61,6 +69,8 @@ A record block contains:
 | **magic_number** | 2 bytes* | Identifies the start of the record block. |
 | **crc16** | 2 bytes** | Detects accidental changes or corruption in the block. |
 | **schema_id** | 1 byte* | Identifies the schema used to interpret the payload. |
+| **stream_id** | 1 byte* | Identifies the resolution stream this block belongs to. |
+| **stream_sequence** | 4 bytes* | Orders this block within its stream. |
 | **record_config** | 6 bytes | Stores the time, format, and flags for the records. |
 | **payload** | Variable | Stores the records. |
 
@@ -86,7 +96,7 @@ Codec applies to the payload of the record block and its continuation blocks. A 
 
 ## Continuation blocks (C)
 
-Continuation blocks store records that follow a record block `R` when its payload is full. When a continuation block `C` fills, another continuation `C_cont` block is added. The sequence ends when a new record block `R_new` is written, such as after a schema change or recovery from power loss. Continuation blocks avoid repeating the record-block metadata for every block of the same extent.
+Continuation blocks store records that follow a record block `R` when its payload is full. Each belongs to the same `stream_id` and carries a per-stream block sequence so it can be associated with the preceding extent even when blocks from other streams are physically interleaved. When a continuation block `C` fills, another continuation `C_cont` block is added. See [README-CONSTRAINTS.md](README-CONSTRAINTS.md#continuation-block-association-and-order) for the stream ordering and recovery rules.
 
 A continuation block contains:
 
@@ -94,9 +104,11 @@ A continuation block contains:
 |---|---:|---|
 | **magic_number** | 2 bytes* | Identifies the start of the continuation block. |
 | **crc16** | 2 bytes** | Detects accidental changes or corruption in the block. |
+| **stream_id** | 1 byte* | Identifies the resolution stream this block belongs to. |
+| **stream_sequence** | 4 bytes* | Orders this block within its stream. |
 | **payload** | Variable | Stores records that continue from the preceding block. |
 
-Each record block is followed by any continuation blocks needed to store its remaining records.
+Continuation blocks may be physically interleaved with blocks from other streams; `stream_sequence` keeps the logical order within each stream.
 
 ```text
 [B0] [B1]
