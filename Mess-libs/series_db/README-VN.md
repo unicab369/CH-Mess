@@ -19,34 +19,34 @@ Khi truy cập cơ sở dữ liệu, cần ít nhất hai thứ:
 > - `*` nghĩa là trường dự kiến sẽ duy trì lâu dài trong định dạng.
 > - `**` nghĩa là kích thước trường có thể cấu hình.
 
-## Superblock (B0, B1)
+## Superblock (S0, S1)
 
 Hai khối cố định dùng để cấu hình cơ sở dữ liệu là các bản sao của nhau. Nếu một khối bị hỏng, chẳng hạn **`magic number`** hoặc **`CRC`** không khớp, có thể dùng khối còn lại để khôi phục cấu hình.
 
 Superblock cũng cần một số `version`. Số này xác định định dạng dự kiến và cho phép thay đổi định dạng theo thời gian, chẳng hạn từ phiên bản 1 sang phiên bản 2.
 
-Mỗi superblock gồm:
+Mỗi Superblock gồm:
 
 | Trường | Kích thước | Mục đích |
 |---|---:|---|
 | **config** (`G`) | 1 byte<sup>*</sup> | Lưu các tùy chọn cấu hình chung của cơ sở dữ liệu. |
-| **version** (`V`) | 1 byte<sup>*</sup> | Xác định định dạng superblock. |
-| **magic_number** (`M`) | 2 byte<sup>*</sup> | Xác định điểm bắt đầu của header superblock. |
-| **flags** (`F`) | 1 byte | Lưu các cờ của superblock. |
+| **version** (`V`) | 1 byte<sup>*</sup> | Xác định định dạng Superblock. |
+| **magic_number** (`M`) | 2 byte<sup>*</sup> | Xác định điểm bắt đầu của header Superblock. |
+| **flags** (`F`) | 1 byte | Lưu các cờ của Superblock. |
 | **crc16** (`C`) | 4 byte<sup>**</sup> | Bao gồm `config`, `version`, `magic_number` và `flags`; không bao gồm chính trường CRC hoặc `schema_slots`. |
 | **schema_slots** (`S`) | Phần còn lại | Các mục schema chỉ ghi nối tiếp. Mỗi mục có CRC và dấu đánh dấu đã ghi hoàn tất. |
 
-Superblock được lưu thành hai bản sao B0 và B1. Mỗi bản sao có bố cục trường như sau:
+Superblock được lưu thành hai bản sao S0 và S1. Mỗi bản sao có bố cục trường như sau:
 
 ```text
        +---+---+---+---+---+---+
-B0:    | G | V | M | F | C | S |
+S0:    | G | V | M | F | C | S |
        +---+---+---+---+---+---+
-B1:    | G | V | M | F | C | S |
+S1:    | G | V | M | F | C | S |
        +---+---+---+---+---+---+
 ```
 
-Byte `config` của superblock dùng các bit như sau:
+Byte `config` của Superblock dùng các bit như sau:
 
 | Bit | Ý nghĩa |
 |---|---|
@@ -59,7 +59,7 @@ Schema slot lưu bố cục payload mà record block tham chiếu đến. `slot_
 
 ## Record block (R)
 
-Các record block (`R0`–`Rn`) nằm sau hai superblock `B0` và `B1`. Mỗi record block thuộc một luồng độ phân giải được xác định bằng `stream_id` và dùng một `schema_id` có mục tương ứng đã được xác thực trong cả hai superblock. Các luồng dùng chung một vùng block khả dụng.
+Các record block (`R0`–`Rn`) nằm sau hai Superblock `S0` và `S1`. Mỗi record block thuộc một luồng độ phân giải được xác định bằng `stream_id` và dùng một `schema_id` có mục tương ứng đã được xác thực trong cả hai Superblock. Các luồng dùng chung một vùng block khả dụng.
 
 Một record block gồm:
 
@@ -90,7 +90,7 @@ Một continuation block gồm:
 Các continuation block có thể nằm xen kẽ với block của luồng khác; `stream_sequence` xác định thứ tự logic của chúng trong từng luồng.
 
 ```text
-[B0] [B1]
+[S0] [S1]
 [stream 0: R0] [stream 1: R0] [stream 0: C1] [stream 2: R0] ...
 ...
 ```

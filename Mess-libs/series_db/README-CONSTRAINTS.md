@@ -1,15 +1,15 @@
 # Series DB format constraints to define
 
 
-1. **Schema log slots:** Define the flash alignment and recovery procedure for append-only schema slots in B0 and B1. `schema_id`, `col_count`, and `slot_config` are fixed at 1 byte. Each slot contains these fields, the per-column width data, optional unit and scale arrays, an optional sign bitset, a 2-byte entry CRC, a 1-byte commit marker, and alignment padding. Append the same entry to both superblocks and do not let a record block reference it until both copies validate it. The fixed superblock CRC excludes the slots. Slot capacity is `floor(4087 / aligned_slot_size)`. Define recovery for interrupted or mismatched slot writes. `col_count` determines the per-column array sizes and, when present, the sign-bitset size.
+1. **Schema log slots:** Define the flash alignment and recovery procedure for append-only schema slots in S0 and S1. `schema_id`, `col_count`, and `slot_config` are fixed at 1 byte. Each slot contains these fields, the per-column width data, optional unit and scale arrays, an optional sign bitset, a 2-byte entry CRC, a 1-byte commit marker, and alignment padding. Append the same entry to both Superblocks and do not let a record block reference it until both copies validate it. The fixed Superblock CRC excludes the slots. Slot capacity is `floor(4087 / aligned_slot_size)`. Define recovery for interrupted or mismatched slot writes. `col_count` determines the per-column array sizes and, when present, the sign-bitset size.
 2. **Payload length:** TODO — still needs consideration. Proposed: add a 2-byte `payload_length` to each block. Set it once when closing the block, include it in the CRC, and treat the block as invalid if power loss occurs before it is finalized. Readers use it to determine where valid payload data ends.
 3. **Resolution streams and shared block pool:** Store each resolution (for example, raw seconds, 5-minute, 10-minute, 30-minute, and hourly summaries) as a separate logical stream. All streams allocate blocks from one shared pool rather than reserving fixed capacity per resolution. Each Record and Continuation block stores a 1-byte `stream_id` and a 4-byte `stream_sequence`. Sequence numbers start at zero and increase by one for every new block in that stream; they must not wrap. Readers group blocks by `stream_id` and order them by sequence; Continuation blocks extend the preceding extent within that stream, even when blocks from other streams are interleaved physically. Define the `stream_id` registry and free-block allocation and recovery rules.
 
 ## Schema log slots
 
-Schema definitions are stored in append-only slots in the unused space of both superblocks. Each new schema is appended to the next slot in B0 and B1. A record block may use the new `schema_id` only after the entry is committed and validated in both copies. This avoids erasing and rewriting the fixed superblock fields for each schema change.
+Schema definitions are stored in append-only slots in the unused space of both Superblocks. Each new schema is appended to the next slot in S0 and S1. A record block may use the new `schema_id` only after the entry is committed and validated in both copies. This avoids erasing and rewriting the fixed Superblock fields for each schema change.
 
-The CRC for the fixed superblock fields does not cover the append-only slots; each slot has its own CRC and commit marker. Readers scan the slots in both copies and build a lookup from `schema_id` to payload layout.
+The CRC for the fixed Superblock fields does not cover the append-only slots; each slot has its own CRC and commit marker. Readers scan the slots in both copies and build a lookup from `schema_id` to payload layout.
 
 Each schema slot contains:
 
@@ -79,13 +79,13 @@ col_widths = [8, 16, 32]
 col_signs  = 0b01000000
 ```
 
-This describes an unsigned 8-bit column, a signed 16-bit column, and an unsigned 32-bit column. Each schema change appends a new slot to both superblocks. Existing extents retain their original `schema_id`; new data using a new schema starts in a new record block.
+This describes an unsigned 8-bit column, a signed 16-bit column, and an unsigned 32-bit column. Each schema change appends a new slot to both Superblocks. Existing extents retain their original `schema_id`; new data using a new schema starts in a new record block.
 
 ## Schema Slot Capacity Estimate
 
-Assumptions: 4-byte flash write alignment; `col_units`, `col_scale_exp`, and `col_scales` are absent; `col_signs` is present; 1-byte `schema_id`, `col_count`, `slot_config`, and `commit_marker`; 2-byte entry CRC; `col_widths` uses 1 byte per column and `col_signs` uses one bit per column. The fixed superblock fields leave 4,087 bytes for slots. Both superblocks store the same entries, so their capacities are not added together.
+Assumptions: 4-byte flash write alignment; `col_units`, `col_scale_exp`, and `col_scales` are absent; `col_signs` is present; 1-byte `schema_id`, `col_count`, `slot_config`, and `commit_marker`; 2-byte entry CRC; `col_widths` uses 1 byte per column and `col_signs` uses one bit per column. The fixed Superblock fields leave 4,087 bytes for slots. Both Superblocks store the same entries, so their capacities are not added together.
 
-| `col_count` | `col_widths` size | Slot size after padding | Maximum schema entries | Space per superblock |
+| `col_count` | `col_widths` size | Slot size after padding | Maximum schema entries | Space per Superblock |
 |---:|---:|---:|---:|---:|
 | 1 | 1 byte | 8 bytes | 256 | 2,048 bytes |
 | 2 | 2 bytes | 12 bytes | 256 | 3,072 bytes |
@@ -154,9 +154,8 @@ Header:
 | `record_config` | 6 bytes | Stores the time, format, and flags for the records. |
 | **Header total** | **16 bytes** | |
 
-Payload capacity: 4,078 bytes.
 
-Approximate records per block, assuming each record is entirely contained in one block:
+Approximate records per block, assuming each record is entirely contained in 1 block:
 
 | Payload size per record | Records per block | Unused payload bytes |
 |---:|---:|---:|
@@ -164,8 +163,6 @@ Approximate records per block, assuming each record is entirely contained in one
 | 8 bytes | 509 | 6 |
 
 ### Continuation block
-
-Header:
 
 | Header field | Size | Purpose |
 |---|---:|---|
@@ -175,55 +172,42 @@ Header:
 | `stream_sequence` | 4 bytes* | Orders this block within its stream. |
 | **Header total** | **9 bytes** | |
 
-Payload capacity: 4,085 bytes.
+> Using a 4-byte instead of a 2-byte `stream_sequence` adds 2 bytes to each Continuation header. Assuming all remaining blocks are Continuation blocks, that adds about 506 bytes for 1 MiB of storage, 32 MiB for 64 GiB, and 64 MiB for 128 GiB.
 
-Approximate records per block, assuming each record is entirely contained in one block:
+Approximate records per block, assuming each record is entirely contained in 1 block:
 
 | Payload size per record | Records per block | Unused payload bytes |
 |---:|---:|---:|
 | 4 bytes | 1,021 | 1 |
 | 8 bytes | 510 | 5 |
 
-Unused bytes are the remaining payload space after storing whole records. The counts assume records are packed consecutively with no alignment padding.
+> Unused bytes are the remaining payload space after storing whole records. The counts assume records are packed consecutively with no alignment padding.
 
-Estimated continuation-block record capacity by storage size (using binary GiB, where 1 GiB = 1,073,741,824 bytes):
+### Storage Capacity Estimates
 
-| Storage size | Continuation blocks* | 4-byte records | 4-byte duration (1 record/sec) | 8-byte records | 8-byte duration (1 record/sec) |
+The table shows estimated capacity for 4-byte records stored at 1 record per second. For 8-byte records, the record count and duration would be approximately half.
+
+| Storage size | Continuation blocks* | 4-byte records | Duration (1 record/sec) |
+|---:|---:|---:|---:|
+| 64 MiB | 16,381 | 16.7 × 10⁶ | ~0.5 years |
+| 128 MiB | 32,765 | 33.5 × 10⁶ | ~1.1 years |
+| 512 MiB | 131,069 | 133.8 × 10⁶ | ~4.2 years |
+| 1 GiB | 262,141 | 267.6 × 10⁶ | ~8.5 years |
+| 4 GiB | 1,048,573 | 1,070.6 × 10⁶ | ~33.9 years |
+
+> Assumes 2 Superblocks and 1 initial Record block for a single stream; all remaining 4 KiB blocks are Continuation blocks. This is an upper bound; multiple streams need additional Record blocks. Durations use 365.25 days per year.
+
+For 4-byte records stored every 10 or 30 seconds, the estimated capacity is:
+
+| Storage size | Continuation<br>blocks | Continuation<br>header space | Records | Time to full<br>(10 secs) | Time to full<br>(30 secs) |
 |---:|---:|---:|---:|---:|---:|
-| 1 GiB | 262,141 | 267.6 × 10⁶ | ~8.5 years | 133.7 × 10⁶ | ~4.2 years |
-| 16 GiB | 4,194,301 | 4,282.4 × 10⁶ | ~135.7 years | 2,139.1 × 10⁶ | ~67.8 years |
-| 32 GiB | 8,388,605 | 8,564.8 × 10⁶ | ~271.4 years | 4,278.2 × 10⁶ | ~135.7 years |
-
-\* Assumes two superblocks and one initial record block for a single stream; all remaining 4 KiB blocks are continuation blocks. This is an upper bound; multiple streams need additional Record blocks. Durations use 365.25 days per year.
-
----
-
-For both tables, storage sizes use binary units. Counts assume two superblocks and one Record block, with all remaining blocks used as Continuation blocks. Durations assume one record is stored every 10 or 30 seconds.
-
-Estimated capacity for 4-byte records:
-
-| Storage size | Continuation blocks | Continuation header space | Records | Time until full<br>(10 secs \| 30 secs) |
-|---:|---:|---:|---:|---|
-| 128 KiB | 29 | 0.3 KB | 0.030 × 10⁶ | ~3 days \| ~10 days |
-| 1 MiB | 253 | 2 KB | 0.26 × 10⁶ | ~30 days \| ~90 days |
-| 32 MiB | 8,189 | 72 KB | 8.4 × 10⁶ | 3 years \| 2 years |
-| 126 MiB | 32,253 | 283 KB | 32.9 × 10⁶ | 11 years \| 32 years |
-| 512 MiB | 131,069 | 1,152 KB | 133.8 × 10⁶ | 43 years \| 128 years |
-| 1 GiB | 262,141 | 2,304 KB | 267.6 × 10⁶ | 85 years \| 255 years |
-
-Estimated capacity for 8-byte records:
-
-| Storage size | Continuation blocks | Continuation header space | Records | Time until full<br>(10 secs \| 30 secs) |
-|---:|---:|---:|---:|---|
-| 128 KiB | 29 | 0.3 KB | 0.015 × 10⁶ | ~2 days \| ~5 days |
-| 1 MiB | 253 | 2 KB | 0.13 × 10⁶ | ~15 days \| ~45 days |
-| 32 MiB | 8,189 | 72 KB | 4.2 × 10⁶ | 2 years \| 4 years |
-| 126 MiB | 32,253 | 283 KB | 16.4 × 10⁶ | 6 years \| 16 years |
-| 512 MiB | 131,069 | 1,152 KB | 66.8 × 10⁶ | 22 years \| 64 years |
-| 1 GiB | 262,141 | 2,304 KB | 133.7 × 10⁶ | 43 years \| 128 years |
-
-Each duration assumes one record is stored at the stated interval. Durations under a year are rounded to whole days; longer durations are rounded up to whole years. These are storage-capacity estimates, not flash-lifetime estimates.
+| 64 KiB | 13 | 0.1 KiB | 0.0133 × 10⁶ | ~1.5 days | ~4.6 days |
+| 128 KiB | 29 | 0.3 KiB | 0.030 × 10⁶ | ~3.4 days | ~10.3 days |
+| 1 MiB | 253 | 2 KiB | 0.26 × 10⁶ | ~29.9 days | ~89.7 days |
+| 32 MiB | 8,189 | 72 KiB | 8.4 × 10⁶ | ~2.6 years | ~7.9 years |
+| 126 MiB | 32,253 | 283 KiB | 32.9 × 10⁶ | ~10.4 years | ~31.3 years |
+| 512 MiB | 131,069 | 1,152 KiB | 133.8 × 10⁶ | ~42.4 years | ~127.2 years |
 
 ## Superblock Recovery
 
-Define the superblock update and recovery procedure. If both copies are valid but differ, specify how to choose the current copy; consider a generation counter or sequence number.
+Define the Superblock update and recovery procedure. If both copies are valid but differ, specify how to choose the current copy; consider a generation counter or sequence number.

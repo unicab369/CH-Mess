@@ -20,33 +20,33 @@ When a database is accessed, it needs at least two things:
 > - `*` means the field is expected to remain part of the format long term.
 > - `**` means the field size is configurable.
 
-## Superblocks (B0, B1)
+## Superblocks (S0, S1)
 
 The 2 fixed blocks used to configure the database are copies of each other. If one block is corrupted, for example, its **`magic number`** or **`CRC`** does not match, the other block can be used to recover the configuration.
 
-The superblock also needs a `version` number. It identifies the expected format and allows the format to change over time, such as from version 1 to version 2.
+The Superblock also needs a `version` number. It identifies the expected format and allows the format to change over time, such as from version 1 to version 2.
 
-Each superblock contains:
+Each Superblock contains:
 
 | field | size | purpose |
 |---|---:|---|
 | **config** (`G`) | 1 byte* | Stores database-wide configuration options. |
-| **version** (`V`) | 1 byte* | Identifies the superblock format. |
-| **magic_number** (`M`) | 2 bytes* | Identifies the start of the superblock header. |
+| **version** (`V`) | 1 byte* | Identifies the Superblock format. |
+| **magic_number** (`M`) | 2 bytes* | Identifies the start of the Superblock header. |
 | **crc16** (`C`) | 4 bytes** | Covers `config`, `version`, `magic_number`, and `flags`, excluding the CRC field itself and `schema_slots`. |
-| **flags** (`F`) | 1 byte* | Stores superblock flags. |
+| **flags** (`F`) | 1 byte* | Stores Superblock flags. |
 | **schema_slots** (`S`) | Remaining space | Append-only schema entries. Each entry has its own CRC and commit marker. |
 
-The superblock is stored in 2 copies, B0 and B1. Each copy has this field layout:
+The Superblock is stored in 2 copies, S0 and S1. Each copy has this field layout:
 ```text
        +---+---+---+---+---+---+
-B0:    | G | V | M | F | C | S |
+S0:    | G | V | M | F | C | S |
        +---+---+---+---+---+---+
-B1:    | G | V | M | F | C | S |
+S1:    | G | V | M | F | C | S |
        +---+---+---+---+---+---+
 ```
 
-The superblock `config` byte uses these bits:
+The Superblock `config` byte uses these bits:
 
 | Bits | Meaning |
 |---|---|
@@ -54,13 +54,13 @@ The superblock `config` byte uses these bits:
 | 3–0 | Reserved; write as `0`. |
 
 
-Schema slots store the payload layouts referenced by record blocks. `slot_config` configures column width units, byte order, and whether optional `col_signs`, `col_units`, or scale fields are present. Bit 7 is reserved for a possible future extension. See [README-CONSTRAINTS.md](README-CONSTRAINTS.md#slot-config) for details.
+Schema slots store the payload layouts referenced by record blocks. See [README-CONSTRAINTS.md](README-CONSTRAINTS.md#slot-config) for details.
 
 > New data uses the new schema ID and **must be written to a new block**. A schema change is a hard boundary: the old extent ends and a new one begins. Since an extent starts with a record block, starting one always requires writing at least one new block.
 
 ## Record blocks (R)
 
-Record blocks (`R0`–`Rn`) follow superblocks `B0` and `B1`. Each record block belongs to a logical resolution stream, identified by `stream_id`, and uses a `schema_id` whose entry is committed in both superblocks. Different streams can allocate blocks from the same shared pool.
+Record blocks (`R0`–`Rn`) follow Superblocks `S0` and `S1`. Each record block belongs to a logical resolution stream, identified by `stream_id`, and uses a `schema_id` whose entry is committed in both Superblocks. Different streams can allocate blocks from the same shared pool.
 
 A record block contains:
 
@@ -111,7 +111,7 @@ A continuation block contains:
 Continuation blocks may be physically interleaved with blocks from other streams; `stream_sequence` keeps the logical order within each stream.
 
 ```text
-[B0] [B1]
+[S0] [S1]
 [R0] [R0-C0] [R0-C1] [R0-C2] ...
 [R1] [R1-C0] [R1-C1] [R1-C2] ...
 [R2] [R2-C0] [R2-C1] [R2-C2] ...
