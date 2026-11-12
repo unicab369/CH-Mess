@@ -1,7 +1,7 @@
 # Series DB format constraints to define
 
 
-1. **Schema log entries:** Define the flash alignment and recovery procedure for append-only schema entries in S0 and S1. `schema_id`, `col_count`, and `schema_config` are fixed at 1 byte. Each entry contains these fields, the per-column width data, optional unit and scale arrays, an optional sign bitset, a 2-byte entry CRC, a 1-byte commit marker, and alignment padding. Append the same entry to both Superblocks and do not let a record block reference it until both copies validate it. The fixed Superblock CRC excludes the schema entries. Entry capacity is `floor(4087 / aligned_entry_size)`. Define recovery for interrupted or mismatched entry writes. `col_count` determines the per-column array sizes and, when present, the sign-bitset size.
+1. **Schema log entries:** Define the flash alignment and recovery procedure for append-only schema entries in S0 and S1. `schema_id`, `col_count`, and `schema_config1` are fixed at 1 byte. Each entry contains these fields, the per-column width data, optional unit and scale arrays, an optional sign bitset, a 2-byte entry CRC, a 1-byte commit marker, and alignment padding. Append the same entry to both Superblocks and do not let a record block reference it until both copies validate it. The fixed Superblock CRC excludes the schema entries. Entry capacity is `floor(4087 / aligned_entry_size)`. Define recovery for interrupted or mismatched entry writes. `col_count` determines the per-column array sizes and, when present, the sign-bitset size.
 2. **Payload length:** TODO — still needs consideration. Proposed: add a 2-byte `payload_length` to each block. Set it once when closing the block, include it in the CRC, and treat the block as invalid if power loss occurs before it is finalized. Readers use it to determine where valid payload data ends.
 3. **Resolution streams and shared block pool:** Store each resolution (for example, raw seconds, 5-minute, 10-minute, 30-minute, and hourly summaries) as a separate logical stream. All streams allocate blocks from one shared pool rather than reserving fixed capacity per resolution. Each Record and Continuation block stores a 1-byte `stream_id` and a 4-byte `stream_sequence`. Sequence numbers start at zero and increase by one for every new block in that stream; they must not wrap. Readers group blocks by `stream_id` and order them by sequence; Continuation blocks extend the preceding extent within that stream, even when blocks from other streams are interleaved physically. Define the `stream_id` registry and free-block allocation and recovery rules.
 
@@ -17,16 +17,16 @@ Each schema entry contains:
 |---|---:|---|
 | **entry_crc** | 2 bytes* | Validates the schema entry. |
 | **commit_marker** | 1 byte* | Marks the entry as fully written. |
-| **schema_config** | 1 byte* | Selects column width units and byte order, and indicates optional per-column fields; see [Schema config](#schema-config). |
-| **schema_config_ext1** | 1 byte** | Present when `schema_config` bit 7 is `1`; enables extended options below. |
+| **schema_config1** | 1 byte* | Selects column width units and byte order, and indicates optional per-column fields; see [Schema config](#schema-config). |
+| **schema_config2** | 1 byte** | Present when `schema_config1` bit 7 is `1`; enables extended options below. |
 | **schema_id** | 1 byte* | Identifies the schema entry. |
 | **col_count** | 1 byte* | Number of columns in the schema. |
-| **col_widths** | 1 byte** / column | One width value per column (`col_count` bytes); units are bytes or bits per `schema_config` bit 1. |
-| **col_units** | 1 byte** / column | Present when `schema_config` bit 4 is `1`; one unit code per column. |
-| **col_scale_exp** | 1 signed byte** / column | Present when `schema_config` bit 2 is `1`; one base-10 exponent per column (default `0`). E.g., `123` with exponent `-2` becomes `1.23`. |
-| **col_scales** | 2 bytes** / column | Present when `schema_config` bit 3 is `1`; one numerator/denominator pair per column (default `1/1`). E.g., `10` with scale `3/2` becomes `15`. |
-| **col_scale_mul** | 1 byte** / column | Present when `schema_config` bit 1 is `1`; one 1-byte multiplier per column (default `1`). E.g., `10` with multiplier `3` becomes `30`. |
-| **col_signs** | `ceil(col_count / 8)` bytes** | Present when `schema_config` bit 0 is `1`; one bit per column (`1` = signed). Unused bits are `0`. |
+| **col_widths** | 1 byte** / column | One width value per column (`col_count` bytes); units are bytes or bits per `schema_config1` bit 1. |
+| **col_units** | 1 byte** / column | Present when `schema_config1` bit 4 is `1`; one unit code per column. |
+| **col_scale_exp** | 1 signed byte** / column | Present when `schema_config1` bit 2 is `1`; one base-10 exponent per column (default `0`). E.g., `123` with exponent `-2` becomes `1.23`. |
+| **col_scales** | 2 bytes** / column | Present when `schema_config1` bit 3 is `1`; one numerator/denominator pair per column (default `1/1`). E.g., `10` with scale `3/2` becomes `15`. |
+| **col_scale_mul** | 1 byte** / column | Present when `schema_config1` bit 1 is `1`; one 1-byte multiplier per column (default `1`). E.g., `10` with multiplier `3` becomes `30`. |
+| **col_signs** | `ceil(col_count / 8)` bytes** | Present when `schema_config1` bit 0 is `1`; one bit per column (`1` = signed). Unused bits are `0`. |
 | **padding** | Variable | Aligns the entry to the flash program unit. |
 
 
@@ -34,7 +34,7 @@ Each schema entry contains:
 
 | Bit(s) | Meaning | Purpose |
 |---|---|---|
-| 7 | `1` = yes; `0` = no. | Indicates whether the 1-byte `schema_config_ext1` follows. |
+| 7 | `1` = yes; `0` = no. | Indicates whether the 1-byte `schema_config2` follows. |
 | 6 | `0` = little-endian; `1` = big-endian. | Sets byte order for multi-byte column values. |
 | 5 | `0` = bytes; `1` = bits. | Sets the unit used by `col_widths`. |
 | 4 | `1` = yes; `0` = no (unspecified). | Indicates whether `col_units` follows. |
@@ -43,11 +43,11 @@ Each schema entry contains:
 | 1 | `1` = yes; `0` = no (multiplier defaults to `1`). | Indicates whether `col_scale_mul` values follow. |
 | 0 | `1` = yes; `0` = no (all columns unsigned). | Indicates whether `col_signs` follows. |
 
-When `schema_config` bit 7 is `1`, a 1-byte `schema_config_ext1` follows `schema_config` in the schema entry:
+If bit 7 of `schema_config1` is `1`, the next byte in the schema entry is `schema_config2`:
 
 | Bit | Meaning | Purpose |
 |---:|---|---|
-| 7 | Future extension flag; write `0`. | Will indicate whether `schema_config_ext2` follows. |
+| 7 | Future extension flag; write `0`. | Will indicate whether `schema_config3` follows. |
 | 6–3 | Reserved; write `0`. | Reserved for future options. |
 | 2–0 | `000` = off; `001` = 1 bit; `010` = 2 bits; `011` = 3 bits; `100` = 4 bits; `101`–`111` reserved. | Selects quantization width. |
 
@@ -80,7 +80,7 @@ A three-column schema can be represented as:
 ```text
 schema_id     = 0
 col_count  = 3
-schema_config   = 0b00100001  # widths are in bits; col_signs is present
+schema_config1   = 0b00100001  # widths are in bits; col_signs is present
 col_widths = [8, 16, 32]
 col_signs  = 0b01000000
 ```
