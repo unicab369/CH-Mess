@@ -134,79 +134,21 @@ Codec IDs are defined as follows:
 
 The codec applies to the payload across the record block and its continuation blocks. Until non-raw decoding and record-boundary rules are implemented, write codec ID `0`. Reserved flag bits must be written as zero and ignored by readers.
 
-## Block Capacity
-
-Assumption: the stated 4,094-byte capacity includes each block's header.
-
-Each Record and Continuation block stores a 1-byte `stream_id` and a 4-byte per-stream `stream_sequence`.
-
-### Record block
-
-Header:
-
-| Header field | Size | Purpose |
-|---|---:|---|
-| `magic_number` | 2 bytes* | Identifies the start of a Record block. |
-| `crc16` | 2 bytes** | Detects accidental changes or corruption in the block. |
-| `schema_id` | 1 byte* | Identifies the schema used to interpret the payload. |
-| `stream_id` | 1 byte* | Identifies the resolution stream this block belongs to. |
-| `stream_sequence` | 4 bytes* | Orders this block within its stream. |
-| `record_config` | 6 bytes | Stores the time, format, and flags for the records. |
-| **Header total** | **16 bytes** | |
-
-
-Approximate records per block, assuming each record is entirely contained in 1 block:
-
-| Payload size per record | Records per block | Unused payload bytes |
-|---:|---:|---:|
-| 4 bytes | 1,019 | 2 |
-| 8 bytes | 509 | 6 |
-
-### Continuation block
-
-| Header field | Size | Purpose |
-|---|---:|---|
-| `magic_number` | 2 bytes* | Identifies the start of a Continuation block. |
-| `crc16` | 2 bytes** | Detects accidental changes or corruption in the block. |
-| `stream_id` | 1 byte* | Identifies the resolution stream this block belongs to. |
-| `stream_sequence` | 4 bytes* | Orders this block within its stream. |
-| **Header total** | **9 bytes** | |
-
-> Using a 4-byte instead of a 2-byte `stream_sequence` adds 2 bytes to each Continuation header. Assuming all remaining blocks are Continuation blocks, that adds about 506 bytes for 1 MiB of storage, 32 MiB for 64 GiB, and 64 MiB for 128 GiB.
-
-Approximate records per block, assuming each record is entirely contained in 1 block:
-
-| Payload size per record | Records per block | Unused payload bytes |
-|---:|---:|---:|
-| 4 bytes | 1,021 | 1 |
-| 8 bytes | 510 | 5 |
-
-> Unused bytes are the remaining payload space after storing whole records. The counts assume records are packed consecutively with no alignment padding.
-
 ### Storage Capacity Estimates
 
-The table shows estimated capacity for 4-byte records stored at 1 record per second. For 8-byte records, the record count and duration would be approximately half.
+The table estimates capacity for 4-byte records stored every 1, 10, or 30 seconds. For 8-byte records, the record count and time to full are approximately half. Storage sizes use binary units.
 
-| Storage size | Continuation blocks* | 4-byte records | Duration (1 record/sec) |
-|---:|---:|---:|---:|
-| 64 MiB | 16,381 | 16.7 × 10⁶ | ~0.5 years |
-| 128 MiB | 32,765 | 33.5 × 10⁶ | ~1.1 years |
-| 512 MiB | 131,069 | 133.8 × 10⁶ | ~4.2 years |
-| 1 GiB | 262,141 | 267.6 × 10⁶ | ~8.5 years |
-| 4 GiB | 1,048,573 | 1,070.6 × 10⁶ | ~33.9 years |
+| Storage size | Continuation<br>blocks | Continuation<br>header space | Records | Time to full<br>(1 sec) | Time to full<br>(10 secs) | Time to full<br>(30 secs) |
+|---:|---:|---:|---:|---:|---:|---:|
+| 32 KiB | 5 | 0.04 KiB | 5,105 | ~1.4 hours | ~14.2 hours | ~42.5 hours |
+| 128 KiB | 29 | 0.3 KiB | 29,609 | ~8.2 hours | ~3.4 days | ~10.3 days |
+| 1 MiB | 253 | 2 KiB | 258,313 | ~3.0 days | ~29.9 days | ~89.7 days |
+| 32 MiB | 8,189 | 72 KiB | 8.4 × 10⁶ | ~96.8 days | ~2.6 years | ~7.9 years |
+| 126 MiB | 32,253 | 283 KiB | 32.9 × 10⁶ | ~1.0 years | ~10.4 years | ~31.3 years |
+| 512 MiB | 131,069 | 1,152 KiB | 133.8 × 10⁶ | ~4.2 years | ~42 years | ~127 years |
+| 1 GiB | 262,141 | 2,304 KiB | 267.6 × 10⁶ | ~8.5 years | ~85 years | ~254 years |
 
-> Assumes 2 Superblocks and 1 initial Record block for a single stream; all remaining 4 KiB blocks are Continuation blocks. This is an upper bound; multiple streams need additional Record blocks. Durations use 365.25 days per year.
-
-For 4-byte records stored every 10 or 30 seconds, the estimated capacity is:
-
-| Storage size | Continuation<br>blocks | Continuation<br>header space | Records | Time to full<br>(10 secs) | Time to full<br>(30 secs) |
-|---:|---:|---:|---:|---:|---:|
-| 64 KiB | 13 | 0.1 KiB | 0.0133 × 10⁶ | ~1.5 days | ~4.6 days |
-| 128 KiB | 29 | 0.3 KiB | 0.030 × 10⁶ | ~3.4 days | ~10.3 days |
-| 1 MiB | 253 | 2 KiB | 0.26 × 10⁶ | ~29.9 days | ~89.7 days |
-| 32 MiB | 8,189 | 72 KiB | 8.4 × 10⁶ | ~2.6 years | ~7.9 years |
-| 126 MiB | 32,253 | 283 KiB | 32.9 × 10⁶ | ~10.4 years | ~31.3 years |
-| 512 MiB | 131,069 | 1,152 KiB | 133.8 × 10⁶ | ~42.4 years | ~127.2 years |
+> Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. This is an upper bound; multiple streams need additional Record blocks. Durations use 365.25 days per year.
 
 ## Superblock Recovery
 

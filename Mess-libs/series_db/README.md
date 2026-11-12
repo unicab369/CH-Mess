@@ -94,6 +94,13 @@ Codec IDs are:
 
 Codec applies to the payload of the record block and its continuation blocks. A codec must define its record boundaries and decoding rules; until those rules are specified and implemented, use ID `0` (Raw).
 
+Approximate records per block, assuming each record is entirely contained in 1 block:
+
+| Payload size per record | Records per block | Unused payload bytes |
+|---:|---:|---:|
+| 4 bytes | 1,019 | 2 |
+| 8 bytes | 509 | 6 |
+
 ## Continuation blocks (C)
 
 Continuation blocks store records that follow a record block `R` when its payload is full. Each belongs to the same `stream_id` and carries a per-stream block sequence so it can be associated with the preceding extent even when blocks from other streams are physically interleaved. When a continuation block `C` fills, another continuation `C_cont` block is added. See [README-CONSTRAINTS.md](README-CONSTRAINTS.md#continuation-block-association-and-order) for the stream ordering and recovery rules.
@@ -108,7 +115,19 @@ A continuation block contains:
 | **stream_sequence** | 4 bytes* | Orders this block within its stream. |
 | **payload** | Variable | Stores records that continue from the preceding block. |
 
+> Using a 4-byte instead of a 2-byte `stream_sequence` adds 2 bytes to each Continuation header. Assuming all remaining blocks are Continuation blocks, that adds about 506 bytes for 1 MiB of storage, 32 MiB for 64 GiB, and 64 MiB for 128 GiB.
+
 Continuation blocks may be physically interleaved with blocks from other streams; `stream_sequence` keeps the logical order within each stream.
+
+Approximate records per block, assuming each record is entirely contained in 1 block:
+
+| Payload size per record | Records per block | Unused payload bytes |
+|---:|---:|---:|
+| 4 bytes | 1,021 | 1 |
+| 8 bytes | 510 | 5 |
+
+> Unused bytes are the remaining payload space after storing whole records. The counts assume records are packed consecutively with no alignment padding.
+
 
 ```text
 [S0] [S1]
