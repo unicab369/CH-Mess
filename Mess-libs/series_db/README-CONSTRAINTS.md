@@ -82,23 +82,6 @@ col_signs  = 0b01000000
 
 This describes an unsigned 8-bit column, a signed 16-bit column, and an unsigned 32-bit column. Each schema change appends a new entry to both Superblocks. Existing extents retain their original `schema_id`; new data using a new schema starts in a new record block.
 
-## Schema Entry Capacity Estimate
-
-Assumptions: 4-byte flash write alignment; `col_units`, `col_scale_mul`, `col_scale_exp`, and `col_scales` are absent; `col_signs` is present; 1-byte `schema_id`, `col_count`, `schema_config`, and `commit_marker`; 2-byte entry CRC; `col_widths` uses 1 byte per column and `col_signs` uses one bit per column. The fixed Superblock fields leave 4,087 bytes for schema entries. Both Superblocks store the same entries, so their capacities are not added together.
-
-| `col_count` | `col_widths` size | Entry size after padding | Maximum schema entries | Space per Superblock |
-|---:|---:|---:|---:|---:|
-| 1 | 1 byte | 8 bytes | 256 | 2,048 bytes |
-| 2 | 2 bytes | 12 bytes | 256 | 3,072 bytes |
-| 4 | 4 bytes | 12 bytes | 256 | 3,072 bytes |
-| 8 | 8 bytes | 16 bytes | 254 | 4,064 bytes |
-
-Maximum schema entries counts 1 entry per distinct schema ID; each entry's size includes its own `schema_id` field.
-
-Padding is only for flash write alignment; it is not required by the schema encoding itself. These estimates assume the target flash requires 4-byte alignment, which must be verified for the MCU. If byte-granular writes are supported, padding may be unnecessary and the entry capacity should be recalculated.
-
-The 1-byte `schema_id` caps the number of distinct schemas at 256. With 8 columns, `col_widths` uses 8 bytes and `col_signs` uses 1 byte, making each entry 16 bytes when aligned to 4 bytes. This allows 254 schema entries or 253 changes after the initial schema. Confirm the assumed 4-byte write alignment for the target flash.
-
 ## Continuation Block Association and Order
 
 - Blocks from different resolution streams may be interleaved in physical address order. Readers group blocks by `stream_id` and use the per-stream block sequence to establish logical order.
@@ -135,7 +118,33 @@ Codec IDs are defined as follows:
 
 The codec applies to the payload across the record block and its continuation blocks. Until non-raw decoding and record-boundary rules are implemented, write codec ID `0`. Reserved flag bits must be written as zero and ignored by readers.
 
-### Storage Capacity Estimates
+## Capacity Estimates
+
+### Schema Entries and Continuation Blocks
+
+Each Superblock has 4,087 bytes for append-only `schema_entries`. `col_count` ranges from 1 to 255 (`0xFF` = 255). A larger count makes each entry larger and leaves room for fewer entries.
+
+Assuming 4-byte alignment, `col_signs` present, and other optional arrays absent: with `col_count = 16`, each entry is 24 bytes, so one Superblock holds about 170 entries. With `col_count = 255`, an entry is about 296 bytes and one Superblock holds 13 entries (12 changes after the initial entry).
+
+For 12 columns of equal byte width, Continuation block payload capacity is:
+
+| Width per column | Record size | Records per Continuation block | Unused payload space |
+|---:|---:|---:|---:|
+| 1 byte | 12 bytes | 340 | 5 bytes |
+| 2 bytes | 24 bytes | 170 | 5 bytes |
+| 4 bytes | 48 bytes | 85 | 5 bytes |
+| 8 bytes | 96 bytes | 42 | 53 bytes |
+
+For 6 columns of equal byte width, Continuation block payload capacity is:
+
+| Width per column | Record size | Records per Continuation block | Unused payload space |
+|---:|---:|---:|---:|
+| 1 byte | 6 bytes | 680 | 5 bytes |
+| 2 bytes | 12 bytes | 340 | 5 bytes |
+| 4 bytes | 24 bytes | 170 | 5 bytes |
+| 8 bytes | 48 bytes | 85 | 5 bytes |
+
+### Total Storage Capacity
 
 The table estimates capacity for 4-byte records stored every 1, 10, or 30 seconds. For 8-byte records, the record count and time to full are approximately half. Storage sizes use binary units.
 
