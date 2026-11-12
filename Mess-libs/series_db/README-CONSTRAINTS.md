@@ -18,14 +18,15 @@ Each schema entry contains:
 | **entry_crc** | 2 bytes* | Validates the schema entry. |
 | **commit_marker** | 1 byte* | Marks the entry as fully written. |
 | **schema_config** | 1 byte* | Selects column width units and byte order, and indicates optional per-column fields; see [Schema config](#schema-config). |
+| **schema_config_ext1** | 1 byte** | Present when `schema_config` bit 7 is `1`; enables extended options below. |
 | **schema_id** | 1 byte* | Identifies the schema entry. |
 | **col_count** | 1 byte* | Number of columns in the schema. |
-| **col_widths** | 1 byte per column** | One width value per column (`col_count` bytes); units are bytes or bits per `schema_config` bit 1. |
-| **col_units** | Optional; 1 byte per column | Present when `schema_config` bit 4 is `1`; one unit code per column. |
-| **col_scale_mul** | Optional; 1 byte per column | Present when `schema_config` bit 1 is `1`; one 1-byte multiplier per column (default `1`). E.g., `10` with multiplier `3` becomes `30`. |
-| **col_scale_exp** | Optional; 1 signed byte per column | Present when `schema_config` bit 2 is `1`; one base-10 exponent per column (default `0`). E.g., `123` with exponent `-2` becomes `1.23`. |
-| **col_scales** | Optional; 2 bytes per column | Present when `schema_config` bit 3 is `1`; one numerator/denominator pair per column (default `1/1`). E.g., `10` with scale `3/2` becomes `15`. |
-| **col_signs** | Optional; `ceil(col_count / 8)` bytes | Present when `schema_config` bit 0 is `1`; one bit per column (`1` = signed). Unused bits are `0`. |
+| **col_widths** | 1 byte** / column | One width value per column (`col_count` bytes); units are bytes or bits per `schema_config` bit 1. |
+| **col_units** | 1 byte** / column | Present when `schema_config` bit 4 is `1`; one unit code per column. |
+| **col_scale_exp** | 1 signed byte** / column | Present when `schema_config` bit 2 is `1`; one base-10 exponent per column (default `0`). E.g., `123` with exponent `-2` becomes `1.23`. |
+| **col_scales** | 2 bytes** / column | Present when `schema_config` bit 3 is `1`; one numerator/denominator pair per column (default `1/1`). E.g., `10` with scale `3/2` becomes `15`. |
+| **col_scale_mul** | 1 byte** / column | Present when `schema_config` bit 1 is `1`; one 1-byte multiplier per column (default `1`). E.g., `10` with multiplier `3` becomes `30`. |
+| **col_signs** | `ceil(col_count / 8)` bytes** | Present when `schema_config` bit 0 is `1`; one bit per column (`1` = signed). Unused bits are `0`. |
 | **padding** | Variable | Aligns the entry to the flash program unit. |
 
 
@@ -33,18 +34,22 @@ Each schema entry contains:
 
 | Bit(s) | Meaning | Purpose |
 |---|---|---|
-| 7 | Reserved; write `0`. | Available for a future format extension. |
+| 7 | `1` = yes; `0` = no. | Indicates whether the 1-byte `schema_config_ext1` follows. |
 | 6 | `0` = little-endian; `1` = big-endian. | Sets byte order for multi-byte column values. |
 | 5 | `0` = bytes; `1` = bits. | Sets the unit used by `col_widths`. |
-| 4 | `1` = present; `0` = absent (unspecified). | Indicates whether `col_units` follows. |
-| 3 | `1` = present; `0` = absent (scale defaults to `1/1`). | Indicates whether `col_scales` follows. |
-| 2 | `1` = present; `0` = absent (exponent defaults to `0`). | Indicates whether `col_scale_exp` follows. |
-| 1 | `1` = present; `0` = absent (multiplier defaults to `1`). | Indicates whether `col_scale_mul` values follow. |
-| 0 | `1` = present; `0` = absent (all columns unsigned). | Indicates whether `col_signs` follows. |
+| 4 | `1` = yes; `0` = no (unspecified). | Indicates whether `col_units` follows. |
+| 2 | `1` = yes; `0` = no (exponent defaults to `0`). | Indicates whether `col_scale_exp` follows. |
+| 3 | `1` = yes; `0` = no (scale defaults to `1/1`). | Indicates whether `col_scales` follows. |
+| 1 | `1` = yes; `0` = no (multiplier defaults to `1`). | Indicates whether `col_scale_mul` values follow. |
+| 0 | `1` = yes; `0` = no (all columns unsigned). | Indicates whether `col_signs` follows. |
 
-Bit 7 is reserved for a possible future extension of `schema_config`; no extension byte is defined in the current format.
+When `schema_config` bit 7 is `1`, a 1-byte `schema_config_ext1` follows `schema_config` in the schema entry:
 
-For each column, interpret the numeric value as `stored_value × col_scale_mul × numerator / denominator × 10^exponent`. E.g., multiplier `3` multiplies by 3, ratio `1/4` divides by 4, and exponent `-2` divides by 100. Both numerator and denominator must be nonzero. If a scaling field is absent, use its neutral value (`1` for `col_scale_mul`, `1/1` for the ratio, and `0` for the exponent). Apply the scaling before interpreting the value in its column unit.
+| Bit | Meaning | Purpose |
+|---:|---|---|
+| 7 | Future extension flag; write `0`. | Will indicate whether `schema_config_ext2` follows. |
+| 6–3 | Reserved; write `0`. | Reserved for future options. |
+| 2–0 | `000` = off; `001` = 1 bit; `010` = 2 bits; `011` = 3 bits; `100` = 4 bits; `101`–`111` reserved. | Selects quantization width. |
 
 Unit codes are 1 byte and are assigned as follows:
 
@@ -117,48 +122,6 @@ Codec IDs are defined as follows:
 | `3`–`7` | Reserved | Do not write; readers should reject blocks using these IDs as unsupported. |
 
 The codec applies to the payload across the record block and its continuation blocks. Until non-raw decoding and record-boundary rules are implemented, write codec ID `0`. Reserved flag bits must be written as zero and ignored by readers.
-
-## Capacity Estimates
-
-### Schema Entries and Continuation Blocks
-
-Each Superblock has 4,087 bytes for append-only `schema_entries`. `col_count` ranges from 1 to 255 (`0xFF` = 255). A larger count makes each entry larger and leaves room for fewer entries.
-
-Assuming 4-byte alignment, `col_signs` present, and other optional arrays absent: with `col_count = 16`, each entry is 24 bytes, so one Superblock holds about 170 entries. With `col_count = 255`, an entry is about 296 bytes and one Superblock holds 13 entries (12 changes after the initial entry).
-
-For 12 columns of equal byte width, Continuation block payload capacity is:
-
-| Width per column | Record size | Records per Continuation block | Unused payload space |
-|---:|---:|---:|---:|
-| 1 byte | 12 bytes | 340 | 5 bytes |
-| 2 bytes | 24 bytes | 170 | 5 bytes |
-| 4 bytes | 48 bytes | 85 | 5 bytes |
-| 8 bytes | 96 bytes | 42 | 53 bytes |
-
-For 6 columns of equal byte width, Continuation block payload capacity is:
-
-| Width per column | Record size | Records per Continuation block | Unused payload space |
-|---:|---:|---:|---:|
-| 1 byte | 6 bytes | 680 | 5 bytes |
-| 2 bytes | 12 bytes | 340 | 5 bytes |
-| 4 bytes | 24 bytes | 170 | 5 bytes |
-| 8 bytes | 48 bytes | 85 | 5 bytes |
-
-### Total Storage Capacity
-
-The table estimates capacity for 4-byte records stored every 1, 10, or 30 seconds. For 8-byte records, the record count and time to full are approximately half. Storage sizes use binary units.
-
-| Storage size | Continuation<br>blocks | Continuation<br>header space | Records | Time to full<br>(1 sec) | Time to full<br>(10 secs) | Time to full<br>(30 secs) |
-|---:|---:|---:|---:|---:|---:|---:|
-| 32 KiB | 5 | 0.04 KiB | 5,105 | ~1.4 hours | ~14.2 hours | ~42.5 hours |
-| 128 KiB | 29 | 0.3 KiB | 29,609 | ~8.2 hours | ~3.4 days | ~10.3 days |
-| 1 MiB | 253 | 2 KiB | 258,313 | ~3.0 days | ~29.9 days | ~89.7 days |
-| 32 MiB | 8,189 | 72 KiB | 8.4 × 10⁶ | ~96.8 days | ~2.6 years | ~7.9 years |
-| 126 MiB | 32,253 | 283 KiB | 32.9 × 10⁶ | ~1.0 years | ~10.4 years | ~31.3 years |
-| 512 MiB | 131,069 | 1,152 KiB | 133.8 × 10⁶ | ~4.2 years | ~42 years | ~127 years |
-| 1 GiB | 262,141 | 2,304 KiB | 267.6 × 10⁶ | ~8.5 years | ~85 years | ~254 years |
-
-> Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. This is an upper bound; multiple streams need additional Record blocks. Durations use 365.25 days per year.
 
 ## Superblock Recovery
 
