@@ -1,49 +1,50 @@
 # Series DB format constraints to define
 
 
-1. **Schema log slots:** Define the flash alignment and recovery procedure for append-only schema slots in S0 and S1. `schema_id`, `col_count`, and `slot_config` are fixed at 1 byte. Each slot contains these fields, the per-column width data, optional unit and scale arrays, an optional sign bitset, a 2-byte entry CRC, a 1-byte commit marker, and alignment padding. Append the same entry to both Superblocks and do not let a record block reference it until both copies validate it. The fixed Superblock CRC excludes the slots. Slot capacity is `floor(4087 / aligned_slot_size)`. Define recovery for interrupted or mismatched slot writes. `col_count` determines the per-column array sizes and, when present, the sign-bitset size.
+1. **Schema log entries:** Define the flash alignment and recovery procedure for append-only schema entries in S0 and S1. `schema_id`, `col_count`, and `schema_config` are fixed at 1 byte. Each entry contains these fields, the per-column width data, optional unit and scale arrays, an optional sign bitset, a 2-byte entry CRC, a 1-byte commit marker, and alignment padding. Append the same entry to both Superblocks and do not let a record block reference it until both copies validate it. The fixed Superblock CRC excludes the schema entries. Entry capacity is `floor(4087 / aligned_entry_size)`. Define recovery for interrupted or mismatched entry writes. `col_count` determines the per-column array sizes and, when present, the sign-bitset size.
 2. **Payload length:** TODO — still needs consideration. Proposed: add a 2-byte `payload_length` to each block. Set it once when closing the block, include it in the CRC, and treat the block as invalid if power loss occurs before it is finalized. Readers use it to determine where valid payload data ends.
 3. **Resolution streams and shared block pool:** Store each resolution (for example, raw seconds, 5-minute, 10-minute, 30-minute, and hourly summaries) as a separate logical stream. All streams allocate blocks from one shared pool rather than reserving fixed capacity per resolution. Each Record and Continuation block stores a 1-byte `stream_id` and a 4-byte `stream_sequence`. Sequence numbers start at zero and increase by one for every new block in that stream; they must not wrap. Readers group blocks by `stream_id` and order them by sequence; Continuation blocks extend the preceding extent within that stream, even when blocks from other streams are interleaved physically. Define the `stream_id` registry and free-block allocation and recovery rules.
 
-## Schema log slots
+## Schema log entries
 
-Schema definitions are stored in append-only slots in the unused space of both Superblocks. Each new schema is appended to the next slot in S0 and S1. A record block may use the new `schema_id` only after the entry is committed and validated in both copies. This avoids erasing and rewriting the fixed Superblock fields for each schema change.
+Schema definitions are stored as append-only entries in the unused space of both Superblocks. Each new schema is appended after the previous entry in S0 and S1. A record block may use the new `schema_id` only after the entry is committed and validated in both copies. This avoids erasing and rewriting the fixed Superblock fields for each schema change.
 
-The CRC for the fixed Superblock fields does not cover the append-only slots; each slot has its own CRC and commit marker. Readers scan the slots in both copies and build a lookup from `schema_id` to payload layout.
+The CRC for the fixed Superblock fields does not cover the append-only entries; each entry has its own CRC and commit marker. Readers scan the entries in both copies and build a lookup from `schema_id` to payload layout.
 
-Each schema slot contains:
+Each schema entry contains:
 
 | Field | Size | Purpose |
 |---|---:|---|
 | **entry_crc** | 2 bytes* | Validates the schema entry. |
 | **commit_marker** | 1 byte* | Marks the entry as fully written. |
-| **slot_config** | 1 byte* | Selects column width units and byte order, and indicates optional per-column fields; see [Slot config](#slot-config). |
+| **schema_config** | 1 byte* | Selects column width units and byte order, and indicates optional per-column fields; see [Schema config](#schema-config). |
 | **schema_id** | 1 byte* | Identifies the schema entry. |
 | **col_count** | 1 byte* | Number of columns in the schema. |
-| **col_widths** | 1 byte per column** | Stores one width value per column; total size is `col_count` bytes. `slot_config` determines whether each width value is in bytes or bits. |
-| **col_units** | Optional; 1 byte per column | Present when `slot_config` bit 4 is `1`; each byte is a unit code from the table below. If absent, units are unspecified. |
-| **col_scale_exp** | Optional; 1 signed byte per column | Present when `slot_config` bit 5 is `1`; stores a base-10 exponent for each column. If absent, the exponent is `0`. |
-| **col_scales** | Optional; 2 bytes per column | Present when `slot_config` bit 3 is `1`; stores a 1-byte numerator and 1-byte denominator for each column. If absent, the ratio is `1/1`. |
-| **col_signs** | Optional; `ceil(col_count / 8)` bytes | Present when `slot_config` bit 0 is `1`; one bit per column (`1` = signed, `0` = unsigned). If absent, all columns are unsigned. Unused high bits in the last byte are zero. |
-| **padding** | Variable | Aligns the slot to the flash program unit. |
+| **col_widths** | 1 byte per column** | One width value per column (`col_count` bytes); units are bytes or bits per `schema_config` bit 1. |
+| **col_units** | Optional; 1 byte per column | Present when `schema_config` bit 4 is `1`; one unit code per column. |
+| **col_scale_mul** | Optional; 1 byte per column | Present when `schema_config` bit 1 is `1`; one 1-byte multiplier per column (default `1`). E.g., `10` with multiplier `3` becomes `30`. |
+| **col_scale_exp** | Optional; 1 signed byte per column | Present when `schema_config` bit 2 is `1`; one base-10 exponent per column (default `0`). E.g., `123` with exponent `-2` becomes `1.23`. |
+| **col_scales** | Optional; 2 bytes per column | Present when `schema_config` bit 3 is `1`; one numerator/denominator pair per column (default `1/1`). E.g., `10` with scale `3/2` becomes `15`. |
+| **col_signs** | Optional; `ceil(col_count / 8)` bytes | Present when `schema_config` bit 0 is `1`; one bit per column (`1` = signed). Unused bits are `0`. |
+| **padding** | Variable | Aligns the entry to the flash program unit. |
 
 
-### Slot config
+### Schema config
 
-| Bit(s) | Meaning |
-|---|---|
-| 7 | Reserved for future extension of `slot_config`; write as `0` for now. |
-| 6 | Byte order for multi-byte column values: `0` = little-endian; `1` = big-endian. |
-| 5 | Reserved; write as `0`. |
-| 4 | `1` = `col_units` is present; `0` = omitted and units are unspecified. |
-| 3 | `1` = `col_scales` is present; `0` = omitted and scales are `1/1`. |
-| 2 | `1` = `col_scale_exp` is present; `0` = omitted and all exponents are zero. |
-| 1 | `0` = `col_widths` are in bytes; `1` = `col_widths` are in bits. |
-| 0 | `1` = `col_signs` is present; `0` = omitted and all columns are unsigned. |
+| Bit(s) | Meaning | Purpose |
+|---|---|---|
+| 7 | Reserved; write `0`. | Available for a future format extension. |
+| 6 | `0` = little-endian; `1` = big-endian. | Sets byte order for multi-byte column values. |
+| 5 | `0` = bytes; `1` = bits. | Sets the unit used by `col_widths`. |
+| 4 | `1` = present; `0` = absent (unspecified). | Indicates whether `col_units` follows. |
+| 3 | `1` = present; `0` = absent (scale defaults to `1/1`). | Indicates whether `col_scales` follows. |
+| 2 | `1` = present; `0` = absent (exponent defaults to `0`). | Indicates whether `col_scale_exp` follows. |
+| 1 | `1` = present; `0` = absent (multiplier defaults to `1`). | Indicates whether `col_scale_mul` values follow. |
+| 0 | `1` = present; `0` = absent (all columns unsigned). | Indicates whether `col_signs` follows. |
 
-Bit 7 is reserved for a possible future extension of `slot_config`; no extension byte is defined in the current format.
+Bit 7 is reserved for a possible future extension of `schema_config`; no extension byte is defined in the current format.
 
-For each column, interpret the numeric value as `stored_value × numerator / denominator × 10^exponent`. For example, `3/1` multiplies by 3, `1/4` divides by 4, and an exponent of `-2` divides by 100. Both numerator and denominator must be nonzero. If either optional field is absent, use its neutral value (`1/1` for the ratio and `0` for the exponent). Apply the scaling before interpreting the value in its column unit.
+For each column, interpret the numeric value as `stored_value × col_scale_mul × numerator / denominator × 10^exponent`. E.g., multiplier `3` multiplies by 3, ratio `1/4` divides by 4, and exponent `-2` divides by 100. Both numerator and denominator must be nonzero. If a scaling field is absent, use its neutral value (`1` for `col_scale_mul`, `1/1` for the ratio, and `0` for the exponent). Apply the scaling before interpreting the value in its column unit.
 
 Unit codes are 1 byte and are assigned as follows:
 
@@ -74,29 +75,29 @@ A three-column schema can be represented as:
 ```text
 schema_id     = 0
 col_count  = 3
-slot_config   = 0b00000011  # widths are in bits; col_signs is present
+schema_config   = 0b00100001  # widths are in bits; col_signs is present
 col_widths = [8, 16, 32]
 col_signs  = 0b01000000
 ```
 
-This describes an unsigned 8-bit column, a signed 16-bit column, and an unsigned 32-bit column. Each schema change appends a new slot to both Superblocks. Existing extents retain their original `schema_id`; new data using a new schema starts in a new record block.
+This describes an unsigned 8-bit column, a signed 16-bit column, and an unsigned 32-bit column. Each schema change appends a new entry to both Superblocks. Existing extents retain their original `schema_id`; new data using a new schema starts in a new record block.
 
-## Schema Slot Capacity Estimate
+## Schema Entry Capacity Estimate
 
-Assumptions: 4-byte flash write alignment; `col_units`, `col_scale_exp`, and `col_scales` are absent; `col_signs` is present; 1-byte `schema_id`, `col_count`, `slot_config`, and `commit_marker`; 2-byte entry CRC; `col_widths` uses 1 byte per column and `col_signs` uses one bit per column. The fixed Superblock fields leave 4,087 bytes for slots. Both Superblocks store the same entries, so their capacities are not added together.
+Assumptions: 4-byte flash write alignment; `col_units`, `col_scale_mul`, `col_scale_exp`, and `col_scales` are absent; `col_signs` is present; 1-byte `schema_id`, `col_count`, `schema_config`, and `commit_marker`; 2-byte entry CRC; `col_widths` uses 1 byte per column and `col_signs` uses one bit per column. The fixed Superblock fields leave 4,087 bytes for schema entries. Both Superblocks store the same entries, so their capacities are not added together.
 
-| `col_count` | `col_widths` size | Slot size after padding | Maximum schema entries | Space per Superblock |
+| `col_count` | `col_widths` size | Entry size after padding | Maximum schema entries | Space per Superblock |
 |---:|---:|---:|---:|---:|
 | 1 | 1 byte | 8 bytes | 256 | 2,048 bytes |
 | 2 | 2 bytes | 12 bytes | 256 | 3,072 bytes |
 | 4 | 4 bytes | 12 bytes | 256 | 3,072 bytes |
 | 8 | 8 bytes | 16 bytes | 254 | 4,064 bytes |
 
-Maximum schema entries counts one slot per distinct schema ID; each slot's size includes its own `schema_id` field.
+Maximum schema entries counts 1 entry per distinct schema ID; each entry's size includes its own `schema_id` field.
 
-Padding is only for flash write alignment; it is not required by the schema encoding itself. These estimates assume the target flash requires 4-byte alignment, which must be verified for the MCU. If byte-granular writes are supported, padding may be unnecessary and the slot capacity should be recalculated.
+Padding is only for flash write alignment; it is not required by the schema encoding itself. These estimates assume the target flash requires 4-byte alignment, which must be verified for the MCU. If byte-granular writes are supported, padding may be unnecessary and the entry capacity should be recalculated.
 
-The 1-byte `schema_id` caps the number of distinct schemas at 256. With 8 columns, `col_widths` uses 8 bytes and `col_signs` uses 1 byte, making each slot 16 bytes when aligned to 4 bytes. This allows 254 schema entries or 253 changes after the initial schema. Confirm the assumed 4-byte write alignment for the target flash.
+The 1-byte `schema_id` caps the number of distinct schemas at 256. With 8 columns, `col_widths` uses 8 bytes and `col_signs` uses 1 byte, making each entry 16 bytes when aligned to 4 bytes. This allows 254 schema entries or 253 changes after the initial schema. Confirm the assumed 4-byte write alignment for the target flash.
 
 ## Continuation Block Association and Order
 

@@ -33,9 +33,9 @@ Each Superblock contains:
 | **config** (`G`) | 1 byte* | Stores database-wide configuration options. |
 | **version** (`V`) | 1 byte* | Identifies the Superblock format. |
 | **magic_number** (`M`) | 2 bytes* | Identifies the start of the Superblock header. |
-| **crc16** (`C`) | 4 bytes** | Covers `config`, `version`, `magic_number`, and `flags`, excluding the CRC field itself and `schema_slots`. |
+| **crc16** (`C`) | 4 bytes** | Covers `config`, `version`, `magic_number`, and `flags`, excluding the CRC field itself and `schema_entries`. |
 | **flags** (`F`) | 1 byte* | Stores Superblock flags. |
-| **schema_slots** (`S`) | Remaining space | Append-only schema entries. Each entry has its own CRC and commit marker. |
+| **schema_entries** (`S`) | Remaining space | Append-only schema entries. Each entry has its own CRC and commit marker. |
 
 The Superblock is stored in 2 copies, S0 and S1. Each copy has this field layout:
 ```text
@@ -54,7 +54,7 @@ The Superblock `config` byte uses these bits:
 | 3–0 | Reserved; write as `0`. |
 
 
-Schema slots store the payload layouts referenced by record blocks. See [README-CONSTRAINTS.md](README-CONSTRAINTS.md#slot-config) for details.
+Schema entries store the payload layouts referenced by record blocks. See [README-CONSTRAINTS.md](README-CONSTRAINTS.md#schema-config) for details.
 
 > New data uses the new schema ID and **must be written to a new block**. A schema change is a hard boundary: the old extent ends and a new one begins. Since an extent starts with a record block, starting one always requires writing at least one new block.
 

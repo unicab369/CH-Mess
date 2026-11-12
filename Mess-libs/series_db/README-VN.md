@@ -33,8 +33,8 @@ Mỗi Superblock gồm:
 | **version** (`V`) | 1 byte<sup>*</sup> | Xác định định dạng Superblock. |
 | **magic_number** (`M`) | 2 byte<sup>*</sup> | Xác định điểm bắt đầu của header Superblock. |
 | **flags** (`F`) | 1 byte | Lưu các cờ của Superblock. |
-| **crc16** (`C`) | 4 byte<sup>**</sup> | Bao gồm `config`, `version`, `magic_number` và `flags`; không bao gồm chính trường CRC hoặc `schema_slots`. |
-| **schema_slots** (`S`) | Phần còn lại | Các mục schema chỉ ghi nối tiếp. Mỗi mục có CRC và dấu đánh dấu đã ghi hoàn tất. |
+| **crc16** (`C`) | 4 byte<sup>**</sup> | Bao gồm `config`, `version`, `magic_number` và `flags`; không bao gồm chính trường CRC hoặc `schema_entries`. |
+| **schema_entries** (`S`) | Phần còn lại | Các mục schema chỉ ghi nối tiếp. Mỗi mục có CRC và dấu đánh dấu đã ghi hoàn tất. |
 
 Superblock được lưu thành hai bản sao S0 và S1. Mỗi bản sao có bố cục trường như sau:
 
@@ -53,7 +53,7 @@ Byte `config` của Superblock dùng các bit như sau:
 | 7–4 | Dành riêng; ghi bằng `0`. |
 | 3–0 | Dành riêng; ghi bằng `0`. |
 
-Schema slot lưu bố cục payload mà record block tham chiếu đến. `slot_config` cấu hình đơn vị độ rộng cột, thứ tự byte và việc có các trường tùy chọn `col_units`, các trường scale hoặc bitset `col_signs` hay không. Bit 7 được dành cho khả năng mở rộng trong tương lai. Xem chi tiết trong [README-CONSTRAINTS.md](README-CONSTRAINTS.md#slot-config).
+Mục schema lưu bố cục payload mà record block tham chiếu đến. `schema_config` cấu hình đơn vị độ rộng cột, thứ tự byte và việc có các trường tùy chọn `col_units`, các trường scale hoặc bitset `col_signs` hay không. Bit 7 được dành cho khả năng mở rộng trong tương lai. Xem chi tiết trong [README-CONSTRAINTS.md](README-CONSTRAINTS.md#schema-config).
 
 > Dữ liệu mới dùng schema ID mới và **phải được ghi vào một khối mới**. Thay đổi schema là ranh giới cứng: extent cũ kết thúc và extent mới bắt đầu. Vì một extent bắt đầu bằng một record block, việc bắt đầu extent luôn cần ghi ít nhất một khối mới.
 
