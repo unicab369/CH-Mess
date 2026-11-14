@@ -28,7 +28,7 @@ Schema entry fields (continued):
 
 | Field | Size | Purpose |
 |---|---:|---|
-| **col_units** | 1 byte* / column | One code per column. Code `3` identifies packed bits; see [`col_units` unit codes](#col_units-unit-codes). |
+| **col_units** | 1 byte* / column | One unit code per column; see [`col_units` unit codes](#col_units-unit-codes). |
 | **col_scale_mul** | 1 byte** / column | Present when `schema_config1` bit 1 is `1`; one 1-byte multiplier per column (default `1`). E.g., `10` with multiplier `3` becomes `30`. |
 | **col_scale_ratios** | 2 bytes** / column | Present when `schema_config1` bit 3 is `1`; one numerator/denominator pair per column (default `1/1`). E.g., `10` with scale `3/2` becomes `15`. |
 | **col_scale_exp** | 1 signed byte** / column | Present when `schema_config1` bit 2 is `1`; one base-10 exponent per column (default `0`). E.g., `123` with exponent `-2` becomes `1.23`. |
@@ -66,20 +66,18 @@ Unit codes are 1 byte and are assigned as follows:
 
 | Codes | Units, in code order |
 |---:|---|
-| `0–2` | Unspecified, Count, Thaum |
-| `3` | Packed bits (8 booleans per byte, bit 7 first) |
-| `4–5` | Percent (%), Parts per million (ppm) |
-| `6–10` | Lux, Decibel milliwatt (dBm), Decibel (dB), Degree (°), Radian |
-| `11–13` | Kelvin (K), Celsius (°C), Fahrenheit (°F) |
-| `14–17` | Inch, Foot, Yard, Mile |
-| `18–20` | Ounce, Pound, Short ton (US) |
-| `21–23` | Nanosecond, Microsecond, Millisecond |
-| `24–30` | Second, Minute, Hour, Day, Calendar month, Calendar year, Week |
-| `31–33` | Hertz (Hz), kilohertz (kHz), gigahertz (GHz) |
+| `0–1` | Unspecified, Count |
+| `2` | Thaums |
+| `3–4` | Percent (%), Parts per million (ppm) |
+| `5–9` | Lux, Decibel milliwatt (dBm), Decibel (dB), Degree (°), Radian |
+| `10–12` | Kelvin (K), Celsius (°C), Fahrenheit (°F) |
+| `13–16` | Inch, Foot, Yard, Mile |
+| `17–19` | Ounce, Pound, Short ton (US) |
+| `20–22` | Nanosecond, Microsecond, Millisecond |
+| `23–29` | Second, Minute, Hour, Day, Calendar month, Calendar year, Week |
+| `30–32` | Hertz (Hz), kilohertz (kHz), gigahertz (GHz) |
 
 Codes are stable identifiers and must not be reused for different units. Unassigned codes are reserved for future units.
-
-For a `packed_bit` column, `col_signs` and `col_quant_bits` must be `0`, and scale fields must use identity values. `col_widths = 1` stores 8 booleans per reading; a width of `n` bytes stores `8n` booleans.
 
 When reading, the schema log answers: “Given a `schema_id`, what is the byte layout of the payload?” For example:
 

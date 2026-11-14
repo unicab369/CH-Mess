@@ -53,7 +53,7 @@ Byte `config` của Superblock dùng các bit như sau:
 | 7–4 | Dành riêng; ghi bằng `0`. |
 | 3–0 | Dành riêng; ghi bằng `0`. |
 
-Mục schema lưu bố cục payload mà record block tham chiếu đến. Mỗi schema hỗ trợ từ 1 đến 16 cột. `col_widths` xác định số byte dành cho từng cột trong vùng giá trị đọc; mỗi cột có một mã `col_units`. Mã `3` chỉ các bit đóng gói: 1 byte dữ liệu chứa 8 giá trị bật/tắt. Khi bit 0 của `schema_config2` được bật, mảng `col_quant_bits` riêng lưu số bit của mã lượng tử hóa cho từng cột. `schema_config1` cấu hình thứ tự byte, các trường tùy chọn và việc áp dụng dấu của cột; `col_signs` luôn có mặt. Xem chi tiết trong [README-CONSTRAINTS.md](README-CONSTRAINTS.md#schema_entries).
+Mục schema lưu bố cục payload mà record block tham chiếu đến. Mỗi schema hỗ trợ từ 1 đến 16 cột. `col_widths` xác định số byte dành cho từng cột trong vùng giá trị đọc; mỗi cột có một mã `col_units`. Khi bit 0 của `schema_config2` được bật, mảng `col_quant_bits` riêng lưu số bit của mã lượng tử hóa cho từng cột. `schema_config1` cấu hình thứ tự byte, các trường tùy chọn và việc áp dụng dấu của cột; `col_signs` luôn có mặt. Xem chi tiết trong [README-CONSTRAINTS.md](README-CONSTRAINTS.md#schema_entries).
 
 > Dữ liệu mới dùng schema ID mới và **phải được ghi vào một khối mới**. Thay đổi schema là ranh giới cứng: extent cũ kết thúc và extent mới bắt đầu. Vì một extent bắt đầu bằng một record block, việc bắt đầu extent luôn cần ghi ít nhất một khối mới.
 
@@ -100,8 +100,6 @@ Mỗi Record block hoặc Continuation block có 2 vùng trong payload của ch�
 ```
 
 `col_widths` xác định kích thước các cột trong vùng giá trị đọc. Khi bật `col_quant_bits`, mỗi giá trị khác `0` xác định số bit mã lượng tử hóa cho cột đó trong từng bản ghi (`1`, `2` hoặc `4` bit). Các mã được đóng gói theo thứ tự bản ghi: mã số 0 thuộc bản ghi số 0. Mỗi Continuation block có vùng mã riêng cho các bản ghi của nó. Mục schema lưu số bit; payload lưu các mã.
-
-Ví dụ, `col_widths = [1]` và `col_units = [3]` tạo một cột chứa 8 giá trị bật/tắt trong mỗi bản ghi. Byte `01010011` biểu thị các giá trị `0, 1, 0, 1, 0, 0, 1, 1` theo thứ tự từ bit 7 đến bit 0. Các bit này thuộc vùng giá trị đọc, không thuộc vùng mã lượng tử hóa.
 
 Kích thước 2 vùng phải được dành trước khi ghi block để vùng mã không bị dịch chuyển khi thêm bản ghi. Byte mã cuối có thể còn bit chưa dùng. Định dạng block vẫn cần số bản ghi và ranh giới vùng mã để người đọc tìm đúng 2 vùng.
 
