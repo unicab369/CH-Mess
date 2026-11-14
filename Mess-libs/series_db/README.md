@@ -35,7 +35,7 @@ Each Superblock contains:
 | **magic_number** (`M`) | 2 bytes* | Identifies the start of the Superblock header. |
 | **crc16** (`C`) | 4 bytes** | Covers `config`, `version`, `magic_number`, and `flags`, excluding the CRC field itself and `schema_entries`. |
 | **flags** (`F`) | 1 byte* | Stores Superblock flags. |
-| **schema_entries** (`S`) | Remaining space | Append-only schema entries. Each entry has its own CRC and commit marker. |
+| **schema_entries** (`S`) | Remaining space | Append-only schema entries. Each entry has its own CRC and commit marker; see [schema_entries](README-CONSTRAINTS.md#schema_entries) for the entry layout. |
 
 The Superblock is stored in 2 copies, S0 and S1. Each copy has this field layout:
 ```text
@@ -54,7 +54,7 @@ The Superblock `config` byte uses these bits:
 | 3–0 | Reserved; write as `0`. |
 
 
-Schema entries store the payload layouts referenced by record blocks. See [README-CONSTRAINTS.md](README-CONSTRAINTS.md#schema-config) for details.
+Schema entries store the payload layouts referenced by record blocks. A schema supports 1–16 columns. `col_widths` assigns payload space to each column. When `schema_config2` bit 0 is set, a separate `col_quant_bits` array gives the quantization bit count for each column. See [schema_entries](README-CONSTRAINTS.md#schema_entries) for details.
 
 > New data uses the new schema ID and **must be written to a new block**. A schema change is a hard boundary: the old extent ends and a new one begins. Since an extent starts with a record block, starting one always requires writing at least one new block.
 
@@ -68,11 +68,13 @@ A record block contains:
 |---|---:|---|
 | **magic_number** | 2 bytes* | Identifies the start of the record block. |
 | **crc16** | 2 bytes** | Detects accidental changes or corruption in the block. |
-| **schema_id** | 1 byte* | Identifies the schema used to interpret the payload. |
+| **schema_id** | 1 byte* | Identifies the schema containing this block's `col_widths` and optional `col_quant_bits`. |
 | **stream_id** | 1 byte* | Identifies the resolution stream this block belongs to. |
 | **stream_sequence** | 4 bytes* | Orders this block within its stream. |
 | **record_config** | 6 bytes | Stores the time, format, and flags for the records. |
-| **payload** | Variable | Stores the records. |
+| **payload** | Variable | Stores readings and, when enabled, a packed quantization code area; see [Payload](#payload). |
+
+`col_quant_bits` is stored once in the schema entry and selects the quantization code width for each column. The codes themselves are stored in the block payload.
 
 The 1-byte `flags` field contains 8 bits. Its most significant 3 bits encode the payload codec; the remaining 5 bits are reserved and must be written as zero:
 
@@ -113,7 +115,7 @@ A continuation block contains:
 | **crc16** | 2 bytes** | Detects accidental changes or corruption in the block. |
 | **stream_id** | 1 byte* | Identifies the resolution stream this block belongs to. |
 | **stream_sequence** | 4 bytes* | Orders this block within its stream. |
-| **payload** | Variable | Stores records that continue from the preceding block. |
+| **payload** | Variable | Stores more readings and their packed quantization codes using the schema of this extent's Record block. |
 
 > Using a 4-byte instead of a 2-byte `stream_sequence` adds 2 bytes to each Continuation header. Assuming all remaining blocks are Continuation blocks, that adds about 506 bytes for 1 MiB of storage, 32 MiB for 64 GiB, and 64 MiB for 128 GiB.
 
@@ -139,13 +141,27 @@ Approximate records per block, assuming each record is entirely contained in 1 b
 
 > Each bracket represents one 4 KiB block.
 
+## Payload
+
+Each Record or Continuation block keeps its readings and quantization codes in 2 areas of its own payload:
+
+```text
+[block header] [readings area] [packed quantization code area]
+```
+
+The schema's `col_widths` determines each reading's column sizes. When `schema_config2` enables `col_quant_bits`, each nonzero entry gives the number of code bits stored for that column for **each reading**. Codes are packed together in reading order; the code at index 0 belongs to reading 0, and so on. A Continuation block starts its own code area for its own readings. The schema stores the bit counts, while the payload stores the codes.
+
+Reserve both areas when allocating a block so adding a reading does not move the code area. The maximum reading count must fit both the reading bytes and the packed codes. An incomplete final code byte may contain unused bits. The block format still needs a record count and code-area boundary so readers can locate the 2 areas and ignore unused bits.
+
+The capacity estimates below assume no quantization code area; enabling it reduces the number of readings per block.
+
 ## Capacity Estimates
 
 ### Schema Entries and Continuation Blocks
 
-Each Superblock has 4,087 bytes for append-only `schema_entries`. `col_count` ranges from 1 to 255 (`0xFF` = 255). A larger count makes each entry larger and leaves room for fewer entries.
+Each Superblock has 4,087 bytes for append-only `schema_entries`. `col_count` is limited to 1–16, although its field is 1 byte. A larger count makes each entry larger and leaves room for fewer entries.
 
-Assuming 4-byte alignment, `col_signs` present, and other optional arrays absent: with `col_count = 16`, each entry is 24 bytes, so one Superblock holds about 170 entries. With `col_count = 255`, an entry is about 296 bytes and one Superblock holds 13 entries (12 changes after the initial entry).
+Assuming 4-byte alignment, `col_signs` present, and other optional arrays absent: with the maximum `col_count = 16`, each entry is 24 bytes, so one Superblock holds about 170 entries.
 
 For 12 columns of equal byte width, Continuation block payload capacity is:
 

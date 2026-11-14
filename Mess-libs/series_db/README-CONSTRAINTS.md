@@ -1,11 +1,11 @@
 # Series DB format constraints to define
 
 
-1. **Schema log entries:** Define the flash alignment and recovery procedure for append-only schema entries in S0 and S1. `schema_id`, `col_count`, and `schema_config1` are fixed at 1 byte. Each entry contains these fields, the per-column width data, optional unit and scale arrays, an optional sign bitset, a 2-byte entry CRC, a 1-byte commit marker, and alignment padding. Append the same entry to both Superblocks and do not let a record block reference it until both copies validate it. The fixed Superblock CRC excludes the schema entries. Entry capacity is `floor(4087 / aligned_entry_size)`. Define recovery for interrupted or mismatched entry writes. `col_count` determines the per-column array sizes and, when present, the sign-bitset size.
-2. **Payload length:** TODO — still needs consideration. Proposed: add a 2-byte `payload_length` to each block. Set it once when closing the block, include it in the CRC, and treat the block as invalid if power loss occurs before it is finalized. Readers use it to determine where valid payload data ends.
+1. **Schema log entries:** Define the flash alignment and recovery procedure for append-only schema entries in S0 and S1. `schema_id`, `col_count`, and `schema_config1` are fixed at 1 byte. Each entry contains these fields, per-column width data, a sign bitset, optional unit, scale, and quantization arrays, a 2-byte entry CRC, a 1-byte commit marker, and alignment padding. Append the same entry to both Superblocks and do not let a record block reference it until both copies validate it. The fixed Superblock CRC excludes the schema entries. Entry capacity is `floor(4087 / aligned_entry_size)`. Define recovery for interrupted or mismatched entry writes. `col_count` determines the per-column array sizes, including the sign-bitset size.
+2. **Payload length and record count:** TODO — still needs consideration. A 2-byte `payload_length` could identify valid bytes after block finalization, but the 2-area payload also needs a record count and a defined code-area boundary. Finalize these values with the block CRC; treat an interrupted finalization as invalid.
 3. **Resolution streams and shared block pool:** Store each resolution (for example, raw seconds, 5-minute, 10-minute, 30-minute, and hourly summaries) as a separate logical stream. All streams allocate blocks from one shared pool rather than reserving fixed capacity per resolution. Each Record and Continuation block stores a 1-byte `stream_id` and a 4-byte `stream_sequence`. Sequence numbers start at zero and increase by one for every new block in that stream; they must not wrap. Readers group blocks by `stream_id` and order them by sequence; Continuation blocks extend the preceding extent within that stream, even when blocks from other streams are interleaved physically. Define the `stream_id` registry and free-block allocation and recovery rules.
 
-## Schema log entries
+## schema_entries
 
 Schema definitions are stored as append-only entries in the unused space of both Superblocks. Each new schema is appended after the previous entry in S0 and S1. A record block may use the new `schema_id` only after the entry is committed and validated in both copies. This avoids erasing and rewriting the fixed Superblock fields for each schema change.
 
@@ -17,39 +17,51 @@ Each schema entry contains:
 |---|---:|---|
 | **entry_crc** | 2 bytes* | Validates the schema entry. |
 | **commit_marker** | 1 byte* | Marks the entry as fully written. |
-| **schema_config1** | 1 byte* | Selects column width units and byte order, and indicates optional per-column fields; see [Schema config](#schema-config). |
+| **schema_config1** | 1 byte* | Selects column width units and byte order, and indicates optional per-column fields; see [schema_config1](#schema_config1). |
 | **schema_config2** | 1 byte** | Present when `schema_config1` bit 7 is `1`; enables extended options below. |
 | **schema_id** | 1 byte* | Identifies the schema entry. |
-| **col_count** | 1 byte* | Number of columns in the schema. |
-| **col_widths** | 1 byte** / column | One width value per column (`col_count` bytes); units are bytes or bits per `schema_config1` bit 1. |
-| **col_units** | 1 byte** / column | Present when `schema_config1` bit 4 is `1`; one unit code per column. |
-| **col_scale_exp** | 1 signed byte** / column | Present when `schema_config1` bit 2 is `1`; one base-10 exponent per column (default `0`). E.g., `123` with exponent `-2` becomes `1.23`. |
-| **col_scales** | 2 bytes** / column | Present when `schema_config1` bit 3 is `1`; one numerator/denominator pair per column (default `1/1`). E.g., `10` with scale `3/2` becomes `15`. |
+| **col_count** | 1 byte* | Number of columns in the schema: `1`–`16` valid; `0` and `17`–`255` reserved. |
+| **col_widths** | 1 byte** / column | Allocates each column's space in the record payload, in bytes or bits as selected by `schema_config1` bit 5. It does not store quantization settings. |
+| **col_signs** | `ceil(col_count / 8)` bytes* | Always present; one bit per column. If `schema_config1` bit 0 is `1`, use the bits (`1` = signed); otherwise treat all columns as unsigned. Unused bits are `0`. |
+
+Schema entry fields (continued):
+
+| Field | Size | Purpose |
+|---|---:|---|
+| **col_units** | 1 byte** / column | Present when `schema_config1` bit 4 is `1`; one unit code per column. See [`col_units` unit codes](#col_units-unit-codes). |
 | **col_scale_mul** | 1 byte** / column | Present when `schema_config1` bit 1 is `1`; one 1-byte multiplier per column (default `1`). E.g., `10` with multiplier `3` becomes `30`. |
-| **col_signs** | `ceil(col_count / 8)` bytes** | Present when `schema_config1` bit 0 is `1`; one bit per column (`1` = signed). Unused bits are `0`. |
+| **col_scale_ratios** | 2 bytes** / column | Present when `schema_config1` bit 3 is `1`; one numerator/denominator pair per column (default `1/1`). E.g., `10` with scale `3/2` becomes `15`. |
+| **col_scale_exp** | 1 signed byte** / column | Present when `schema_config1` bit 2 is `1`; one base-10 exponent per column (default `0`). E.g., `123` with exponent `-2` becomes `1.23`. |
+| **col_quant_bits** | 1 byte** / column | Present when `schema_config2` bit 0 is `1`; one code width per column (`0` = off; `1`, `2`, or `4` bits per reading). Other values are reserved. |
 | **padding** | Variable | Aligns the entry to the flash program unit. |
 
 
-### Schema config
+### `schema_config1`
 
 | Bit(s) | Meaning | Purpose |
 |---|---|---|
-| 7 | `1` = yes; `0` = no. | Indicates whether the 1-byte `schema_config2` follows. |
-| 6 | `0` = little-endian; `1` = big-endian. | Sets byte order for multi-byte column values. |
-| 5 | `0` = bytes; `1` = bits. | Sets the unit used by `col_widths`. |
-| 4 | `1` = yes; `0` = no (unspecified). | Indicates whether `col_units` follows. |
-| 2 | `1` = yes; `0` = no (exponent defaults to `0`). | Indicates whether `col_scale_exp` follows. |
-| 3 | `1` = yes; `0` = no (scale defaults to `1/1`). | Indicates whether `col_scales` follows. |
-| 1 | `1` = yes; `0` = no (multiplier defaults to `1`). | Indicates whether `col_scale_mul` values follow. |
-| 0 | `1` = yes; `0` = no (all columns unsigned). | Indicates whether `col_signs` follows. |
+| 7 | `schema_config2`: `1` = yes; `0` = no. | Indicates whether the 1-byte `schema_config2` follows. |
+| 6 | `byte_order`: `0` = little-endian; `1` = big-endian. | Sets byte order for multi-byte column values. |
+| 5 | `col_width_unit`: `0` = bytes; `1` = bits. | Sets the unit used by `col_widths`. |
+| 4 | `col_units`: `1` = yes; `0` = no (unspecified). | Indicates whether `col_units` follows. |
+| 1 | `col_scale_mul`: `1` = yes; `0` = no (multiplier defaults to `1`). | Indicates whether `col_scale_mul` values follow. |
+| 2 | `col_scale_exp`: `1` = yes; `0` = no (exponent defaults to `0`). | Indicates whether `col_scale_exp` follows. |
+| 3 | `col_scale_ratios`: `1` = yes; `0` = no (scale defaults to `1/1`). | Indicates whether `col_scale_ratios` follows. |
+| 0 | `col_signs`: `1` = yes; `0` = no (all columns unsigned). | Enables signedness from `col_signs`. |
 
 If bit 7 of `schema_config1` is `1`, the next byte in the schema entry is `schema_config2`:
 
-| Bit | Meaning | Purpose |
+### `schema_config2`
+
+| Bit(s) | Meaning | Purpose |
 |---:|---|---|
-| 7 | Future extension flag; write `0`. | Will indicate whether `schema_config3` follows. |
-| 6–3 | Reserved; write `0`. | Reserved for future options. |
-| 2–0 | `000` = off; `001` = 1 bit; `010` = 2 bits; `011` = 3 bits; `100` = 4 bits; `101`–`111` reserved. | Selects quantization width. |
+| 7 | `schema_config3`: future extension flag; write `0`. | Will indicate whether `schema_config3` follows. |
+| 6–1 | `reserved`: write `0`. | Reserved for future options. |
+| 0 | `col_quant_bits`: `1` = yes; `0` = no. | Indicates whether the per-column quantization bit counts follow. |
+
+`col_widths` determines where each reading's columns begin and end in the readings area. `col_quant_bits` sets the width of each column's code in a separate packed area of the same block payload; these bit-count settings are stored in the schema entry, not repeated in records. If the array is absent, no code area is needed. Define the code ordering, code-area boundary, record count, and reconstruction rule before writing quantized records.
+
+### `col_units` Unit Codes
 
 Unit codes are 1 byte and are assigned as follows:
 

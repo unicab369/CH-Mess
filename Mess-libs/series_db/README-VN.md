@@ -53,7 +53,7 @@ Byte `config` của Superblock dùng các bit như sau:
 | 7–4 | Dành riêng; ghi bằng `0`. |
 | 3–0 | Dành riêng; ghi bằng `0`. |
 
-Mục schema lưu bố cục payload mà record block tham chiếu đến. `schema_config1` cấu hình đơn vị độ rộng cột, thứ tự byte và việc có các trường tùy chọn hay không. Nếu bit 7 bằng `1`, một byte `schema_config2` theo sau để cấu hình các tùy chọn mở rộng như lượng tử hóa. Xem chi tiết trong [README-CONSTRAINTS.md](README-CONSTRAINTS.md#schema-config).
+Mục schema lưu bố cục payload mà record block tham chiếu đến. Mỗi schema hỗ trợ từ 1 đến 16 cột. `col_widths` xác định phần payload dành cho từng cột. Khi bit 0 của `schema_config2` được bật, mảng `col_quant_bits` riêng lưu số bit lượng tử hóa cho từng cột. `schema_config1` cấu hình đơn vị độ rộng cột, thứ tự byte, các trường tùy chọn và việc áp dụng dấu của cột; `col_signs` luôn có mặt. Xem chi tiết trong [README-CONSTRAINTS.md](README-CONSTRAINTS.md#schema_entries).
 
 > Dữ liệu mới dùng schema ID mới và **phải được ghi vào một khối mới**. Thay đổi schema là ranh giới cứng: extent cũ kết thúc và extent mới bắt đầu. Vì một extent bắt đầu bằng một record block, việc bắt đầu extent luôn cần ghi ít nhất một khối mới.
 
@@ -67,11 +67,13 @@ Một record block gồm:
 |---|---:|---|
 | **magic_number** | 2 byte<sup>*</sup> | Xác định điểm bắt đầu của record block. |
 | **crc16** | 2 byte<sup>(*)</sup> | Phát hiện các thay đổi ngoài ý muốn hoặc dữ liệu trong khối bị hỏng. |
-| **schema_id** | 1 byte<sup>(*)</sup> | Xác định schema dùng để diễn giải payload. |
+| **schema_id** | 1 byte<sup>(*)</sup> | Xác định schema chứa `col_widths` và `col_quant_bits` tùy chọn của block này. |
 | **stream_id** | 1 byte<sup>*</sup> | Xác định luồng độ phân giải mà block này thuộc về. |
 | **stream_sequence** | 4 byte<sup>*</sup> | Xác định thứ tự block trong luồng. |
 | **record_config** | 6 byte<sup>*</sup> | Lưu thời gian, định dạng và các cờ cho bản ghi. |
-| **payload** | Thay đổi | Lưu các bản ghi. |
+| **payload** | Thay đổi | Lưu vùng giá trị đọc và vùng mã lượng tử hóa được đóng gói khi bật tính năng này. |
+
+`col_quant_bits` được lưu một lần trong mục schema và chọn số bit của mã lượng tử hóa cho từng cột. Các mã nằm trong payload của block.
 
 ## Continuation block (C)
 
@@ -85,9 +87,21 @@ Một continuation block gồm:
 | **crc16** | 2 byte<sup>(*)</sup> | Phát hiện các thay đổi ngoài ý muốn hoặc dữ liệu trong khối bị hỏng. |
 | **stream_id** | 1 byte<sup>*</sup> | Xác định luồng độ phân giải mà block này thuộc về. |
 | **stream_sequence** | 4 byte<sup>*</sup> | Xác định thứ tự block trong luồng. |
-| **payload** | Thay đổi | Lưu các bản ghi tiếp nối từ khối trước đó. |
+| **payload** | Thay đổi | Lưu các giá trị đọc tiếp nối và mã lượng tử hóa theo schema của Record block trong cùng extent. |
 
 Các continuation block có thể nằm xen kẽ với block của luồng khác; `stream_sequence` xác định thứ tự logic của chúng trong từng luồng.
+
+## Payload
+
+Mỗi Record block hoặc Continuation block có 2 vùng trong payload của chính nó:
+
+```text
+[header của block] [vùng giá trị đọc] [vùng mã lượng tử hóa được đóng gói]
+```
+
+`col_widths` xác định kích thước các cột trong vùng giá trị đọc. Khi bật `col_quant_bits`, mỗi giá trị khác `0` xác định số bit mã lượng tử hóa cho cột đó trong từng bản ghi (`1`, `2` hoặc `4` bit). Các mã được đóng gói theo thứ tự bản ghi: mã số 0 thuộc bản ghi số 0. Mỗi Continuation block có vùng mã riêng cho các bản ghi của nó. Mục schema lưu số bit; payload lưu các mã.
+
+Kích thước 2 vùng phải được dành trước khi ghi block để vùng mã không bị dịch chuyển khi thêm bản ghi. Byte mã cuối có thể còn bit chưa dùng. Định dạng block vẫn cần số bản ghi và ranh giới vùng mã để người đọc tìm đúng 2 vùng.
 
 ```text
 [S0] [S1]
