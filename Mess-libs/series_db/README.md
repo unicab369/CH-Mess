@@ -155,15 +155,15 @@ Continuation block header: 9 bytes.
 
 ## Payload
 
-Each Record or Continuation block keeps its readings and quantization codes in 2 areas of its own payload:
+Each Record or Continuation block stores chests and packed quantization codes in separate areas. Chests grow forward from the start of the payload; codes grow backward from its end:
 
 ```text
-[block header] [readings area] [packed quantization code area]
+[block header] [chests grow →             ][← packed codes]
 ```
 
-The schema's `col_widths` determines each reading's column sizes in bytes. When `schema_config2` enables `col_quant_bits`, each nonzero entry gives the number of code bits stored for that column for **each reading**. Codes are packed together in reading order; the code at index 0 belongs to reading 0, and so on. A Continuation block starts its own code area for its own readings. The schema stores the bit counts, while the payload stores the codes.
+The schema's `col_widths` determines each chest's column sizes in bytes. When `schema_config2` enables `col_quant_bits`, each nonzero entry gives the number of code bits stored for that column in each chest. Codes are packed in chest order. Each Continuation block has its own code area. The schema stores the bit counts; the payload stores the codes.
 
-Reserve both areas when allocating a block so adding a reading does not move the code area. The maximum reading count must fit both the reading bytes and the packed codes. An incomplete final code byte may contain unused bits. The block format still needs a record count and code-area boundary so readers can locate the 2 areas and ignore unused bits.
+As chests are appended, write their codes backward from the payload end. When the block is finalized, store its record count. Readers use that count and the schema to find both areas. The block format still needs to define where the count is stored. Any unused gap between the areas remains unused space.
 
 See [README-QUANTIZATION.md](README-QUANTIZATION.md) for Record and Continuation block capacity estimates with 2-bit and 4-bit codes.
 
