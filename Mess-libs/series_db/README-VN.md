@@ -105,6 +105,21 @@ Ví dụ, `col_widths = [1]` và `col_units = [3]` tạo một cột chứa 8 gi
 
 Kích thước 2 vùng phải được dành trước khi ghi block để vùng mã không bị dịch chuyển khi thêm bản ghi. Byte mã cuối có thể còn bit chưa dùng. Định dạng block vẫn cần số bản ghi và ranh giới vùng mã để người đọc tìm đúng 2 vùng.
 
+Với 4.094 byte mỗi block, header Record 16 byte để lại 4.078 byte payload; header Continuation 9 byte để lại 4.085 byte. Số bit mã trong bảng là **tổng số bit cho mỗi bản ghi** trên tất cả các cột có mã lượng tử hóa. Giá trị `0` bit nghĩa là không có vùng mã.
+
+| Kích thước bản ghi | Số bit mã / bản ghi | Số bản ghi trong Record block | Payload chưa dùng | Số bản ghi trong Continuation block | Payload chưa dùng |
+|---:|---:|---:|---:|---:|---:|
+| 4 byte | 0 | 1.019 | 2 byte | 1.021 | 1 byte |
+| 4 byte | 1 | 988 | 2 byte + 4 bit | 990 | 1 byte + 2 bit |
+| 4 byte | 2 | 959 | 2 byte + 2 bit | 961 | 6 bit |
+| 4 byte | 4 | 906 | 1 byte | 907 | 3 byte + 4 bit |
+| 8 byte | 0 | 509 | 6 byte | 510 | 5 byte |
+| 8 byte | 1 | 501 | 7 byte + 3 bit | 502 | 6 byte + 2 bit |
+| 8 byte | 2 | 494 | 2 byte + 4 bit | 495 | 1 byte + 2 bit |
+| 8 byte | 4 | 479 | 6 byte + 4 bit | 480 | 5 byte |
+
+Phần chưa dùng gồm các byte trống sau hai vùng và các bit trống trong byte mã cuối.
+
 ```text
 [S0] [S1]
 [stream 0: R0] [stream 1: R0] [stream 0: C1] [stream 2: R0] ...

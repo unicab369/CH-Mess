@@ -155,6 +155,21 @@ For example, `col_widths = [1]` and `col_units = [3]` make one column containing
 
 Reserve both areas when allocating a block so adding a reading does not move the code area. The maximum reading count must fit both the reading bytes and the packed codes. An incomplete final code byte may contain unused bits. The block format still needs a record count and code-area boundary so readers can locate the 2 areas and ignore unused bits.
 
+With 4,094 bytes per block, the 16-byte Record header leaves 4,078 payload bytes and the 9-byte Continuation header leaves 4,085. The table assumes the listed code bits are the **total per reading** across all quantized columns. A value of `0` bits means no code area.
+
+| Reading size | Code bits per reading | Record block readings | Unused payload space | Continuation block readings | Unused payload space |
+|---:|---:|---:|---:|---:|---:|
+| 4 bytes | 0 | 1,019 | 2 bytes | 1,021 | 1 byte |
+| 4 bytes | 1 | 988 | 2 bytes + 4 bits | 990 | 1 byte + 2 bits |
+| 4 bytes | 2 | 959 | 2 bytes + 2 bits | 961 | 6 bits |
+| 4 bytes | 4 | 906 | 1 byte | 907 | 3 bytes + 4 bits |
+| 8 bytes | 0 | 509 | 6 bytes | 510 | 5 bytes |
+| 8 bytes | 1 | 501 | 7 bytes + 3 bits | 502 | 6 bytes + 2 bits |
+| 8 bytes | 2 | 494 | 2 bytes + 4 bits | 495 | 1 byte + 2 bits |
+| 8 bytes | 4 | 479 | 6 bytes + 4 bits | 480 | 5 bytes |
+
+Unused space includes whole bytes after the readings and code area, plus unused bits inside the final code byte.
+
 The capacity estimates below assume no quantization code area; enabling it reduces the number of readings per block.
 
 ## Capacity Estimates
