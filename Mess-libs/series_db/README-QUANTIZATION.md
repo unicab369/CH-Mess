@@ -2,6 +2,8 @@
 
 Capacity estimates assume 4,094 bytes per block, a 16-byte Record header, a 9-byte Continuation header, and one quantization code per column. Reading sizes are the sum of column widths. Unused payload space includes whole bytes and any unused bits in the final packed code byte.
 
+Two-bit codes use half the code space of 4-bit codes. For a 4-byte reading, capacity rises from **679 to 815 readings** with four 1-byte columns, or from **906 to 959 readings** with one 4-byte column. Fewer, wider columns need fewer codes.
+
 ## 2-bit Quantization Capacity
 
 ### 1-byte columns
