@@ -105,77 +105,7 @@ Ví dụ, `col_widths = [1]` và `col_units = [3]` tạo một cột chứa 8 gi
 
 Kích thước 2 vùng phải được dành trước khi ghi block để vùng mã không bị dịch chuyển khi thêm bản ghi. Byte mã cuối có thể còn bit chưa dùng. Định dạng block vẫn cần số bản ghi và ranh giới vùng mã để người đọc tìm đúng 2 vùng.
 
-Với 4.094 byte mỗi block, header Record 16 byte để lại 4.078 byte payload; header Continuation 9 byte để lại 4.085 byte. Mỗi bản ghi có một cột 1 byte cho mỗi byte trong kích thước bản ghi, và mỗi cột có mã lượng tử hóa 4 bit. Ví dụ, bản ghi 12 byte có 12 cột và 48 bit mã (6 byte) cho mỗi bản ghi.
-
-| Kích thước bản ghi | Số cột / bản ghi | Số bản ghi trong Record block | Payload chưa dùng | Số bản ghi trong Continuation block | Payload chưa dùng |
-|---:|---:|---:|---:|---:|---:|
-| 4 byte | 4 | 679 | 4 byte | 680 | 5 byte |
-| 8 byte | 8 | 339 | 10 byte | 340 | 5 byte |
-| 12 byte | 12 | 226 | 10 byte | 226 | 17 byte |
-| 16 byte | 16 | 169 | 22 byte | 170 | 5 byte |
-| 20 byte | 20 | 135 | 28 byte | 136 | 5 byte |
-| 24 byte | 24 | 113 | 10 byte | 113 | 17 byte |
-
-Phần chưa dùng là tổng số byte payload còn lại sau hai vùng.
-
-Nếu mỗi cột có kích thước 2 byte, số cột bằng một nửa kích thước bản ghi tính theo byte. Với một mã 4 bit cho mỗi cột, sức chứa là:
-
-| Kích thước bản ghi | Số cột / bản ghi | Số bản ghi trong Record block | Payload chưa dùng | Số bản ghi trong Continuation block | Payload chưa dùng |
-|---:|---:|---:|---:|---:|---:|
-| 4 byte | 2 | 815 | 3 byte | 817 | 0 byte |
-| 8 byte | 4 | 407 | 8 byte | 408 | 5 byte |
-| 12 byte | 6 | 271 | 13 byte | 272 | 5 byte |
-| 16 byte | 8 | 203 | 18 byte | 204 | 5 byte |
-| 20 byte | 10 | 163 | 3 byte | 163 | 10 byte |
-| 24 byte | 12 | 135 | 28 byte | 136 | 5 byte |
-
-Nếu mỗi cột có kích thước 4 byte, số cột bằng một phần tư kích thước bản ghi tính theo byte. Với một mã 4 bit cho mỗi cột, sức chứa là:
-
-| Kích thước bản ghi | Số cột / bản ghi | Số bản ghi trong Record block | Payload chưa dùng | Số bản ghi trong Continuation block | Payload chưa dùng |
-|---:|---:|---:|---:|---:|---:|
-| 4 byte | 1 | 906 | 1 byte | 907 | 3 byte + 4 bit |
-| 8 byte | 2 | 453 | 1 byte | 453 | 8 byte |
-| 12 byte | 3 | 302 | 1 byte | 302 | 8 byte |
-| 16 byte | 4 | 226 | 10 byte | 226 | 17 byte |
-| 20 byte | 5 | 181 | 5 byte + 4 bit | 181 | 12 byte + 4 bit |
-| 24 byte | 6 | 151 | 1 byte | 151 | 8 byte |
-
-### Sức chứa với lượng tử hóa 2 bit
-
-Các bảng sau dùng một mã lượng tử hóa 2 bit cho mỗi cột.
-
-#### Cột 1 byte
-
-| Kích thước bản ghi | Số cột / bản ghi | Số bản ghi trong Record block | Payload chưa dùng | Số bản ghi trong Continuation block | Payload chưa dùng |
-|---:|---:|---:|---:|---:|---:|
-| 4 byte | 4 | 815 | 3 byte | 817 | 0 byte |
-| 8 byte | 8 | 407 | 8 byte | 408 | 5 byte |
-| 12 byte | 12 | 271 | 13 byte | 272 | 5 byte |
-| 16 byte | 16 | 203 | 18 byte | 204 | 5 byte |
-| 20 byte | 20 | 163 | 3 byte | 163 | 10 byte |
-| 24 byte | 24 | 135 | 28 byte | 136 | 5 byte |
-
-#### Cột 2 byte
-
-| Kích thước bản ghi | Số cột / bản ghi | Số bản ghi trong Record block | Payload chưa dùng | Số bản ghi trong Continuation block | Payload chưa dùng |
-|---:|---:|---:|---:|---:|---:|
-| 4 byte | 2 | 906 | 1 byte | 907 | 3 byte + 4 bit |
-| 8 byte | 4 | 453 | 1 byte | 453 | 8 byte |
-| 12 byte | 6 | 302 | 1 byte | 302 | 8 byte |
-| 16 byte | 8 | 226 | 10 byte | 226 | 17 byte |
-| 20 byte | 10 | 181 | 5 byte + 4 bit | 181 | 12 byte + 4 bit |
-| 24 byte | 12 | 151 | 1 byte | 151 | 8 byte |
-
-#### Cột 4 byte
-
-| Kích thước bản ghi | Số cột / bản ghi | Số bản ghi trong Record block | Payload chưa dùng | Số bản ghi trong Continuation block | Payload chưa dùng |
-|---:|---:|---:|---:|---:|---:|
-| 4 byte | 1 | 959 | 2 byte + 2 bit | 961 | 6 bit |
-| 8 byte | 2 | 479 | 6 byte + 4 bit | 480 | 5 byte |
-| 12 byte | 3 | 319 | 10 byte + 6 bit | 320 | 5 byte |
-| 16 byte | 4 | 239 | 15 byte | 240 | 5 byte |
-| 20 byte | 5 | 191 | 19 byte + 2 bit | 192 | 5 byte |
-| 24 byte | 6 | 159 | 23 byte + 4 bit | 160 | 5 byte |
+Xem [README-QUANTIZATION.md](README-QUANTIZATION.md) để biết sức chứa của Record block và Continuation block với mã 2 bit và 4 bit.
 
 ```text
 [S0] [S1]
