@@ -53,7 +53,7 @@ Byte `config` của Superblock dùng các bit như sau:
 | 7–4 | Dành riêng; ghi bằng `0`. |
 | 3–0 | Dành riêng; ghi bằng `0`. |
 
-Mục schema lưu bố cục payload mà record block tham chiếu đến. Mỗi schema hỗ trợ từ 1 đến 16 cột. `col_widths` xác định phần payload dành cho từng cột. Khi bit 0 của `schema_config2` được bật, mảng `col_quant_bits` riêng lưu số bit lượng tử hóa cho từng cột. `schema_config1` cấu hình đơn vị độ rộng cột, thứ tự byte, các trường tùy chọn và việc áp dụng dấu của cột; `col_signs` luôn có mặt. Xem chi tiết trong [README-CONSTRAINTS.md](README-CONSTRAINTS.md#schema_entries).
+Mục schema lưu bố cục payload mà record block tham chiếu đến. Mỗi schema hỗ trợ từ 1 đến 16 cột. `col_widths` xác định số byte dành cho từng cột trong vùng giá trị đọc. Khi bit 0 của `schema_config2` được bật, mảng `col_quant_bits` riêng lưu số bit của mã lượng tử hóa cho từng cột. `schema_config1` cấu hình thứ tự byte, các trường tùy chọn và việc áp dụng dấu của cột; `col_signs` luôn có mặt. Xem chi tiết trong [README-CONSTRAINTS.md](README-CONSTRAINTS.md#schema_entries).
 
 > Dữ liệu mới dùng schema ID mới và **phải được ghi vào một khối mới**. Thay đổi schema là ranh giới cứng: extent cũ kết thúc và extent mới bắt đầu. Vì một extent bắt đầu bằng một record block, việc bắt đầu extent luôn cần ghi ít nhất một khối mới.
 

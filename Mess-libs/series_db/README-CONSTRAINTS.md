@@ -17,11 +17,11 @@ Each schema entry contains:
 |---|---:|---|
 | **entry_crc** | 2 bytes* | Validates the schema entry. |
 | **commit_marker** | 1 byte* | Marks the entry as fully written. |
-| **schema_config1** | 1 byte* | Selects column width units and byte order, and indicates optional per-column fields; see [schema_config1](#schema_config1). |
+| **schema_config1** | 1 byte* | Selects byte order and indicates optional per-column fields; see [schema_config1](#schema_config1). |
 | **schema_config2** | 1 byte** | Present when `schema_config1` bit 7 is `1`; enables extended options below. |
 | **schema_id** | 1 byte* | Identifies the schema entry. |
 | **col_count** | 1 byte* | Number of columns in the schema: `1`–`16` valid; `0` and `17`–`255` reserved. |
-| **col_widths** | 1 byte** / column | Allocates each column's space in the record payload, in bytes or bits as selected by `schema_config1` bit 5. It does not store quantization settings. |
+| **col_widths** | 1 byte / column | Allocates each column's space in the readings area in bytes. It does not store quantization settings. |
 | **col_signs** | `ceil(col_count / 8)` bytes* | Always present; one bit per column. If `schema_config1` bit 0 is `1`, use the bits (`1` = signed); otherwise treat all columns as unsigned. Unused bits are `0`. |
 
 Schema entry fields (continued):
@@ -42,7 +42,7 @@ Schema entry fields (continued):
 |---|---|---|
 | 7 | `schema_config2`: `1` = yes; `0` = no. | Indicates whether the 1-byte `schema_config2` follows. |
 | 6 | `byte_order`: `0` = little-endian; `1` = big-endian. | Sets byte order for multi-byte column values. |
-| 5 | `col_width_unit`: `0` = bytes; `1` = bits. | Sets the unit used by `col_widths`. |
+| 5 | `reserved`: write `0`. | Reserved for future options. |
 | 4 | `col_units`: `1` = yes; `0` = no (unspecified). | Indicates whether `col_units` follows. |
 | 1 | `col_scale_mul`: `1` = yes; `0` = no (multiplier defaults to `1`). | Indicates whether `col_scale_mul` values follow. |
 | 2 | `col_scale_exp`: `1` = yes; `0` = no (exponent defaults to `0`). | Indicates whether `col_scale_exp` follows. |
@@ -92,8 +92,8 @@ A three-column schema can be represented as:
 ```text
 schema_id     = 0
 col_count  = 3
-schema_config1   = 0b00100001  # widths are in bits; col_signs is present
-col_widths = [8, 16, 32]
+schema_config1   = 0b00000001  # col_signs is enabled
+col_widths = [1, 2, 4]        # bytes per column
 col_signs  = 0b01000000
 ```
 
