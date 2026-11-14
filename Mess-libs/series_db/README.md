@@ -163,20 +163,77 @@ For example, `col_widths = [1]` and `col_units = [3]` make one column containing
 
 Reserve both areas when allocating a block so adding a reading does not move the code area. The maximum reading count must fit both the reading bytes and the packed codes. An incomplete final code byte may contain unused bits. The block format still needs a record count and code-area boundary so readers can locate the 2 areas and ignore unused bits.
 
-With 4,094 bytes per block, the 16-byte Record header leaves 4,078 payload bytes and the 9-byte Continuation header leaves 4,085. The table assumes the listed code bits are the **total per reading** across all quantized columns. A value of `0` bits means no code area.
+With 4,094 bytes per block, the 16-byte Record header leaves 4,078 payload bytes and the 9-byte Continuation header leaves 4,085. Each reading has one 1-byte column for every byte in its reading size, and each column has a 4-bit quantization code. For example, a 12-byte reading has 12 columns and 48 code bits (6 bytes) per reading.
 
-| Reading size | Code bits per reading | Record block readings | Unused payload space | Continuation block readings | Unused payload space |
+| Reading size | Columns per reading | Record block readings | Unused payload space | Continuation block readings | Unused payload space |
 |---:|---:|---:|---:|---:|---:|
-| 4 bytes | 0 | 1,019 | 2 bytes | 1,021 | 1 byte |
-| 4 bytes | 1 | 988 | 2 bytes + 4 bits | 990 | 1 byte + 2 bits |
-| 4 bytes | 2 | 959 | 2 bytes + 2 bits | 961 | 6 bits |
-| 4 bytes | 4 | 906 | 1 byte | 907 | 3 bytes + 4 bits |
-| 8 bytes | 0 | 509 | 6 bytes | 510 | 5 bytes |
-| 8 bytes | 1 | 501 | 7 bytes + 3 bits | 502 | 6 bytes + 2 bits |
-| 8 bytes | 2 | 494 | 2 bytes + 4 bits | 495 | 1 byte + 2 bits |
-| 8 bytes | 4 | 479 | 6 bytes + 4 bits | 480 | 5 bytes |
+| 4 bytes | 4 | 679 | 4 bytes | 680 | 5 bytes |
+| 8 bytes | 8 | 339 | 10 bytes | 340 | 5 bytes |
+| 12 bytes | 12 | 226 | 10 bytes | 226 | 17 bytes |
+| 16 bytes | 16 | 169 | 22 bytes | 170 | 5 bytes |
+| 20 bytes | 20 | 135 | 28 bytes | 136 | 5 bytes |
+| 24 bytes | 24 | 113 | 10 bytes | 113 | 17 bytes |
 
-Unused space includes whole bytes after the readings and code area, plus unused bits inside the final code byte.
+Unused space is the whole payload space left after the readings and packed code area.
+
+If each column is 2 bytes, the column count is half the reading size in bytes. With one 4-bit code per column, capacity is:
+
+| Reading size | Columns per reading | Record block readings | Unused payload space | Continuation block readings | Unused payload space |
+|---:|---:|---:|---:|---:|---:|
+| 4 bytes | 2 | 815 | 3 bytes | 817 | 0 bytes |
+| 8 bytes | 4 | 407 | 8 bytes | 408 | 5 bytes |
+| 12 bytes | 6 | 271 | 13 bytes | 272 | 5 bytes |
+| 16 bytes | 8 | 203 | 18 bytes | 204 | 5 bytes |
+| 20 bytes | 10 | 163 | 3 bytes | 163 | 10 bytes |
+| 24 bytes | 12 | 135 | 28 bytes | 136 | 5 bytes |
+
+If each column is 4 bytes, the column count is one-quarter of the reading size in bytes. With one 4-bit code per column, capacity is:
+
+| Reading size | Columns per reading | Record block readings | Unused payload space | Continuation block readings | Unused payload space |
+|---:|---:|---:|---:|---:|---:|
+| 4 bytes | 1 | 906 | 1 byte | 907 | 3 bytes + 4 bits |
+| 8 bytes | 2 | 453 | 1 byte | 453 | 8 bytes |
+| 12 bytes | 3 | 302 | 1 byte | 302 | 8 bytes |
+| 16 bytes | 4 | 226 | 10 bytes | 226 | 17 bytes |
+| 20 bytes | 5 | 181 | 5 bytes + 4 bits | 181 | 12 bytes + 4 bits |
+| 24 bytes | 6 | 151 | 1 byte | 151 | 8 bytes |
+
+### 2-bit Quantization Capacity
+
+The following tables use one 2-bit quantization code per column.
+
+#### 1-byte columns
+
+| Reading size | Columns per reading | Record block readings | Unused payload space | Continuation block readings | Unused payload space |
+|---:|---:|---:|---:|---:|---:|
+| 4 bytes | 4 | 815 | 3 bytes | 817 | 0 bytes |
+| 8 bytes | 8 | 407 | 8 bytes | 408 | 5 bytes |
+| 12 bytes | 12 | 271 | 13 bytes | 272 | 5 bytes |
+| 16 bytes | 16 | 203 | 18 bytes | 204 | 5 bytes |
+| 20 bytes | 20 | 163 | 3 bytes | 163 | 10 bytes |
+| 24 bytes | 24 | 135 | 28 bytes | 136 | 5 bytes |
+
+#### 2-byte columns
+
+| Reading size | Columns per reading | Record block readings | Unused payload space | Continuation block readings | Unused payload space |
+|---:|---:|---:|---:|---:|---:|
+| 4 bytes | 2 | 906 | 1 byte | 907 | 3 bytes + 4 bits |
+| 8 bytes | 4 | 453 | 1 byte | 453 | 8 bytes |
+| 12 bytes | 6 | 302 | 1 byte | 302 | 8 bytes |
+| 16 bytes | 8 | 226 | 10 bytes | 226 | 17 bytes |
+| 20 bytes | 10 | 181 | 5 bytes + 4 bits | 181 | 12 bytes + 4 bits |
+| 24 bytes | 12 | 151 | 1 byte | 151 | 8 bytes |
+
+#### 4-byte columns
+
+| Reading size | Columns per reading | Record block readings | Unused payload space | Continuation block readings | Unused payload space |
+|---:|---:|---:|---:|---:|---:|
+| 4 bytes | 1 | 959 | 2 bytes + 2 bits | 961 | 6 bits |
+| 8 bytes | 2 | 479 | 6 bytes + 4 bits | 480 | 5 bytes |
+| 12 bytes | 3 | 319 | 10 bytes + 6 bits | 320 | 5 bytes |
+| 16 bytes | 4 | 239 | 15 bytes | 240 | 5 bytes |
+| 20 bytes | 5 | 191 | 19 bytes + 2 bits | 192 | 5 bytes |
+| 24 bytes | 6 | 159 | 23 bytes + 4 bits | 160 | 5 bytes |
 
 The capacity estimates below assume no quantization code area; enabling it reduces the number of readings per block.
 
