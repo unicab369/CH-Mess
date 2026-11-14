@@ -2,13 +2,22 @@
 
 Capacity estimates assume 4,094 bytes per block, a 16-byte Record header, a 9-byte Continuation header, and one quantization code per column. Reading sizes are the sum of column widths. Unused payload space includes whole bytes and any unused bits in the final packed code byte.
 
-Two-bit codes use half the code space of 4-bit codes. For a 4-byte reading, capacity rises from **679 to 815 readings** with four 1-byte columns, or from **906 to 959 readings** with one 4-byte column. Fewer, wider columns need fewer codes.
+Let `Payload` be the payload capacity (`4,078` bytes for a Record block; `4,085` for a Continuation block), `R_size` the record size in bytes, `Q` the total quantization code bits per reading, and `N` the maximum whole readings that fit:
+
+```text
+N = largest integer such that N × R_size + ceil(N × Q / 8) ≤ Payload
+unused whole bytes = Payload − N × R_size − ceil(N × Q / 8)
+```
+
+In these tables, columns scale with reading size and each column gets one code. Therefore, total reading bytes per block change mainly with quantization code width, not reading size; small differences are due to packing and rounding.
+
+Switching from 4-bit to 2-bit codes halves the code area. For a 4-byte reading with four 1-byte columns, a Record block holds **815 instead of 679 readings**. With one 4-byte column, it holds **959 instead of 906 readings**. Fewer, wider columns need fewer codes.
 
 ## 2-bit Quantization Capacity
 
 ### 1-byte columns
 
-| Reading size | Columns per reading | Record block readings | Reading bytes in Record block | Unused payload space | Continuation block readings | Unused payload space |
+| Record size (bytes) | Columns per record | Record block (records) | Reading bytes in Record block | Unused payload space | Continuation block (records) | Unused payload space |
 |---:|---:|---:|---:|---:|---:|---:|
 | 4 bytes | 4 | 815 | 3,260 | 3 bytes | 817 | 0 bytes |
 | 8 bytes | 8 | 407 | 3,256 | 8 bytes | 408 | 5 bytes |
@@ -19,7 +28,7 @@ Two-bit codes use half the code space of 4-bit codes. For a 4-byte reading, capa
 
 ### 2-byte columns
 
-| Reading size | Columns per reading | Record block readings | Reading bytes in Record block | Unused payload space | Continuation block readings | Unused payload space |
+| Record size (bytes) | Columns per record | Record block (records) | Reading bytes in Record block | Unused payload space | Continuation block (records) | Unused payload space |
 |---:|---:|---:|---:|---:|---:|---:|
 | 4 bytes | 2 | 906 | 3,624 | 1 byte | 907 | 3 bytes + 4 bits |
 | 8 bytes | 4 | 453 | 3,624 | 1 byte | 453 | 8 bytes |
@@ -30,7 +39,7 @@ Two-bit codes use half the code space of 4-bit codes. For a 4-byte reading, capa
 
 ### 4-byte columns
 
-| Reading size | Columns per reading | Record block readings | Reading bytes in Record block | Unused payload space | Continuation block readings | Unused payload space |
+| Record size (bytes) | Columns per record | Record block (records) | Reading bytes in Record block | Unused payload space | Continuation block (records) | Unused payload space |
 |---:|---:|---:|---:|---:|---:|---:|
 | 4 bytes | 1 | 959 | 3,836 | 2 bytes + 2 bits | 961 | 6 bits |
 | 8 bytes | 2 | 479 | 3,832 | 6 bytes + 4 bits | 480 | 5 bytes |
@@ -43,7 +52,7 @@ Two-bit codes use half the code space of 4-bit codes. For a 4-byte reading, capa
 
 ### 1-byte columns
 
-| Reading size | Columns per reading | Record block readings | Reading bytes in Record block | Unused payload space | Continuation block readings | Unused payload space |
+| Record size (bytes) | Columns per record | Record block (records) | Reading bytes in Record block | Unused payload space | Continuation block (records) | Unused payload space |
 |---:|---:|---:|---:|---:|---:|---:|
 | 4 bytes | 4 | 679 | 2,716 | 4 bytes | 680 | 5 bytes |
 | 8 bytes | 8 | 339 | 2,712 | 10 bytes | 340 | 5 bytes |
@@ -54,7 +63,7 @@ Two-bit codes use half the code space of 4-bit codes. For a 4-byte reading, capa
 
 ### 2-byte columns
 
-| Reading size | Columns per reading | Record block readings | Reading bytes in Record block | Unused payload space | Continuation block readings | Unused payload space |
+| Record size (bytes) | Columns per record | Record block (records) | Reading bytes in Record block | Unused payload space | Continuation block (records) | Unused payload space |
 |---:|---:|---:|---:|---:|---:|---:|
 | 4 bytes | 2 | 815 | 3,260 | 3 bytes | 817 | 0 bytes |
 | 8 bytes | 4 | 407 | 3,256 | 8 bytes | 408 | 5 bytes |
@@ -65,7 +74,7 @@ Two-bit codes use half the code space of 4-bit codes. For a 4-byte reading, capa
 
 ### 4-byte columns
 
-| Reading size | Columns per reading | Record block readings | Reading bytes in Record block | Unused payload space | Continuation block readings | Unused payload space |
+| Record size (bytes) | Columns per record | Record block (records) | Reading bytes in Record block | Unused payload space | Continuation block (records) | Unused payload space |
 |---:|---:|---:|---:|---:|---:|---:|
 | 4 bytes | 1 | 906 | 3,624 | 1 byte | 907 | 3 bytes + 4 bits |
 | 8 bytes | 2 | 453 | 3,624 | 1 byte | 453 | 8 bytes |
