@@ -54,7 +54,7 @@ The Superblock `config` byte uses these bits:
 | 3–0 | Reserved; write as `0`. |
 
 
-Schema entries store the payload layouts referenced by record blocks. A schema supports 1–16 columns. `col_widths` assigns a byte width to each reading column. When `schema_config2` bit 0 is set, a separate `col_quant_bits` array gives the quantization code width for each column. See [schema_entries](README-CONSTRAINTS.md#schema_entries) for details.
+Schema entries store the payload layouts referenced by record blocks. A schema supports 1–16 columns. `col_widths` assigns a byte width to each reading column, and every column has a `col_units` code. Code `3` identifies packed bits: one data byte holds 8 booleans. When `schema_config2` bit 0 is set, a separate `col_quant_bits` array gives the quantization code width for each column. See [schema_entries](README-CONSTRAINTS.md#schema_entries) for details.
 
 > New data uses the new schema ID and **must be written to a new block**. A schema change is a hard boundary: the old extent ends and a new one begins. Since an extent starts with a record block, starting one always requires writing at least one new block.
 
@@ -151,6 +151,8 @@ Each Record or Continuation block keeps its readings and quantization codes in 2
 
 The schema's `col_widths` determines each reading's column sizes in bytes. When `schema_config2` enables `col_quant_bits`, each nonzero entry gives the number of code bits stored for that column for **each reading**. Codes are packed together in reading order; the code at index 0 belongs to reading 0, and so on. A Continuation block starts its own code area for its own readings. The schema stores the bit counts, while the payload stores the codes.
 
+For example, `col_widths = [1]` and `col_units = [3]` make one column containing 8 booleans per reading. A stored byte `01010011` represents the booleans `0, 1, 0, 1, 0, 0, 1, 1` in bit 7-to-0 order. These bits are part of the reading, not the quantization code area.
+
 Reserve both areas when allocating a block so adding a reading does not move the code area. The maximum reading count must fit both the reading bytes and the packed codes. An incomplete final code byte may contain unused bits. The block format still needs a record count and code-area boundary so readers can locate the 2 areas and ignore unused bits.
 
 The capacity estimates below assume no quantization code area; enabling it reduces the number of readings per block.
@@ -161,7 +163,7 @@ The capacity estimates below assume no quantization code area; enabling it reduc
 
 Each Superblock has 4,087 bytes for append-only `schema_entries`. `col_count` is limited to 1–16, although its field is 1 byte. A larger count makes each entry larger and leaves room for fewer entries.
 
-Assuming 4-byte alignment, `col_signs` present, and other optional arrays absent: with the maximum `col_count = 16`, each entry is 24 bytes, so one Superblock holds about 170 entries.
+Assuming 4-byte alignment and no optional scale or quantization arrays: with the maximum `col_count = 16`, each entry is 40 bytes, so one Superblock holds about 102 entries.
 
 For 12 columns of equal byte width, Continuation block payload capacity is:
 

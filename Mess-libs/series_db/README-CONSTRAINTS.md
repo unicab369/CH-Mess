@@ -1,7 +1,7 @@
 # Series DB format constraints to define
 
 
-1. **Schema log entries:** Define the flash alignment and recovery procedure for append-only schema entries in S0 and S1. `schema_id`, `col_count`, and `schema_config1` are fixed at 1 byte. Each entry contains these fields, per-column width data, a sign bitset, optional unit, scale, and quantization arrays, a 2-byte entry CRC, a 1-byte commit marker, and alignment padding. Append the same entry to both Superblocks and do not let a record block reference it until both copies validate it. The fixed Superblock CRC excludes the schema entries. Entry capacity is `floor(4087 / aligned_entry_size)`. Define recovery for interrupted or mismatched entry writes. `col_count` determines the per-column array sizes, including the sign-bitset size.
+1. **Schema log entries:** Define the flash alignment and recovery procedure for append-only schema entries in S0 and S1. `schema_id`, `col_count`, and `schema_config1` are fixed at 1 byte. Each entry contains these fields, per-column width and unit data, a sign bitset, optional scale and quantization arrays, a 2-byte entry CRC, a 1-byte commit marker, and alignment padding. Append the same entry to both Superblocks and do not let a record block reference it until both copies validate it. The fixed Superblock CRC excludes the schema entries. Entry capacity is `floor(4087 / aligned_entry_size)`. Define recovery for interrupted or mismatched entry writes. `col_count` determines the per-column array sizes, including the sign-bitset size.
 2. **Payload length and record count:** TODO — still needs consideration. A 2-byte `payload_length` could identify valid bytes after block finalization, but the 2-area payload also needs a record count and a defined code-area boundary. Finalize these values with the block CRC; treat an interrupted finalization as invalid.
 3. **Resolution streams and shared block pool:** Store each resolution (for example, raw seconds, 5-minute, 10-minute, 30-minute, and hourly summaries) as a separate logical stream. All streams allocate blocks from one shared pool rather than reserving fixed capacity per resolution. Each Record and Continuation block stores a 1-byte `stream_id` and a 4-byte `stream_sequence`. Sequence numbers start at zero and increase by one for every new block in that stream; they must not wrap. Readers group blocks by `stream_id` and order them by sequence; Continuation blocks extend the preceding extent within that stream, even when blocks from other streams are interleaved physically. Define the `stream_id` registry and free-block allocation and recovery rules.
 
@@ -28,7 +28,7 @@ Schema entry fields (continued):
 
 | Field | Size | Purpose |
 |---|---:|---|
-| **col_units** | 1 byte** / column | Present when `schema_config1` bit 4 is `1`; one unit code per column. See [`col_units` unit codes](#col_units-unit-codes). |
+| **col_units** | 1 byte* / column | One code per column. Code `3` identifies packed bits; see [`col_units` unit codes](#col_units-unit-codes). |
 | **col_scale_mul** | 1 byte** / column | Present when `schema_config1` bit 1 is `1`; one 1-byte multiplier per column (default `1`). E.g., `10` with multiplier `3` becomes `30`. |
 | **col_scale_ratios** | 2 bytes** / column | Present when `schema_config1` bit 3 is `1`; one numerator/denominator pair per column (default `1/1`). E.g., `10` with scale `3/2` becomes `15`. |
 | **col_scale_exp** | 1 signed byte** / column | Present when `schema_config1` bit 2 is `1`; one base-10 exponent per column (default `0`). E.g., `123` with exponent `-2` becomes `1.23`. |
@@ -42,8 +42,7 @@ Schema entry fields (continued):
 |---|---|---|
 | 7 | `schema_config2`: `1` = yes; `0` = no. | Indicates whether the 1-byte `schema_config2` follows. |
 | 6 | `byte_order`: `0` = little-endian; `1` = big-endian. | Sets byte order for multi-byte column values. |
-| 5 | `reserved`: write `0`. | Reserved for future options. |
-| 4 | `col_units`: `1` = yes; `0` = no (unspecified). | Indicates whether `col_units` follows. |
+| 5–4 | `reserved`: write `0`. | Reserved for future options. |
 | 1 | `col_scale_mul`: `1` = yes; `0` = no (multiplier defaults to `1`). | Indicates whether `col_scale_mul` values follow. |
 | 2 | `col_scale_exp`: `1` = yes; `0` = no (exponent defaults to `0`). | Indicates whether `col_scale_exp` follows. |
 | 3 | `col_scale_ratios`: `1` = yes; `0` = no (scale defaults to `1/1`). | Indicates whether `col_scale_ratios` follows. |
@@ -68,16 +67,19 @@ Unit codes are 1 byte and are assigned as follows:
 | Codes | Units, in code order |
 |---:|---|
 | `0–2` | Unspecified, Count, Thaum |
-| `3–4` | Percent (%), Parts per million (ppm) |
-| `5–9` | Lux, Decibel milliwatt (dBm), Decibel (dB), Degree (°), Radian |
-| `10–12` | Kelvin (K), Celsius (°C), Fahrenheit (°F) |
-| `13–16` | Inch, Foot, Yard, Mile |
-| `17–19` | Ounce, Pound, Short ton (US) |
-| `20–22` | Nanosecond, Microsecond, Millisecond |
-| `23–29` | Second, Minute, Hour, Day, Calendar month, Calendar year, Week |
-| `30–32` | Hertz (Hz), kilohertz (kHz), gigahertz (GHz) |
+| `3` | Packed bits (8 booleans per byte, bit 7 first) |
+| `4–5` | Percent (%), Parts per million (ppm) |
+| `6–10` | Lux, Decibel milliwatt (dBm), Decibel (dB), Degree (°), Radian |
+| `11–13` | Kelvin (K), Celsius (°C), Fahrenheit (°F) |
+| `14–17` | Inch, Foot, Yard, Mile |
+| `18–20` | Ounce, Pound, Short ton (US) |
+| `21–23` | Nanosecond, Microsecond, Millisecond |
+| `24–30` | Second, Minute, Hour, Day, Calendar month, Calendar year, Week |
+| `31–33` | Hertz (Hz), kilohertz (kHz), gigahertz (GHz) |
 
 Codes are stable identifiers and must not be reused for different units. Unassigned codes are reserved for future units.
+
+For a `packed_bit` column, `col_signs` and `col_quant_bits` must be `0`, and scale fields must use identity values. `col_widths = 1` stores 8 booleans per reading; a width of `n` bytes stores `8n` booleans.
 
 When reading, the schema log answers: “Given a `schema_id`, what is the byte layout of the payload?” For example:
 
@@ -95,6 +97,7 @@ col_count  = 3
 schema_config1   = 0b00000001  # col_signs is enabled
 col_widths = [1, 2, 4]        # bytes per column
 col_signs  = 0b01000000
+col_units  = [0, 0, 0]        # unspecified units
 ```
 
 This describes an unsigned 8-bit column, a signed 16-bit column, and an unsigned 32-bit column. Each schema change appends a new entry to both Superblocks. Existing extents retain their original `schema_id`; new data using a new schema starts in a new record block.
