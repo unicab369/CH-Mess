@@ -96,11 +96,11 @@ Codec IDs are:
 
 Codec applies to the payload of the record block and its continuation blocks. A codec must define its record boundaries and decoding rules; until those rules are specified and implemented, use ID `0` (Raw).
 
-Approximate records per block, assuming each record is entirely contained in 1 block:
+Approximate records per block, assuming each chest is entirely contained in 1 block. A **chest** contains all column values for one record; its size excludes any quantization codes:
 
 Record block header: 16 bytes.
 
-| Payload size per record | Records per block | Unused payload bytes |
+| Chest size | Records per block | Unused payload bytes |
 |---:|---:|---:|
 | 4 bytes | 1,019 | 2 |
 | 8 bytes | 509 | 6 |
@@ -127,11 +127,11 @@ A continuation block contains:
 
 Continuation blocks may be physically interleaved with blocks from other streams; `stream_sequence` keeps the logical order within each stream.
 
-Approximate records per block, assuming each record is entirely contained in 1 block:
+Approximate records per block, assuming each chest is entirely contained in 1 block:
 
 Continuation block header: 9 bytes.
 
-| Payload size per record | Records per block | Unused payload bytes |
+| Chest size | Records per block | Unused payload bytes |
 |---:|---:|---:|
 | 4 bytes | 1,021 | 1 |
 | 8 bytes | 510 | 5 |
@@ -179,7 +179,7 @@ Assuming 4-byte alignment and no optional scale or quantization arrays: with the
 
 For 12 columns of equal byte width, Continuation block payload capacity is:
 
-| Width per column | Record size | Records per Continuation block | Unused payload space |
+| Width per column | Chest size | Records per Continuation block | Unused payload space |
 |---:|---:|---:|---:|
 | 1 byte | 12 bytes | 340 | 5 bytes |
 | 2 bytes | 24 bytes | 170 | 5 bytes |
@@ -188,7 +188,7 @@ For 12 columns of equal byte width, Continuation block payload capacity is:
 
 For 6 columns of equal byte width, Continuation block payload capacity is:
 
-| Width per column | Record size | Records per Continuation block | Unused payload space |
+| Width per column | Chest size | Records per Continuation block | Unused payload space |
 |---:|---:|---:|---:|
 | 1 byte | 6 bytes | 680 | 5 bytes |
 | 2 bytes | 12 bytes | 340 | 5 bytes |
@@ -197,7 +197,7 @@ For 6 columns of equal byte width, Continuation block payload capacity is:
 
 ### Total Storage Capacity
 
-The table estimates capacity for 4-byte records stored every 1, 10, or 30 seconds. For 8-byte records, the record count and time to full are approximately half. Storage sizes use binary units.
+The table estimates capacity for records with 4-byte chests stored every 1, 10, or 30 seconds. With 8-byte chests, the record count and time to full are approximately half. Storage sizes use binary units.
 
 | Storage size | Continuation<br>blocks | Continuation<br>header space | Records | Time to full<br>(1 sec) | Time to full<br>(10 secs) | Time to full<br>(30 secs) |
 |---:|---:|---:|---:|---:|---:|---:|
