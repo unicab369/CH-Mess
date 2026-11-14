@@ -102,6 +102,10 @@ Approximate records per block, assuming each record is entirely contained in 1 b
 |---:|---:|---:|
 | 4 bytes | 1,019 | 2 |
 | 8 bytes | 509 | 6 |
+| 12 bytes | 339 | 10 |
+| 16 bytes | 254 | 14 |
+| 20 bytes | 203 | 18 |
+| 24 bytes | 169 | 22 |
 
 ## Continuation blocks (C)
 
@@ -127,6 +131,10 @@ Approximate records per block, assuming each record is entirely contained in 1 b
 |---:|---:|---:|
 | 4 bytes | 1,021 | 1 |
 | 8 bytes | 510 | 5 |
+| 12 bytes | 340 | 5 |
+| 16 bytes | 255 | 5 |
+| 20 bytes | 204 | 5 |
+| 24 bytes | 170 | 5 |
 
 > Unused bytes are the remaining payload space after storing whole records. The counts assume records are packed consecutively with no alignment padding.
 
