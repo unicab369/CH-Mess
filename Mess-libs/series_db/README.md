@@ -82,6 +82,7 @@ Schema-wide fields:
 | **schema_config1** | 1 byte* | Selects byte order and indicates optional per-column fields; see [schema_config1](#schema_config1). |
 | **schema_id** | 1 byte* | Identifies the schema entry. |
 | **col_count** | 1 byte* | Number of columns in the schema: `1`–`16` valid; `0` and `17`–`255` reserved. |
+| **codec** | 1 byte* | Selects how blocks using this schema encode their payload; IDs use the low 3 bits, and the high 5 bits are `0`. See [Codec IDs](#codec-ids). |
 
 Per-column fields, in entry order:
 
@@ -109,6 +110,17 @@ Per-column fields, in entry order:
 | 2 | `col_scale_exp`: `1` = yes; `0` = no (exponent defaults to `0`). | Indicates whether `col_scale_exp` follows. |
 | 1 | `col_quant_bits`: `1` = yes; `0` = no. | Indicates whether per-column quantization bit counts follow. |
 | 0 | `col_signs`: `1` = use; `0` = ignore (all columns unsigned). | Controls whether readers apply the always-stored `col_signs` bits. |
+
+### Codec IDs
+
+| ID | Codec | Meaning |
+|---:|---|---|
+| `7`–`3` | Reserved | Do not write; readers should reject blocks using these IDs as unsupported. |
+| `2` | Delta + varint | Store the first record raw, then signed per-field differences from the previous record as variable-length integers. The exact integer encoding and field ordering must be specified before implementation. |
+| `1` | Run-length encoding (RLE) | Store repeated identical records once with a count. |
+| `0` | Raw | Store records unchanged according to the schema; default. |
+
+The codec applies to every Record and Continuation block using this schema. Until non-raw decoding and record-boundary rules are implemented, write codec ID `0`.
 
 ### `col_units` Unit Codes
 
@@ -161,30 +173,10 @@ A record block contains:
 | **schema_id** | 1 byte* | Identifies the schema containing this block's `col_widths` and optional `col_quant_bits`. |
 | **stream_id** | 1 byte* | Identifies the resolution stream this block belongs to. |
 | **stream_sequence** | 4 bytes* | Orders this block within its stream. |
-| **record_config** | 6 bytes | Stores the time, format, and flags for the records. |
+| **record_config** | 6 bytes** | Stores the block time, time format, and reserved flags. |
 | **payload** | Variable | Stores readings and, when enabled, a packed quantization code area; see [Payload](#payload). |
 
 `col_quant_bits` is stored once in the schema entry and selects the quantization code width for each column. The per-column values themselves, called **runes**, are stored in the block payload.
-
-The 1-byte `flags` field contains 8 bits. Its most significant 3 bits encode the payload codec; the remaining 5 bits are reserved and must be written as zero:
-
-```text
-bit:    7   6   5   4   3   2   1   0
-      +-----------+-------------------+
-      | codec (3) |    reserved (5)   |
-      +-----------+-------------------+
-```
-
-Codec IDs are:
-
-| ID | codec | meaning |
-|---:|---|---|
-| `0` | Raw | Store records exactly as described by the schema, with no transformation. This is the default. |
-| `1` | Run-length encoding (RLE) | Store a repeated record once with a count. Use only when the payload consists of consecutive identical records. |
-| `2` | Delta + varint | Store the first record as a raw value, then encode each subsequent numeric value as a signed difference from the previous record, using a variable-length integer. Requires a defined field order and integer encoding. |
-| `3`–`7` | Reserved | Must not be written. Readers encountering these IDs should treat the record block as unsupported. |
-
-Codec applies to the payload of the record block and its continuation blocks. A codec must define its record boundaries and decoding rules; until those rules are specified and implemented, use ID `0` (Raw).
 
 Approximate records per block, assuming each chest is entirely contained in 1 block. A **chest** contains all column values for one record; its size excludes any quantization codes:
 
@@ -208,26 +200,7 @@ Record block header: 16 bytes.
 |---|---:|---|
 | `time_value` | 4 bytes | Stores the time value for records in the block. |
 | `time_format` | 1 byte | Identifies how the time value is represented. |
-| `flags` | 1 byte (8 bits) | Stores record configuration flags. Bits 7–5 encode the codec; bits 4–0 are reserved. |
-
-```text
-bit:    7   6   5   4   3   2   1   0
-      +-----------+-------------------+
-      | codec (3) |    reserved (5)   |
-      +-----------+-------------------+
-```
-
-Codec IDs are defined as follows:
-
-| ID | codec | meaning |
-|---:|---|---|
-| `0` | Raw | Store records unchanged according to the schema; default. |
-| `1` | Run-length encoding (RLE) | Store repeated identical records once with a count. |
-| `2` | Delta + varint | Store the first record raw, then signed per-field differences from the previous record as variable-length integers. The exact integer encoding and field ordering must be specified before implementation. |
-| `3`–`7` | Reserved | Do not write; readers should reject blocks using these IDs as unsupported. |
-
-The codec applies to the payload across the record block and its continuation blocks. Until non-raw decoding and record-boundary rules are implemented, write codec ID `0`. Reserved flag bits must be written as zero and ignored by readers.
-
+| `flags` | 1 byte (8 bits) | Reserved; write all bits as `0`. |
 
 ## Continuation blocks (`C`)
 
@@ -283,7 +256,7 @@ The capacity estimates below assume no quantization code area; enabling it reduc
 
 Each Superblock has 4,087 bytes for append-only `schema_entries`. `col_count` is limited to 1–16, although its field is 1 byte. A larger count makes each entry larger and leaves room for fewer entries.
 
-Assuming 4-byte alignment and no optional scale or quantization arrays: with the maximum `col_count = 16`, each entry is 40 bytes, so one Superblock holds about 102 entries.
+Assuming 4-byte alignment and no optional scale or quantization arrays: with the maximum `col_count = 16`, each entry is 44 bytes, so one Superblock holds about 92 entries.
 
 For 12 columns of equal byte width, Continuation block payload capacity is:
 
@@ -317,4 +290,4 @@ The table estimates capacity for records with 4-byte chests stored every 1, 10, 
 | 512 MiB | 131,069 | 1,152 KiB | 133.8 × 10⁶ | ~4.2 years | ~42 years | ~127 years |
 | 1 GiB | 262,141 | 2,304 KiB | 267.6 × 10⁶ | ~8.5 years | ~85 years | ~254 years |
 
-> Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. This is an upper bound; multiple streams need additional Record blocks. Durations use 365.25 days per year.
+> Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. This is an upper bound; multiple streams need additional Record blocks.
