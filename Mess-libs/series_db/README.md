@@ -71,28 +71,29 @@ Schema definitions are stored as append-only entries in the unused space of both
 
 The CRC for the fixed Superblock fields does not cover the append-only entries; each entry has its own CRC and commit marker. Readers scan the entries in both copies and build a lookup from `schema_id` to payload layout.
 
-Each schema entry contains:
+Each schema entry contains schema-wide fields and per-column fields.
+
+Schema-wide fields:
 
 | Field | Size | Purpose |
 |---|---:|---|
 | **entry_crc** | 2 bytes* | Validates the schema entry. |
 | **commit_marker** | 1 byte* | Marks the entry as fully written. |
 | **schema_config1** | 1 byte* | Selects byte order and indicates optional per-column fields; see [schema_config1](#schema_config1). |
-| **schema_config2** | 1 byte** | Present when `schema_config1` bit 7 is `1`; enables extended options below. |
 | **schema_id** | 1 byte* | Identifies the schema entry. |
 | **col_count** | 1 byte* | Number of columns in the schema: `1`–`16` valid; `0` and `17`–`255` reserved. |
-| **col_widths** | 1 byte / column | Allocates each column's space in the readings area in bytes. It does not store quantization settings. |
-| **col_signs** | `ceil(col_count / 8)` bytes* | Always present; one bit per column. If `schema_config1` bit 0 is `1`, use the bits (`1` = signed); otherwise treat all columns as unsigned. Unused bits are `0`. |
 
-Schema entry fields (continued):
+Per-column fields, in entry order:
 
 | Field | Size | Purpose |
 |---|---:|---|
+| **col_widths** | 1 byte / column | Allocates each column's space in the readings area in bytes. It does not store quantization settings. |
 | **col_units** | 1 byte* / column | One unit code per column; see [`col_units` unit codes](#col_units-unit-codes). |
-| **col_scale_mul** | 1 byte** / column | Present when `schema_config1` bit 1 is `1`; one 1-byte multiplier per column (default `1`). E.g., `10` with multiplier `3` becomes `30`. |
-| **col_scale_ratios** | 2 bytes** / column | Present when `schema_config1` bit 3 is `1`; one numerator/denominator pair per column (default `1/1`). E.g., `10` with scale `3/2` becomes `15`. |
+| **col_scale_mul** | 1 byte** / column | Present when `schema_config1` bit 4 is `1`; one 1-byte multiplier per column (default `1`). E.g., `10` with multiplier `3` becomes `30`. |
 | **col_scale_exp** | 1 signed byte** / column | Present when `schema_config1` bit 2 is `1`; one base-10 exponent per column (default `0`). E.g., `123` with exponent `-2` becomes `1.23`. |
-| **col_quant_bits** | 1 byte** / column | Present when `schema_config2` bit 0 is `1`; one code width per column (`0` = off; `1`, `2`, or `4` bits per reading). Other values are reserved. |
+| **col_scale_ratios** | 2 bytes** / column | Present when `schema_config1` bit 3 is `1`; one numerator/denominator pair per column (default `1/1`). E.g., `10` with scale `3/2` becomes `15`. |
+| **col_signs** | `ceil(col_count / 8)` bytes* | Always present; one bit per column. If `schema_config1` bit 0 is `1`, use the bits (`1` = signed); otherwise treat all columns as unsigned. Unused bits are `0`. |
+| **col_quant_bits** | 1 byte** / column | Present when `schema_config1` bit 1 is `1`; one code width per column (`0` = off; `1`, `2`, or `4` bits per reading). Other values are reserved. |
 | **padding** | Variable | Aligns the entry to the flash program unit. |
 
 
@@ -100,23 +101,14 @@ Schema entry fields (continued):
 
 | Bit(s) | Meaning | Purpose |
 |---|---|---|
-| 7 | `schema_config2`: `1` = yes; `0` = no. | Indicates whether the 1-byte `schema_config2` follows. |
+| 7 | `reserved`: write `0`. | Reserved for future options. |
 | 6 | `byte_order`: `0` = little-endian; `1` = big-endian. | Sets byte order for multi-byte column values. |
-| 5–4 | `reserved`: write `0`. | Reserved for future options. |
-| 1 | `col_scale_mul`: `1` = yes; `0` = no (multiplier defaults to `1`). | Indicates whether `col_scale_mul` values follow. |
-| 2 | `col_scale_exp`: `1` = yes; `0` = no (exponent defaults to `0`). | Indicates whether `col_scale_exp` follows. |
+| 5 | `reserved`: write `0`. | Reserved for future options. |
+| 4 | `col_scale_mul`: `1` = yes; `0` = no (multiplier defaults to `1`). | Indicates whether `col_scale_mul` values follow. |
 | 3 | `col_scale_ratios`: `1` = yes; `0` = no (scale defaults to `1/1`). | Indicates whether `col_scale_ratios` follows. |
+| 2 | `col_scale_exp`: `1` = yes; `0` = no (exponent defaults to `0`). | Indicates whether `col_scale_exp` follows. |
+| 1 | `col_quant_bits`: `1` = yes; `0` = no. | Indicates whether per-column quantization bit counts follow. |
 | 0 | `col_signs`: `1` = yes; `0` = no (all columns unsigned). | Enables signedness from `col_signs`. |
-
-If bit 7 of `schema_config1` is `1`, the next byte in the schema entry is `schema_config2`:
-
-### `schema_config2`
-
-| Bit(s) | Meaning | Purpose |
-|---:|---|---|
-| 7 | `schema_config3`: future extension flag; write `0`. | Will indicate whether `schema_config3` follows. |
-| 6–1 | `reserved`: write `0`. | Reserved for future options. |
-| 0 | `col_quant_bits`: `1` = yes; `0` = no. | Indicates whether the per-column quantization bit counts follow. |
 
 ### `col_units` Unit Codes
 
@@ -277,7 +269,7 @@ Each Record or Continuation block stores chests and packed quantization codes in
 [block header] [chests grow →             ][← packed codes]
 ```
 
-The schema's `col_widths` determines each chest's column sizes in bytes. When `schema_config2` enables `col_quant_bits`, each nonzero entry gives the number of code bits stored for that column in each chest. Codes are packed in chest order. Each Continuation block has its own code area. The schema stores the bit counts; the payload stores the codes.
+The schema's `col_widths` determines each chest's column sizes in bytes. When `schema_config1` bit 1 enables `col_quant_bits`, each nonzero entry gives the number of code bits stored for that column in each chest. Codes are packed in chest order. Each Continuation block has its own code area. The schema stores the bit counts; the payload stores the codes.
 
 As chests are appended, write their codes backward from the payload end. When the block is finalized, store its record count. Readers use that count and the schema to find both areas. The block format still needs to define where the count is stored. Any unused gap between the areas remains unused space.
 
