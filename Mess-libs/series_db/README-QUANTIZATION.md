@@ -1,24 +1,24 @@
 # Quantization Capacity
 
-Capacity estimates assume 4,094 bytes per block, a 16-byte Record header, a 9-byte Continuation header, and one quantization code per column. A <strong>chest</strong> is the stored column values for one record; its size is the sum of the column widths and excludes quantization codes. Unused payload space is shown in whole bytes; leftover bits are omitted.
+Capacity estimates assume 4,094 bytes per block, a 16-byte Record header, a 9-byte Continuation header, and one Essence per column. A <strong>chest</strong> is the stored column values for one record; its size is the sum of the column widths and excludes Essences. Unused payload space is shown in whole bytes; leftover bits are omitted.
 
-Let `Payload` be the payload capacity (`4,078` bytes for a Record block; `4,085` for a Continuation block), `Chest_size` the chest size in bytes, `Q` the total quantization code bits per chest, and `N` the maximum whole chests that fit:
+Let `Payload` be the payload capacity (`4,078` bytes for a Record block; `4,085` for a Continuation block), `Chest_size` the chest size in bytes, `Q` the total Essence bits per chest, and `N` the maximum whole chests that fit:
 
 ```text
 N = largest integer such that N × Chest_size + ceil(N × Q / 8) ≤ Payload
 unused whole bytes = Payload − N × Chest_size − ceil(N × Q / 8)
 ```
 
-In these tables, columns scale with chest size and each column gets one code. Therefore, total chest bytes per block change mainly with quantization code width, not chest size; small differences are due to packing and rounding.
+In these tables, columns scale with chest size and each column gets one Essence. Therefore, total chest bytes per block change mainly with Essence width, not chest size; small differences are due to packing and rounding.
 
-Switching from 4-bit to 2-bit codes halves the code area. For a 4-byte chest with four 1-byte columns, a Record block holds <strong>815 instead of 679 records</strong>. With one 4-byte column, it holds <strong>959 instead of 906 records</strong>. Fewer, wider columns need fewer codes.
+Switching from 4-bit to 2-bit Essences halves the Essence area. For a 4-byte chest with four 1-byte columns, a Record block holds <strong>815 instead of 679 records</strong>. With one 4-byte column, it holds <strong>959 instead of 906 records</strong>. Fewer, wider columns need fewer Essence bits.
 
 
 ## Quantization Capacity by Column Width
 
 ### 1-byte columns / 2-bit quantization
 
-| Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Quantization code bytes per block (R \| C) | Unused payload per block (R \| C) |
+| Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Essence bytes per block (R \| C) | Unused payload per block (R \| C) |
 |---:|---:|---:|---:|---:|---:|
 | 4 B | 4 | 815 \| 817 | 3,260 \| 3,268 B | 815 \| 817 B | `3 \| 0 B` |
 | 8 B | 8 | 407 \| 408 | 3,256 \| 3,264 B | 814 \| 816 B | `8 \| 5 B` |
@@ -31,7 +31,7 @@ Switching from 4-bit to 2-bit codes halves the code area. For a 4-byte chest wit
 
 ### 1-byte columns / 4-bit quantization
 
-| Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Quantization code bytes per block (R \| C) | Unused payload per block (R \| C) |
+| Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Essence bytes per block (R \| C) | Unused payload per block (R \| C) |
 |---:|---:|---:|---:|---:|---:|
 | 4 B | 4 | 679 \| 680 | 2,716 \| 2,720 B | 1,358 \| 1,360 B | `4 \| 5 B` |
 | 8 B | 8 | 339 \| 340 | 2,712 \| 2,720 B | 1,356 \| 1,360 B | `10 \| 5 B` |
@@ -44,7 +44,7 @@ Switching from 4-bit to 2-bit codes halves the code area. For a 4-byte chest wit
 
 ### 2-byte columns / 2-bit quantization
 
-| Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Quantization code bytes per block (R \| C) | Unused payload per block (R \| C) |
+| Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Essence bytes per block (R \| C) | Unused payload per block (R \| C) |
 |---:|---:|---:|---:|---:|---:|
 | 4 B | 2 | 906 \| 907 | 3,624 \| 3,628 B | 453 \| 454 B | `1 \| 3 B` |
 | 8 B | 4 | 453 \| 453 | 3,624 \| 3,624 B | 453 \| 453 B | `1 \| 8 B` |
@@ -57,7 +57,7 @@ Switching from 4-bit to 2-bit codes halves the code area. For a 4-byte chest wit
 
 ### 2-byte columns / 4-bit quantization
 
-| Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Quantization code bytes per block (R \| C) | Unused payload per block (R \| C) |
+| Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Essence bytes per block (R \| C) | Unused payload per block (R \| C) |
 |---:|---:|---:|---:|---:|---:|
 | 4 B | 2 | 815 \| 817 | 3,260 \| 3,268 B | 815 \| 817 B | `3 \| 0 B` |
 | 8 B | 4 | 407 \| 408 | 3,256 \| 3,264 B | 814 \| 816 B | `8 \| 5 B` |
@@ -70,7 +70,7 @@ Switching from 4-bit to 2-bit codes halves the code area. For a 4-byte chest wit
 
 ### 4-byte columns / 2-bit quantization
 
-| Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Quantization code bytes per block (R \| C) | Unused payload per block (R \| C) |
+| Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Essence bytes per block (R \| C) | Unused payload per block (R \| C) |
 |---:|---:|---:|---:|---:|---:|
 | 4 B | 1 | 959 \| 961 | 3,836 \| 3,844 B | 240 \| 241 B | `2 \| 0 B` |
 | 8 B | 2 | 479 \| 480 | 3,832 \| 3,840 B | 240 \| 240 B | `6 \| 5 B` |
@@ -83,7 +83,7 @@ Switching from 4-bit to 2-bit codes halves the code area. For a 4-byte chest wit
 
 ### 4-byte columns / 4-bit quantization
 
-| Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Quantization code bytes per block (R \| C) | Unused payload per block (R \| C) |
+| Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Essence bytes per block (R \| C) | Unused payload per block (R \| C) |
 |---:|---:|---:|---:|---:|---:|
 | 4 B | 1 | 906 \| 907 | 3,624 \| 3,628 B | 453 \| 454 B | `1 \| 3 B` |
 | 8 B | 2 | 453 \| 453 | 3,624 \| 3,624 B | 453 \| 453 B | `1 \| 8 B` |

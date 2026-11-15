@@ -4,7 +4,7 @@
 
 The database starts with 2 Superblocks (`S0`, `S1`); all remaining blocks come from a shared storage pool. A Record block (`R`) starts an extent, and Continuation blocks extend it when its payload fills. Each data block belongs to a resolution stream; `stream_id` identifies the stream and `stream_sequence` orders its blocks. Streams can share the pool, so their blocks may be interleaved.
 
-A **chest** is the set of column values for one record, stored in the readings area of an `R` or `C` payload; quantization codes, called **runes**, are stored separately.
+A **chest** is the set of column values for one record, stored in the readings area of an `R` or `C` payload. A **Rune** is a coefficient assigned to a bit position. An **Essence** is a packed bit mask stored in the block payload for a column and reading; its set bits select the Runes to add.
 
 ```text
 [S0] [S1]
@@ -94,8 +94,10 @@ Per-column fields, in entry order:
 | **col_scale_exp** | 1 signed byte** / column | Present when `schema_config1` bit 2 is `1`; one base-10 exponent per column (default `0`). E.g., `123` with exponent `-2` becomes `1.23`. |
 | **col_scale_ratios** | 2 bytes** / column | Present when `schema_config1` bit 3 is `1`; one numerator/denominator pair per column (default `1/1`). E.g., `10` with scale `3/2` becomes `15`. |
 | **col_signs** | `ceil(col_count / 8)` bytes* | Used when `schema_config1` bit 0 is `1`; one bit per column (`1` = signed, `0` = unsigned). Unused bits are `0`. |
-| **col_quant_bits** | 1 byte** / column | Present when `schema_config1` bit 1 is `1`; one code width per column (`0` = off; `1`, `2`, or `4` bits per reading). Other values are reserved. |
+| **col_quant_bits** | 1 byte** / column | Present when `schema_config1` bit 1 is `1`; sets each column's Essence width (`0` = no Essence; `1`, `2`, or `4` bits per reading). Other values are reserved. |
 | **padding** | Variable | Aligns the entry to the flash program unit. |
+
+The schema representation of Rune coefficients remains to be defined.
 
 
 ### `schema_config1`
@@ -174,11 +176,11 @@ A record block contains:
 | **stream_id** | 1 byte* | Identifies the resolution stream this block belongs to. |
 | **stream_sequence** | 4 bytes* | Orders this block within its stream. |
 | **record_config** | 6 bytes** | Stores the block time, time format, and reserved flags. |
-| **payload** | Variable | Stores readings and, when enabled, a packed quantization code area; see [Payload](#payload). |
+| **payload** | Variable | Stores readings and, when enabled, a packed Essence area; see [Payload](#payload). |
 
-`col_quant_bits` is stored once in the schema entry and selects the quantization code width for each column. The per-column values themselves, called **runes**, are stored in the block payload.
+`col_quant_bits` is stored once in the schema entry and selects the Essence width for each column. The Essences are stored in the block payload.
 
-Approximate records per block, assuming each chest is entirely contained in 1 block. A **chest** contains all column values for one record; its size excludes any quantization codes:
+Approximate records per block, assuming each chest is entirely contained in 1 block. A **chest** contains all column values for one record; its size excludes Essences:
 
 Record block header: 16 bytes.
 
@@ -214,7 +216,7 @@ A continuation block contains:
 | **crc16** | 2 bytes** | Detects accidental changes or corruption in the block. |
 | **stream_id** | 1 byte* | Identifies the resolution stream this block belongs to. |
 | **stream_sequence** | 4 bytes* | Orders this block within its stream. |
-| **payload** | Variable | Stores more readings and their packed quantization codes using the schema of this extent's Record block. |
+| **payload** | Variable | Stores more readings and their packed Essences using the schema of this extent's Record block. |
 
 > Using a 4-byte instead of a 2-byte `stream_sequence` adds 2 bytes to each Continuation header. Assuming all remaining blocks are Continuation blocks, that adds about 506 bytes for 1 MiB of storage, 32 MiB for 64 GiB, and 64 MiB for 128 GiB.
 
@@ -236,19 +238,19 @@ Continuation block header: 9 bytes.
 > Unused bytes are the remaining payload space after storing whole records. The counts assume records are packed consecutively with no alignment padding.
 ## Payload
 
-Each Record or Continuation block stores chests and packed runes in separate areas. Chests grow forward from the start of the payload; codes grow backward from its end:
+Each Record or Continuation block stores chests and packed Essences in separate areas. Chests grow forward from the start of the payload; Essences grow backward from its end:
 
 ```text
-[block header] [chests grow →             ][← packed runes]
+[block header] [chests grow →             ][← packed Essences]
 ```
 
-The schema's `col_widths` determines each chest's column sizes in bytes. When `schema_config1` bit 1 enables `col_quant_bits`, each nonzero entry gives the number of code bits stored for that column in each chest. Runes are packed in chest order. Each Continuation block has its own code area. The schema stores the bit counts; the payload stores the runes.
+The schema's `col_widths` determines each chest's column sizes in bytes. When `schema_config1` bit 1 enables `col_quant_bits`, each nonzero entry gives the number of Essence bits stored for that column in each chest. Essences are packed in chest order. Each Continuation block has its own Essence area. The schema stores the bit counts; the payload stores the Essences.
 
 As chests are appended, write their codes backward from the payload end. When the block is finalized, store its record count. Readers use that count and the schema to find both areas. The block format still needs to define where the count is stored. Any unused gap between the areas remains unused space.
 
-See [README-QUANTIZATION.md](README-QUANTIZATION.md) for Record and Continuation block capacity estimates with 2-bit and 4-bit codes.
+See [README-QUANTIZATION.md](README-QUANTIZATION.md) for Record and Continuation block capacity estimates with 2-bit and 4-bit Essences.
 
-The capacity estimates below assume no quantization code area; enabling it reduces the number of readings per block.
+The capacity estimates below assume no Essence area; enabling it reduces the number of readings per block.
 
 ## Capacity Estimates
 
