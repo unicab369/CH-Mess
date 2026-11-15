@@ -1,6 +1,6 @@
-# Quantization Capacity
+# Essence Capacity
 
-Capacity estimates assume 4,094 bytes per block, a 15-byte Record header, a 9-byte Continuation header, and one Essence per column. A <strong>chest</strong> is the stored column values for one record; its size is the sum of the column widths and excludes Essences. Unused payload space is shown in whole bytes; leftover bits are omitted.
+Capacity estimates assume 4,094 bytes per block, a 15-byte Record header, a 9-byte Continuation header, and one Essence per column in each chest. A <strong>chest</strong> is the stored column values for one record; its size is the sum of the column widths and excludes Essences. Runes are coefficients stored in the Schema Entry; these estimates count only packed Essences in block payloads. Unused payload space is shown in whole bytes; leftover bits are omitted.
 
 Let `Payload` be the payload capacity (`4,079` bytes for a Record block; `4,085` for a Continuation block), `Chest_size` the chest size in bytes, `Q` the total Essence bits per chest, and `N` the maximum whole chests that fit:
 
@@ -14,9 +14,9 @@ In these tables, columns scale with chest size and each column gets one Essence.
 Switching from 4-bit to 2-bit Essences halves the Essence area. For a 4-byte chest with four 1-byte columns, a Record block holds <strong>815 instead of 679 records</strong>. With one 4-byte column, it holds <strong>959 instead of 906 records</strong>. Fewer, wider columns need fewer Essence bits.
 
 
-## Quantization Capacity by Column Width
+## Essence Capacity by Column Width
 
-### 1-byte columns / 2-bit quantization
+### 1-byte columns / 2-bit Essence
 
 | Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Essence bytes per block (R \| C) | Unused payload per block (R \| C) |
 |---:|---:|---:|---:|---:|---:|
@@ -29,7 +29,7 @@ Switching from 4-bit to 2-bit Essences halves the Essence area. For a 4-byte che
 | 28 B | 28 | 116 \| 116 | 3,248 \| 3,248 B | 812 \| 812 B | `19 \| 25 B` |
 | 32 B | 32 | 101 \| 102 | 3,232 \| 3,264 B | 808 \| 816 B | `39 \| 5 B` |
 
-### 1-byte columns / 4-bit quantization
+### 1-byte columns / 4-bit Essence
 
 | Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Essence bytes per block (R \| C) | Unused payload per block (R \| C) |
 |---:|---:|---:|---:|---:|---:|
@@ -42,7 +42,7 @@ Switching from 4-bit to 2-bit Essences halves the Essence area. For a 4-byte che
 | 28 B | 28 | 97 \| 97 | 2,716 \| 2,716 B | 1,358 \| 1,358 B | `5 \| 11 B` |
 | 32 B | 32 | 84 \| 85 | 2,688 \| 2,720 B | 1,344 \| 1,360 B | `47 \| 5 B` |
 
-### 2-byte columns / 2-bit quantization
+### 2-byte columns / 2-bit Essence
 
 | Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Essence bytes per block (R \| C) | Unused payload per block (R \| C) |
 |---:|---:|---:|---:|---:|---:|
@@ -55,7 +55,7 @@ Switching from 4-bit to 2-bit Essences halves the Essence area. For a 4-byte che
 | 28 B | 14 | 129 \| 129 | 3,612 \| 3,612 B | 452 \| 452 B | `15 \| 21 B` |
 | 32 B | 16 | 113 \| 113 | 3,616 \| 3,616 B | 452 \| 452 B | `11 \| 17 B` |
 
-### 2-byte columns / 4-bit quantization
+### 2-byte columns / 4-bit Essence
 
 | Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Essence bytes per block (R \| C) | Unused payload per block (R \| C) |
 |---:|---:|---:|---:|---:|---:|
@@ -68,7 +68,7 @@ Switching from 4-bit to 2-bit Essences halves the Essence area. For a 4-byte che
 | 28 B | 14 | 116 \| 116 | 3,248 \| 3,248 B | 812 \| 812 B | `19 \| 25 B` |
 | 32 B | 16 | 101 \| 102 | 3,232 \| 3,264 B | 808 \| 816 B | `39 \| 5 B` |
 
-### 4-byte columns / 2-bit quantization
+### 4-byte columns / 2-bit Essence
 
 | Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Essence bytes per block (R \| C) | Unused payload per block (R \| C) |
 |---:|---:|---:|---:|---:|---:|
@@ -81,7 +81,7 @@ Switching from 4-bit to 2-bit Essences halves the Essence area. For a 4-byte che
 | 28 B | 7 | 137 \| 137 | 3,836 \| 3,836 B | 240 \| 240 B | `3 \| 9 B` |
 | 32 B | 8 | 119 \| 120 | 3,808 \| 3,840 B | 238 \| 240 B | `33 \| 5 B` |
 
-### 4-byte columns / 4-bit quantization
+### 4-byte columns / 4-bit Essence
 
 | Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Essence bytes per block (R \| C) | Unused payload per block (R \| C) |
 |---:|---:|---:|---:|---:|---:|
