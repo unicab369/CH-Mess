@@ -4,7 +4,7 @@
 
 Cơ sở dữ liệu bắt đầu bằng 2 Superblock (`S0`, `S1`). Các khối còn lại thuộc một vùng lưu trữ chung. Khối Record (`R`) bắt đầu một extent; các khối Continuation (`C`) nối dài extent đó khi payload đầy. `stream_id` xác định luồng độ phân giải, còn `stream_sequence` xác định thứ tự khối trong từng luồng. Khối của nhiều luồng có thể xen kẽ nhau.
 
-**Chest** là tập giá trị cột của một bản ghi, nằm trong vùng dữ liệu đọc của payload `R` hoặc `C`. **Rune** là hệ số gắn với một vị trí bit. **Essence** là mặt nạ bit được đóng gói trong payload; các bit bằng `1` chọn Rune cần cộng cho từng cột và lần đọc.
+**Chest** là tập giá trị cột của một bản ghi, nằm trong vùng dữ liệu đọc của payload `R` hoặc `C`. **Rune** là hệ số 1 byte gắn với một vị trí bit. **Essence** là mặt nạ bit được đóng gói trong payload cho từng cột và lần đọc. Tương tự mã lượng tử hóa, mỗi bit điều khiển một Rune: bit `1` cộng Rune đó vào giá trị, còn bit `0` thì không. Với Rune `[a, b]`, Essence `10` cho kết quả `b`.
 
 ```text
 [S0] [S1]
@@ -66,10 +66,11 @@ Trường theo cột, theo thứ tự trong mục:
 | **col_scale_exp** | 1 byte có dấu** / cột | Có khi bit 2 bằng `1`; số mũ cơ số 10 mặc định là `0`. Ví dụ `123 × 10⁻² = 1,23`. |
 | **col_scale_ratios** | 2 byte** / cột | Có khi bit 3 bằng `1`; cặp tử số/mẫu số mặc định là `1/1`. Ví dụ `10 × 3/2 = 15`. |
 | **col_signs** | `ceil(col_count / 8)` byte* | Một bit cho mỗi cột (`1` = có dấu, `0` = không dấu); dùng khi `schema_config1` bit 0 bằng `1`. Bit thừa bằng `0`. |
-| **col_quant_bits** | 1 byte** / cột | Có khi `schema_config1` bit 1 bằng `1`; số bit của Essence (`0` = không có; `1`, `2` hoặc `4` bit mỗi lần đọc). |
+| **col_essence_bits** | 1 byte** / cột | Có khi `schema_config1` bit 1 bằng `1`; số bit của Essence (`0` = không có; `1`, `2` hoặc `4` bit mỗi lần đọc). |
+| **col_runes** | 1 byte × tổng số bit Essence** | Có khi `schema_config1` bit 1 bằng `1`; các hệ số Rune theo thứ tự cột rồi đến vị trí bit. |
 | **padding** | Thay đổi | Căn chỉnh mục theo đơn vị ghi flash. |
 
-Cách lưu các hệ số Rune trong schema vẫn cần được xác định.
+Tổng số bit Essence là tổng `col_essence_bits` của các cột. Ví dụ 3 cột, mỗi cột có Essence 2 bit, cần 6 Rune chiếm 6 byte. Rune được lưu một lần trong mục Schema; Essence của mỗi lần đọc chọn những Rune cần cộng.
 
 ### `schema_config1`
 
@@ -81,7 +82,7 @@ Cách lưu các hệ số Rune trong schema vẫn cần được xác định.
 | 4 | `col_scale_mul`: `1` = có; `0` = không. | Bật hệ số nhân theo cột. |
 | 3 | `col_scale_ratios`: `1` = có; `0` = không. | Bật tỷ lệ theo cột. |
 | 2 | `col_scale_exp`: `1` = có; `0` = không. | Bật số mũ theo cột. |
-| 1 | `col_quant_bits`: `1` = có; `0` = không. | Bật số bit Essence theo cột. |
+| 1 | `col_essence_bits`: `1` = có; `0` = không. | Bật `col_essence_bits` và `col_runes`. |
 | 0 | `col_signs`: `1` = dùng; `0` = bỏ qua. | Nếu bỏ qua, tất cả cột là không dấu. |
 
 ### ID codec
@@ -145,31 +146,30 @@ Khối `R` dùng một `schema_id` đã xác nhận ở cả hai Superblock và 
 | **schema_id** | 1 byte* | Chọn schema của khối. |
 | **stream_id** | 1 byte* | ID luồng độ phân giải. |
 | **stream_sequence** | 4 byte* | Thứ tự khối trong luồng. |
-| **record_config** | 6 byte** | Thời gian, định dạng thời gian và các cờ dành riêng. |
+| **record_config** | 5 byte** | Thời gian và định dạng thời gian của khối. |
 | **payload** | Thay đổi | Chứa Chest và Essence được đóng gói khi bật; xem [Payload](#payload). |
 
-`col_quant_bits` nằm trong schema; Essence nằm trong payload của khối.
+`col_essence_bits` nằm trong schema; Essence nằm trong payload của khối.
 
-Header khối `R` chiếm 16 byte. Các ước tính sau không tính vùng Essence:
+Header khối `R` chiếm 15 byte. Các ước tính sau không tính vùng Essence:
 
 | Kích thước Chest | Bản ghi/khối `R` | Byte payload chưa dùng |
 |---:|---:|---:|
-| 4 byte | 1.019 | 2 |
-| 8 byte | 509 | 6 |
-| 12 byte | 339 | 10 |
-| 16 byte | 254 | 14 |
-| 20 byte | 203 | 18 |
-| 24 byte | 169 | 22 |
+| 4 byte | 1.019 | 3 |
+| 8 byte | 509 | 7 |
+| 12 byte | 339 | 11 |
+| 16 byte | 254 | 15 |
+| 20 byte | 203 | 19 |
+| 24 byte | 169 | 23 |
 
 ## Cấu hình Record
 
-`record_config` chiếm 6 byte:
+`record_config` chiếm 5 byte:
 
 | Trường | Kích thước | Mục đích |
 |---|---:|---|
 | `time_value` | 4 byte | Giá trị thời gian của khối. |
 | `time_format` | 1 byte | Cách biểu diễn thời gian. |
-| `flags` | 1 byte | Dành riêng; ghi tất cả bit bằng `0`. |
 
 ## Khối Continuation (`C`)
 
@@ -202,7 +202,7 @@ Mỗi khối `R` hoặc `C` có hai vùng payload. Chest được ghi từ đầ
 [header khối] [Chest tăng →             ][← Essence đóng gói]
 ```
 
-`col_widths` xác định kích thước các cột trong Chest. Khi `schema_config1` bit 1 bật `col_quant_bits`, mỗi giá trị khác `0` xác định số bit Essence cho cột đó trong mỗi lần đọc. Essence được đóng gói theo thứ tự Chest. Mỗi khối `C` có vùng Essence riêng.
+`col_widths` xác định kích thước các cột trong Chest. Khi `schema_config1` bit 1 bật `col_essence_bits`, mỗi giá trị khác `0` xác định số bit Essence cho cột đó trong mỗi lần đọc. Essence được đóng gói theo thứ tự Chest. Mỗi khối `C` có vùng Essence riêng.
 
 Khi thêm Chest, ghi Essence từ cuối payload về phía đầu. Khi hoàn tất khối, ghi số bản ghi; reader dùng số đó cùng schema để tìm hai vùng. Vị trí lưu số bản ghi vẫn cần được xác định.
 
