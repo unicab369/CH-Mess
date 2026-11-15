@@ -169,12 +169,15 @@ A record block contains:
 | field | size | purpose |
 |---|---:|---|
 | **magic_number** | 2 bytes* | Identifies the start of the record block. |
-| **crc16** | 2 bytes** | Detects accidental changes or corruption in the block. |
+| **crc16** | 2 bytes** | Covers the block header and payload, including `chest_count`; excludes itself. |
 | **schema_id** | 1 byte* | Identifies the schema containing this block's `col_widths` and optional `col_essence_bits`. |
 | **stream_id** | 1 byte* | Identifies the resolution stream this block belongs to. |
 | **stream_sequence** | 4 bytes* | Orders this block within its stream. |
+| **chest_count** | 2 bytes* | Number of Chests in this block; written at finalization to locate the payload areas. |
 | **record_config** | 5 bytes** | Stores the block time and time format. |
 | **payload** | Variable | Stores readings and, when enabled, a packed Essence area; see [Payload](#payload). |
+
+The Record block header is 17 bytes. At finalization, write `chest_count`, then compute and store `crc16`; readers use the count only if the CRC validates.
 
 `col_essence_bits` is stored once in the schema entry and selects the Essence width for each column. The Essences are stored in the block payload.
 
@@ -189,17 +192,20 @@ A record block contains:
 
 ## Continuation blocks (`C`)
 
-Continuation blocks store records that follow a record block `R` when its payload is full. Each belongs to the same `stream_id` and carries a per-stream block sequence so it can be associated with the preceding extent even when blocks from other streams are physically interleaved. When a continuation block `C` fills, another continuation `C_cont` block is added. See [README-CONSTRAINTS.md](README-CONSTRAINTS.md#continuation-block-association-and-order) for the stream ordering and recovery rules.
+Continuation blocks store records that follow a record block `R` when its payload is full. Each belongs to the same `stream_id` and carries a per-stream block sequence so it can be associated with the preceding extent even when blocks from other streams are physically interleaved. When a continuation block `C` fills, another continuation block is added. See [README-CONSTRAINTS.md](README-CONSTRAINTS.md#streams-and-block-recovery) for the stream ordering and recovery rules.
 
 A continuation block contains:
 
 | Field | Size | Purpose |
 |---|---:|---|
 | **magic_number** | 2 bytes* | Identifies the start of the continuation block. |
-| **crc16** | 2 bytes** | Detects accidental changes or corruption in the block. |
+| **crc16** | 2 bytes** | Covers the block header and payload, including `chest_count`; excludes itself. |
 | **stream_id** | 1 byte* | Identifies the resolution stream this block belongs to. |
 | **stream_sequence** | 4 bytes* | Orders this block within its stream. |
+| **chest_count** | 2 bytes* | Number of Chests in this block; written at finalization to locate the payload areas. |
 | **payload** | Variable | Stores more readings and their packed Essences using the schema of this extent's Record block. |
+
+The Continuation block header is 11 bytes. At finalization, write `chest_count`, then compute and store `crc16`; readers use the count only if the CRC validates.
 
 > Using a 4-byte instead of a 2-byte `stream_sequence` adds 2 bytes to each Continuation header. Assuming all remaining blocks are Continuation blocks, that adds about 506 bytes for 1 MiB of storage, 32 MiB for 64 GiB, and 64 MiB for 128 GiB.
 
@@ -207,16 +213,16 @@ Continuation blocks may be physically interleaved with blocks from other streams
 
 Approximate records per block, assuming each chest is entirely contained in 1 block:
 
-Continuation block header: 9 bytes.
+Continuation block header: 11 bytes.
 
 | Chest size | Records per block | Unused payload bytes |
 |---:|---:|---:|
-| 4 bytes | 1,021 | 1 |
-| 8 bytes | 510 | 5 |
-| 12 bytes | 340 | 5 |
-| 16 bytes | 255 | 5 |
-| 20 bytes | 204 | 5 |
-| 24 bytes | 170 | 5 |
+| 4 bytes | 1,020 | 3 |
+| 8 bytes | 510 | 3 |
+| 12 bytes | 340 | 3 |
+| 16 bytes | 255 | 3 |
+| 20 bytes | 204 | 3 |
+| 24 bytes | 170 | 3 |
 
 > Unused bytes are the remaining payload space after storing whole records. The counts assume records are packed consecutively with no alignment padding.
 ## Payload
@@ -229,11 +235,11 @@ Each Record or Continuation block stores chests and packed Essences in separate 
 
 The schema's `col_widths` determines each chest's column sizes in bytes. When `schema_config1` bit 1 enables `col_essence_bits`, each nonzero entry gives the number of Essence bits stored for that column in each chest. Essences are packed in chest order. Each Continuation block has its own Essence area. The schema stores the bit counts; the payload stores the Essences.
 
-As chests are appended, write their codes backward from the payload end. When the block is finalized, store its record count. Readers use that count and the schema to find both areas. The block format still needs to define where the count is stored. Any unused gap between the areas remains unused space.
+As Chests are appended, write their Essences backward from the payload end. When the block is finalized, write its 2-byte `chest_count` in the header, then compute and store `crc16` over the header and payload, excluding the CRC field. Readers use `chest_count` and the schema to locate both areas; any unused gap between them is unused payload space.
 
 See [README-QUANTIZATION.md](README-QUANTIZATION.md) for Record and Continuation block capacity estimates with 2-bit and 4-bit Essences.
 
-The capacity estimates below assume no Essence area; enabling it reduces the number of readings per block.
+The block capacity estimates in [README-QUANTIZATION.md](README-QUANTIZATION.md) account for the 2-byte `chest_count` in each block header.
 
 ## Capacity Estimates
 
@@ -257,12 +263,12 @@ The table assumes one 4-byte column and one 4-bit Essence per record, stored eve
 
 | Storage size | Continuation<br>blocks | Continuation<br>header space | Records | Time to full<br>(1 sec) | Time to full<br>(10 secs) | Time to full<br>(30 secs) |
 |---:|---:|---:|---:|---:|---:|---:|
-| 32 KiB | 5 | 0.04 KiB | 5,441 | ~1.5 hours | ~15.1 hours | ~1.9 days |
+| 32 KiB | 5 | 0.05 KiB | 5,441 | ~1.5 hours | ~15.1 hours | ~1.9 days |
 | 128 KiB | 29 | 0.3 KiB | 27,209 | ~7.6 hours | ~3.1 days | ~9.4 days |
-| 1 MiB | 253 | 2 KiB | 230,377 | ~2.7 days | ~26.7 days | ~80.0 days |
-| 32 MiB | 8,189 | 72 KiB | 7.4 × 10⁶ | ~86.0 days | ~2.4 years | ~7.1 years |
-| 126 MiB | 32,253 | 283 KiB | 29.3 × 10⁶ | ~338.6 days | ~9.3 years | ~27.8 years |
-| 512 MiB | 131,069 | 1,152 KiB | 118.9 × 10⁶ | ~3.8 years | ~37.7 years | ~113.1 years |
-| 1 GiB | 262,141 | 2,304 KiB | 237.8 × 10⁶ | ~7.5 years | ~75.4 years | ~226.2 years |
+| 1 MiB | 253 | 2.7 KiB | 230,377 | ~2.7 days | ~26.7 days | ~80.0 days |
+| 32 MiB | 8,189 | 88 KiB | 7.4 × 10⁶ | ~86.0 days | ~2.4 years | ~7.1 years |
+| 126 MiB | 32,253 | 346 KiB | 29.3 × 10⁶ | ~338.6 days | ~9.3 years | ~27.8 years |
+| 512 MiB | 131,069 | 1,408 KiB | 118.9 × 10⁶ | ~3.8 years | ~37.7 years | ~113.1 years |
+| 1 GiB | 262,141 | 2,816 KiB | 237.8 × 10⁶ | ~7.5 years | ~75.4 years | ~226.2 years |
 
-> Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. Each Record block holds 906 records and each Continuation block holds 907, including their 4-bit Essence storage. This is an upper bound; multiple streams need additional Record blocks.
+> Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. Each Record block holds 906 records and each Continuation block holds 907, including their 4-bit Essence storage and 2-byte `chest_count`. This is an upper bound; multiple streams need additional Record blocks.

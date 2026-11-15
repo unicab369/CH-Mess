@@ -142,12 +142,15 @@ Khối `R` dùng một `schema_id` đã xác nhận ở cả hai Superblock và 
 | Trường | Kích thước | Mục đích |
 |---|---:|---|
 | **magic_number** | 2 byte* | Đánh dấu đầu khối. |
-| **crc16** | 2 byte** | Phát hiện thay đổi hoặc hỏng dữ liệu. |
+| **crc16** | 2 byte** | Bao phủ header và payload, gồm `chest_count`; không gồm chính nó. |
 | **schema_id** | 1 byte* | Chọn schema của khối. |
 | **stream_id** | 1 byte* | ID luồng độ phân giải. |
 | **stream_sequence** | 4 byte* | Thứ tự khối trong luồng. |
+| **chest_count** | 2 byte* | Số Chest trong khối; ghi khi hoàn tất để xác định ranh giới các vùng payload. |
 | **record_config** | 5 byte** | Thời gian và định dạng thời gian của khối. |
 | **payload** | Thay đổi | Chứa Chest và Essence được đóng gói khi bật; xem [Payload](#payload). |
+
+Header khối `R` chiếm 17 byte. Khi hoàn tất khối, ghi `chest_count`, sau đó tính và lưu `crc16`; reader chỉ dùng số đếm nếu CRC hợp lệ.
 
 `col_essence_bits` nằm trong schema; Essence nằm trong payload của khối.
 
@@ -162,26 +165,27 @@ Khối `R` dùng một `schema_id` đã xác nhận ở cả hai Superblock và 
 
 ## Khối Continuation (`C`)
 
-Khối `C` chứa các bản ghi nối tiếp của một extent khi payload khối `R` đầy. `stream_id` và `stream_sequence` giúp reader nối và sắp xếp các khối dù nhiều luồng xen kẽ. Xem [quy tắc liên kết và thứ tự](README-CONSTRAINTS.md#continuation-block-association-and-order).
+Khối `C` chứa các bản ghi nối tiếp của một extent khi payload khối `R` đầy. `stream_id` và `stream_sequence` giúp reader nối và sắp xếp các khối dù nhiều luồng xen kẽ. Xem [quy tắc liên kết và thứ tự](README-CONSTRAINTS.md#streams-and-block-recovery).
 
 | Trường | Kích thước | Mục đích |
 |---|---:|---|
 | **magic_number** | 2 byte* | Đánh dấu đầu khối. |
-| **crc16** | 2 byte** | Phát hiện thay đổi hoặc hỏng dữ liệu. |
+| **crc16** | 2 byte** | Bao phủ header và payload, gồm `chest_count`; không gồm chính nó. |
 | **stream_id** | 1 byte* | ID luồng độ phân giải. |
 | **stream_sequence** | 4 byte* | Thứ tự khối trong luồng. |
+| **chest_count** | 2 byte* | Số Chest trong khối; ghi khi hoàn tất để xác định ranh giới các vùng payload. |
 | **payload** | Thay đổi | Chứa Chest và Essence theo schema của khối `R` cùng extent. |
 
-Header khối `C` chiếm 9 byte. Các ước tính sau không tính vùng Essence:
+Header khối `C` chiếm 11 byte. Các ước tính sau không tính vùng Essence:
 
 | Kích thước Chest | Bản ghi/khối `C` | Byte payload chưa dùng |
 |---:|---:|---:|
-| 4 byte | 1.021 | 1 |
-| 8 byte | 510 | 5 |
-| 12 byte | 340 | 5 |
-| 16 byte | 255 | 5 |
-| 20 byte | 204 | 5 |
-| 24 byte | 170 | 5 |
+| 4 byte | 1.020 | 3 |
+| 8 byte | 510 | 3 |
+| 12 byte | 340 | 3 |
+| 16 byte | 255 | 3 |
+| 20 byte | 204 | 3 |
+| 24 byte | 170 | 3 |
 
 ## Payload
 
@@ -193,7 +197,7 @@ Mỗi khối `R` hoặc `C` có hai vùng payload. Chest được ghi từ đầ
 
 `col_widths` xác định kích thước các cột trong Chest. Khi `schema_config1` bit 1 bật `col_essence_bits`, mỗi giá trị khác `0` xác định số bit Essence cho cột đó trong mỗi lần đọc. Essence được đóng gói theo thứ tự Chest. Mỗi khối `C` có vùng Essence riêng.
 
-Khi thêm Chest, ghi Essence từ cuối payload về phía đầu. Khi hoàn tất khối, ghi số bản ghi; reader dùng số đó cùng schema để tìm hai vùng. Vị trí lưu số bản ghi vẫn cần được xác định.
+Khi thêm Chest, ghi Essence từ cuối payload về phía đầu. Khi hoàn tất khối, ghi `chest_count` 2 byte vào header, sau đó tính và lưu `crc16` trên header và payload, không bao gồm chính trường CRC. Reader dùng `chest_count` cùng schema để xác định hai vùng; khoảng trống giữa chúng là payload chưa dùng.
 
 Xem [README-QUANTIZATION.md](README-QUANTIZATION.md) để biết sức chứa khi dùng Essence 2 bit hoặc 4 bit.
 
@@ -215,31 +219,31 @@ Với 12 cột có độ rộng bằng nhau, payload khối `C` chứa:
 
 | Độ rộng/cột | Kích thước Chest | Chest/khối `C` | Byte chưa dùng |
 |---:|---:|---:|---:|
-| 1 byte | 12 byte | 340 | 5 |
-| 2 byte | 24 byte | 170 | 5 |
-| 4 byte | 48 byte | 85 | 5 |
-| 8 byte | 96 byte | 42 | 53 |
+| 1 byte | 12 byte | 340 | 3 |
+| 2 byte | 24 byte | 170 | 3 |
+| 4 byte | 48 byte | 85 | 3 |
+| 8 byte | 96 byte | 42 | 51 |
 
 Với 6 cột có độ rộng bằng nhau:
 
 | Độ rộng/cột | Kích thước Chest | Chest/khối `C` | Byte chưa dùng |
 |---:|---:|---:|---:|
-| 1 byte | 6 byte | 680 | 5 |
-| 2 byte | 12 byte | 340 | 5 |
-| 4 byte | 24 byte | 170 | 5 |
-| 8 byte | 48 byte | 85 | 5 |
+| 1 byte | 6 byte | 680 | 3 |
+| 2 byte | 12 byte | 340 | 3 |
+| 4 byte | 24 byte | 170 | 3 |
+| 8 byte | 48 byte | 85 | 3 |
 
 Bảng giả định mỗi bản ghi có một cột 4 byte và một Essence 4 bit, được lưu cách nhau 1, 10 hoặc 30 giây. Số bản ghi bao gồm sức chứa của khối Record và tất cả khối Continuation. Đơn vị dung lượng là nhị phân.
 
 | Dung lượng | Khối `C` | Dung lượng header `C` | Bản ghi | Thời gian (1 giây) | Thời gian (10 giây) | Thời gian (30 giây) |
 |---:|---:|---:|---:|---:|---:|---:|
-| 32 KiB | 5 | 0,04 KiB | 5.441 | ~1,5 giờ | ~15,1 giờ | ~1,9 ngày |
+| 32 KiB | 5 | 0,05 KiB | 5.441 | ~1,5 giờ | ~15,1 giờ | ~1,9 ngày |
 | 128 KiB | 29 | 0,3 KiB | 27.209 | ~7,6 giờ | ~3,1 ngày | ~9,4 ngày |
-| 1 MiB | 253 | 2 KiB | 230.377 | ~2,7 ngày | ~26,7 ngày | ~80,0 ngày |
-| 32 MiB | 8.189 | 72 KiB | 7,4 × 10⁶ | ~86,0 ngày | ~2,4 năm | ~7,1 năm |
-| 126 MiB | 32.253 | 283 KiB | 29,3 × 10⁶ | ~338,6 ngày | ~9,3 năm | ~27,8 năm |
-| 512 MiB | 131.069 | 1.152 KiB | 118,9 × 10⁶ | ~3,8 năm | ~37,7 năm | ~113,1 năm |
-| 1 GiB | 262.141 | 2.304 KiB | 237,8 × 10⁶ | ~7,5 năm | ~75,4 năm | ~226,2 năm |
+| 1 MiB | 253 | 2,7 KiB | 230.377 | ~2,7 ngày | ~26,7 ngày | ~80,0 ngày |
+| 32 MiB | 8.189 | 88 KiB | 7,4 × 10⁶ | ~86,0 ngày | ~2,4 năm | ~7,1 năm |
+| 126 MiB | 32.253 | 346 KiB | 29,3 × 10⁶ | ~338,6 ngày | ~9,3 năm | ~27,8 năm |
+| 512 MiB | 131.069 | 1.408 KiB | 118,9 × 10⁶ | ~3,8 năm | ~37,7 năm | ~113,1 năm |
+| 1 GiB | 262.141 | 2.816 KiB | 237,8 × 10⁶ | ~7,5 năm | ~75,4 năm | ~226,2 năm |
 
-> Giả sử có 2 Superblock và 1 khối `R`; các khối 4 KiB còn lại đều là `C`. Mỗi khối `R` chứa 906 bản ghi và mỗi khối `C` chứa 907 bản ghi, đã tính cả vùng Essence 4 bit. Đây là giới hạn trên vì nhiều luồng cần thêm khối `R`.
+> Giả sử có 2 Superblock và 1 khối `R`; các khối 4 KiB còn lại đều là `C`. Mỗi khối `R` chứa 906 bản ghi và mỗi khối `C` chứa 907 bản ghi, đã tính vùng Essence 4 bit và `chest_count` 2 byte. Đây là giới hạn trên vì nhiều luồng cần thêm khối `R`.
 
