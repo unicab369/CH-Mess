@@ -4,7 +4,7 @@
 
 The database starts with 2 Superblocks (`S0`, `S1`); all remaining blocks come from a shared storage pool. A Record block (`R`) starts an extent, and Continuation blocks extend it when its payload fills. Each data block belongs to a resolution stream; `stream_id` identifies the stream and `stream_sequence` orders its blocks. Streams can share the pool, so their blocks may be interleaved.
 
-A **chest** is the set of column values for one record, stored in the readings area of an `R` or `C` payload; quantization codes are stored separately.
+A **chest** is the set of column values for one record, stored in the readings area of an `R` or `C` payload; quantization codes, called **runes**, are stored separately.
 
 ```text
 [S0] [S1]
@@ -92,7 +92,7 @@ Per-column fields, in entry order:
 | **col_scale_mul** | 1 byte** / column | Present when `schema_config1` bit 4 is `1`; one 1-byte multiplier per column (default `1`). E.g., `10` with multiplier `3` becomes `30`. |
 | **col_scale_exp** | 1 signed byte** / column | Present when `schema_config1` bit 2 is `1`; one base-10 exponent per column (default `0`). E.g., `123` with exponent `-2` becomes `1.23`. |
 | **col_scale_ratios** | 2 bytes** / column | Present when `schema_config1` bit 3 is `1`; one numerator/denominator pair per column (default `1/1`). E.g., `10` with scale `3/2` becomes `15`. |
-| **col_signs** | `ceil(col_count / 8)` bytes* | Always present; one bit per column. If `schema_config1` bit 0 is `1`, use the bits (`1` = signed); otherwise treat all columns as unsigned. Unused bits are `0`. |
+| **col_signs** | `ceil(col_count / 8)` bytes* | Used when `schema_config1` bit 0 is `1`; one bit per column (`1` = signed, `0` = unsigned). Unused bits are `0`. |
 | **col_quant_bits** | 1 byte** / column | Present when `schema_config1` bit 1 is `1`; one code width per column (`0` = off; `1`, `2`, or `4` bits per reading). Other values are reserved. |
 | **padding** | Variable | Aligns the entry to the flash program unit. |
 
@@ -108,7 +108,7 @@ Per-column fields, in entry order:
 | 3 | `col_scale_ratios`: `1` = yes; `0` = no (scale defaults to `1/1`). | Indicates whether `col_scale_ratios` follows. |
 | 2 | `col_scale_exp`: `1` = yes; `0` = no (exponent defaults to `0`). | Indicates whether `col_scale_exp` follows. |
 | 1 | `col_quant_bits`: `1` = yes; `0` = no. | Indicates whether per-column quantization bit counts follow. |
-| 0 | `col_signs`: `1` = yes; `0` = no (all columns unsigned). | Enables signedness from `col_signs`. |
+| 0 | `col_signs`: `1` = use; `0` = ignore (all columns unsigned). | Controls whether readers apply the always-stored `col_signs` bits. |
 
 ### `col_units` Unit Codes
 
@@ -164,7 +164,7 @@ A record block contains:
 | **record_config** | 6 bytes | Stores the time, format, and flags for the records. |
 | **payload** | Variable | Stores readings and, when enabled, a packed quantization code area; see [Payload](#payload). |
 
-`col_quant_bits` is stored once in the schema entry and selects the quantization code width for each column. The codes themselves are stored in the block payload.
+`col_quant_bits` is stored once in the schema entry and selects the quantization code width for each column. The per-column values themselves, called **runes**, are stored in the block payload.
 
 The 1-byte `flags` field contains 8 bits. Its most significant 3 bits encode the payload codec; the remaining 5 bits are reserved and must be written as zero:
 
@@ -263,13 +263,13 @@ Continuation block header: 9 bytes.
 > Unused bytes are the remaining payload space after storing whole records. The counts assume records are packed consecutively with no alignment padding.
 ## Payload
 
-Each Record or Continuation block stores chests and packed quantization codes in separate areas. Chests grow forward from the start of the payload; codes grow backward from its end:
+Each Record or Continuation block stores chests and packed runes in separate areas. Chests grow forward from the start of the payload; codes grow backward from its end:
 
 ```text
-[block header] [chests grow →             ][← packed codes]
+[block header] [chests grow →             ][← packed runes]
 ```
 
-The schema's `col_widths` determines each chest's column sizes in bytes. When `schema_config1` bit 1 enables `col_quant_bits`, each nonzero entry gives the number of code bits stored for that column in each chest. Codes are packed in chest order. Each Continuation block has its own code area. The schema stores the bit counts; the payload stores the codes.
+The schema's `col_widths` determines each chest's column sizes in bytes. When `schema_config1` bit 1 enables `col_quant_bits`, each nonzero entry gives the number of code bits stored for that column in each chest. Runes are packed in chest order. Each Continuation block has its own code area. The schema stores the bit counts; the payload stores the runes.
 
 As chests are appended, write their codes backward from the payload end. When the block is finalized, store its record count. Readers use that count and the schema to find both areas. The block format still needs to define where the count is stored. Any unused gap between the areas remains unused space.
 
