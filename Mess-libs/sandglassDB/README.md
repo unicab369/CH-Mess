@@ -192,7 +192,7 @@ The Record block header is 17 bytes. At finalization, write `chest_count`, then 
 
 ## Continuation blocks (`C`)
 
-Continuation blocks store records that follow a record block `R` when its payload is full. Each belongs to the same `stream_id` and carries a per-stream block sequence so it can be associated with the preceding extent even when blocks from other streams are physically interleaved. When a continuation block `C` fills, another continuation block is added. See [README-CONSTRAINTS.md](README-CONSTRAINTS.md#streams-and-block-recovery) for the stream ordering and recovery rules.
+Continuation blocks store records that follow a record block `R` when its payload is full. Each belongs to the same `stream_id` and carries a per-stream block sequence so it can be associated with the preceding extent even when blocks from other streams are physically interleaved. When a continuation block `C` fills, another continuation block is added. See [Recovery](#recovery) for the ordering rules.
 
 A continuation block contains:
 
@@ -272,3 +272,31 @@ The table assumes one 4-byte column and one 4-bit Essence per record, stored eve
 | 1 GiB | 262,141 | 2,816 KiB | 237.8 × 10⁶ | ~7.5 years | ~75.4 years | ~226.2 years |
 
 > Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. Each Record block holds 906 records and each Continuation block holds 907, including their 4-bit Essence storage and 2-byte `chest_count`. This is an upper bound; multiple streams need additional Record blocks.
+
+## Recovery
+
+**Append log:**
+
+- The application chooses the `stream_id`; the library appends each new block at the next physical address in the shared log.
+- A block is erased only if every byte is `0xFF`. The first erased block after the written log marks the append point.
+- A non-erased block with an invalid `magic_number` or `crc16` is damaged, not free. Skip it during recovery; do not overwrite it during normal appends.
+
+**Stream recovery:**
+
+- Blocks from different streams may be interleaved physically. Group valid blocks by `stream_id`, then order each stream by `stream_sequence`.
+- A valid Record block (`R`) starts an extent. A Continuation block (`C`) extends that extent only if it has the same `stream_id` and follows the prior block's sequence.
+- An invalid block or sequence gap ends that stream's current extent. Ignore its `C` blocks until its next valid `R`, while continuing to scan other streams.
+
+**Cleanup recovery:**
+
+- Cleanup or compaction must copy and validate live data before erasing its old blocks. Preserve each stream's sequence or rewrite it with a new sequence.
+- Define how readers recover if power is lost during cleanup or compaction.
+
+**Schema log recovery:**
+
+- Define flash alignment and recovery for interrupted or mismatched schema-entry writes in `S0` and `S1`.
+
+**Superblock recovery:**
+
+- If only one Superblock validates, use that copy.
+- Define how to choose the current copy when both `S0` and `S1` validate but differ; consider a generation counter or sequence number.

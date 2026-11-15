@@ -165,7 +165,7 @@ Header khối `R` chiếm 17 byte. Khi hoàn tất khối, ghi `chest_count`, sa
 
 ## Khối Continuation (`C`)
 
-Khối `C` chứa các bản ghi nối tiếp của một extent khi payload khối `R` đầy. `stream_id` và `stream_sequence` giúp reader nối và sắp xếp các khối dù nhiều luồng xen kẽ. Xem [quy tắc liên kết và thứ tự](README-CONSTRAINTS.md#streams-and-block-recovery).
+Khối `C` chứa các bản ghi nối tiếp của một extent khi payload khối `R` đầy. `stream_id` và `stream_sequence` giúp reader nối và sắp xếp các khối dù nhiều luồng xen kẽ. Xem [quy tắc khôi phục luồng](README.md#recovery).
 
 | Trường | Kích thước | Mục đích |
 |---|---:|---|
