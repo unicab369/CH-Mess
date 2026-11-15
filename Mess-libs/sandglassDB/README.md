@@ -50,19 +50,23 @@ Each Superblock contains:
 |---|---:|---|
 | **config** | 1 byte* | Stores database-wide configuration options. |
 | **version** | 1 byte* | Identifies the Superblock format. |
+| **generation** | 1 byte* | Identifies the newer fixed Superblock header; wraps from `255` to `0`. |
 | **magic_number** | 2 bytes* | Identifies the start of the Superblock header. |
-| **crc16** | 4 bytes** | Covers `config`, `version`, `magic_number`, and `flags`, excluding the CRC field itself and `schema_entries`. |
 | **flags** | 1 byte* | Stores Superblock flags. |
-| **schema_entries** | Remaining space | Append-only schema entries. Each entry has its own CRC and commit marker; see [Schema Entries](#schema-entries) for the entry layout. |
+| **crc16** | 4 bytes** | Covers the fixed header and alignment padding, excluding the CRC field itself and `schema_entries`. |
+| **alignment_padding** | 2 bytes* | Set to `0`; aligns `schema_entries` to a 4-byte boundary. |
+| **schema_entries** | 4,084 bytes | Append-only schema entries. Each entry has its own CRC and commit marker; see [Schema Entries](#schema-entries) for the entry layout. |
 
 The Superblock is stored in 2 copies, `S0` and `S1`. Each copy has this field layout:
 ```text
-       +--------+---------+-------------+-------+-------+---------------+
-S0:    | config | version | magic_number | flags | crc16 | schema_entries |
-       +--------+---------+-------------+-------+-------+---------------+
-S1:    | config | version | magic_number | flags | crc16 | schema_entries |
-       +--------+---------+-------------+-------+-------+---------------+
+       +--------+---------+------------+-------------+-------+-------+-------------------+---------------+
+S0:    | config | version | generation | magic_number | flags | crc16 | alignment_padding | schema_entries |
+       +--------+---------+------------+-------------+-------+-------+-------------------+---------------+
+S1:    | config | version | generation | magic_number | flags | crc16 | alignment_padding | schema_entries |
+       +--------+---------+------------+-------------+-------+-------+-------------------+---------------+
 ```
+
+The fixed fields occupy 10 bytes. The 2-byte `alignment_padding` places `schema_entries` at byte offset 12; each schema entry is also padded to a 4-byte boundary.
 
 
 ## Schema Entries
@@ -245,15 +249,15 @@ The block capacity estimates in [README-QUANTIZATION.md](README-QUANTIZATION.md)
 
 ### Schema Entry Capacity
 
-Each Superblock has 4,087 bytes for append-only `schema_entries`. This estimate assumes 4-byte alignment, `col_signs`, `col_scale_ratios`, 4-bit Essences, and 1-byte Runes. Other optional arrays are absent. The 7 fixed bytes come from the schema-wide fields. For every column, `col_widths` and `col_units` add 2 bytes total: 1 byte each.
+Each Superblock has 4,084 bytes for append-only `schema_entries`. This estimate assumes 4-byte entry alignment, `col_signs`, `col_scale_ratios`, 4-bit Essences, and 1-byte Runes. Other optional arrays are absent. The 7 fixed bytes come from the schema-wide fields. For every column, `col_widths` and `col_units` add 2 bytes total: 1 byte each.
 
 | `col_count` | Aligned entry size | Entries per Superblock | Unused bytes per Superblock |
 |---:|---:|---:|---:|
-| 4 | 44 bytes | 92 | 39 |
-| 8 | 80 bytes | 51 | 7 |
-| 16 | 156 bytes | 26 | 31 |
-| 32 | 300 bytes | 13 | 187 |
-| 64 | 592 bytes | 6 | 535 |
+| 4 | 44 bytes | 92 | 36 |
+| 8 | 80 bytes | 51 | 4 |
+| 16 | 156 bytes | 26 | 28 |
+| 32 | 300 bytes | 13 | 184 |
+| 64 | 592 bytes | 6 | 532 |
 
 The entry count includes the initial schema, so the maximum number of schema updates is `entry count − 1`. Both Superblocks store the same entries; they are copies, not extra capacity.
 
@@ -275,28 +279,19 @@ The table assumes one 4-byte column and one 4-bit Essence per record, stored eve
 
 ## Recovery
 
-**Append log:**
+**Superblocks:**
 
-- The application chooses the `stream_id`; the library appends each new block at the next physical address in the shared log.
-- A block is erased only if every byte is `0xFF`. The first erased block after the written log marks the append point.
-- A non-erased block with an invalid `magic_number` or `crc16` is damaged, not free. Skip it during recovery; do not overwrite it during normal appends.
+- If only one copy validates, use it. If both validate but differ, `generation` identifies the newer fixed header. Increment it when updating the older copy; compare modulo 256.
 
-**Stream recovery:**
+**Schema log:**
 
-- Blocks from different streams may be interleaved physically. Group valid blocks by `stream_id`, then order each stream by `stream_sequence`.
-- A valid Record block (`R`) starts an extent. A Continuation block (`C`) extends that extent only if it has the same `stream_id` and follows the prior block's sequence.
-- An invalid block or sequence gap ends that stream's current extent. Ignore its `C` blocks until its next valid `R`, while continuing to scan other streams.
+- Use a schema entry only when its committed copies validate in both Superblocks. Recovery from interrupted or mismatched writes still needs definition.
 
-**Cleanup recovery:**
+**Append log and streams:**
 
-- Cleanup or compaction must copy and validate live data before erasing its old blocks. Preserve each stream's sequence or rewrite it with a new sequence.
-- Define how readers recover if power is lost during cleanup or compaction.
+- The application selects `stream_id`; the library appends at the next physical block. The first fully erased (`0xFF`) block marks the append point. A non-erased block with an invalid `magic_number` or `crc16` is damaged: skip it and do not overwrite it.
+- Group valid blocks by `stream_id` and order them by `stream_sequence`. A valid Record block (`R`) starts an extent; a Continuation block (`C`) extends it only if its stream matches and its sequence follows. A gap or invalid block ends the extent; ignore `C` blocks until the next valid `R` for that stream.
 
-**Schema log recovery:**
+**Cleanup:**
 
-- Define flash alignment and recovery for interrupted or mismatched schema-entry writes in `S0` and `S1`.
-
-**Superblock recovery:**
-
-- If only one Superblock validates, use that copy.
-- Define how to choose the current copy when both `S0` and `S1` validate but differ; consider a generation counter or sequence number.
+- Copy and validate live data before erasing old blocks. Preserve stream sequences or rewrite them; define recovery from power loss during cleanup or compaction.

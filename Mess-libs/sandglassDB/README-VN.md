@@ -28,18 +28,22 @@ Hai Superblock là hai bản sao cấu hình. Nếu một bản bị hỏng, có
 |---|---:|---|
 | **config** | 1 byte* | Cấu hình chung của cơ sở dữ liệu. |
 | **version** | 1 byte* | Phiên bản định dạng Superblock. |
+| **generation** | 1 byte* | Xác định header Superblock cố định mới hơn; quay từ `255` về `0`. |
 | **magic_number** | 2 byte* | Đánh dấu đầu header. |
-| **crc16** | 4 byte** | Bao phủ `config`, `version`, `magic_number` và `flags`; không bao gồm chính CRC hoặc `schema_entries`. |
 | **flags** | 1 byte* | Các cờ của Superblock. |
-| **schema_entries** | Phần còn lại | Các mục schema được ghi nối tiếp, mỗi mục có CRC và dấu xác nhận riêng. |
+| **crc16** | 4 byte** | Bao phủ header cố định và phần đệm căn chỉnh; không bao gồm chính CRC hoặc `schema_entries`. |
+| **alignment_padding** | 2 byte* | Đặt bằng `0` để căn `schema_entries` theo ranh giới 4 byte. |
+| **schema_entries** | 4.084 byte | Các mục schema được ghi nối tiếp, mỗi mục có CRC và dấu xác nhận riêng. |
 
 ```text
-       +--------+---------+-------------+-------+-------+---------------+
-S0:    | config | version | magic_number | flags | crc16 | schema_entries |
-       +--------+---------+-------------+-------+-------+---------------+
-S1:    | config | version | magic_number | flags | crc16 | schema_entries |
-       +--------+---------+-------------+-------+-------+---------------+
+       +--------+---------+------------+-------------+-------+-------+-------------------+---------------+
+S0:    | config | version | generation | magic_number | flags | crc16 | alignment_padding | schema_entries |
+       +--------+---------+------------+-------------+-------+-------+-------------------+---------------+
+S1:    | config | version | generation | magic_number | flags | crc16 | alignment_padding | schema_entries |
+       +--------+---------+------------+-------------+-------+-------+-------------------+---------------+
 ```
+
+Các trường cố định chiếm 10 byte. `alignment_padding` 2 byte đặt `schema_entries` tại offset 12; mỗi mục schema cũng được đệm để có kích thước là bội số của 4 byte.
 
 ## Mục Schema
 
@@ -203,15 +207,15 @@ Xem [README-QUANTIZATION.md](README-QUANTIZATION.md) để biết sức chứa k
 
 ## Ước tính sức chứa
 
-Mỗi Superblock có 4.087 byte cho `schema_entries`. Ước tính dưới đây giả định căn chỉnh 4 byte, có `col_signs`, `col_scale_ratios`, Essence 4 bit và Rune 1 byte; các mảng tùy chọn khác không có. 7 byte cố định là tổng kích thước các trường áp dụng cho toàn schema. Mỗi cột thêm 2 byte: 1 byte `col_widths` và 1 byte `col_units`.
+Mỗi Superblock có 4.084 byte cho `schema_entries`. Ước tính dưới đây giả định mỗi mục được căn chỉnh 4 byte, có `col_signs`, `col_scale_ratios`, Essence 4 bit và Rune 1 byte; các mảng tùy chọn khác không có. 7 byte cố định là tổng kích thước các trường áp dụng cho toàn schema. Mỗi cột thêm 2 byte: 1 byte `col_widths` và 1 byte `col_units`.
 
 | `col_count` | Kích thước mục đã căn chỉnh | Mục mỗi Superblock | Byte còn trống mỗi Superblock |
 |---:|---:|---:|---:|
-| 4 | 44 byte | 92 | 39 |
-| 8 | 80 byte | 51 | 7 |
-| 16 | 156 byte | 26 | 31 |
-| 32 | 300 byte | 13 | 187 |
-| 64 | 592 byte | 6 | 535 |
+| 4 | 44 byte | 92 | 36 |
+| 8 | 80 byte | 51 | 4 |
+| 16 | 156 byte | 26 | 28 |
+| 32 | 300 byte | 13 | 184 |
+| 64 | 592 byte | 6 | 532 |
 
 Số mục bao gồm schema ban đầu, nên số lần cập nhật schema tối đa là `số mục − 1`. Hai Superblock lưu cùng các mục; chúng là bản sao, không phải dung lượng bổ sung.
 
