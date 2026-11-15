@@ -4,7 +4,7 @@
 
 Cơ sở dữ liệu bắt đầu bằng 2 Superblock (`S0`, `S1`). Các khối còn lại thuộc một vùng lưu trữ chung. Khối Record (`R`) bắt đầu một extent; các khối Continuation (`C`) nối dài extent đó khi payload đầy. `stream_id` xác định luồng độ phân giải, còn `stream_sequence` xác định thứ tự khối trong từng luồng. Khối của nhiều luồng có thể xen kẽ nhau.
 
-**Chest** là tập giá trị cột của một bản ghi, nằm trong vùng dữ liệu đọc của payload `R` hoặc `C`. **Rune** là hệ số 1 byte gắn với một vị trí bit. **Essence** là mặt nạ bit được đóng gói trong payload cho từng cột và lần đọc. Tương tự mã lượng tử hóa, mỗi bit điều khiển một Rune: bit `1` cộng Rune đó vào giá trị, còn bit `0` thì không. Với Rune `[a, b]`, Essence `10` cho kết quả `b`.
+**Chest** là tập giá trị cột của một bản ghi, nằm trong vùng dữ liệu đọc của payload `R` hoặc `C`. **Rune** là hệ số 1 byte gắn với một vị trí bit. **Essence** là mặt nạ bit được đóng gói trong payload cho từng cột và lần đọc. Mỗi bit Essence đóng góp Rune tương ứng với dấu: `1` nghĩa là `+1 × Rune`; `0` nghĩa là `−1 × Rune`. Với Rune `[a, b, c, d]`, Essence `1010` cho kết quả `a − b + c − d`.
 
 ```text
 [S0] [S1]
@@ -70,7 +70,7 @@ Trường theo cột, theo thứ tự trong mục:
 | **col_runes** | 1 byte × tổng số bit Essence** | Có khi `schema_config1` bit 1 bằng `1`; các hệ số Rune theo thứ tự cột rồi đến vị trí bit. |
 | **padding** | Thay đổi | Căn chỉnh mục theo đơn vị ghi flash. |
 
-Tổng số bit Essence là tổng `col_essence_bits` của các cột. Ví dụ 3 cột, mỗi cột có Essence 2 bit, cần 6 Rune chiếm 6 byte. Rune được lưu một lần trong mục Schema; Essence của mỗi lần đọc chọn những Rune cần cộng.
+Tổng số bit Essence là tổng `col_essence_bits` của các cột. Ví dụ 3 cột, mỗi cột có Essence 2 bit, cần 6 Rune chiếm 6 byte. Rune được lưu một lần trong mục Schema; mỗi bit Essence xác định dấu của Rune tương ứng (`1` cộng, `0` trừ).
 
 ### `schema_config1`
 

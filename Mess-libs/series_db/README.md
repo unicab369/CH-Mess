@@ -4,7 +4,7 @@
 
 The database starts with 2 Superblocks (`S0`, `S1`); all remaining blocks come from a shared storage pool. A Record block (`R`) starts an extent, and Continuation blocks (`C`) extend it when its payload fills. Each data block belongs to a resolution stream; `stream_id` identifies the stream and `stream_sequence` orders its blocks. Streams can share the pool, so their blocks may be interleaved.
 
-A **Chest** is the set of column values for one record, stored in the readings area of an `R` or `C` payload. A **`Rune`** is a 1-byte coefficient assigned to a bit position. An **`Essence`** is a packed bit mask stored in the block payload for a column and reading. Like a quantization code, each bit controls one Rune: `1` adds its Rune to the value, and `0` does not. For Runes `[a, b]`, Essence `10` produces `b`.
+A **Chest** is the set of column values for one record, stored in the readings area of an `R` or `C` payload. A **`Rune`** is a 1-byte coefficient assigned to a bit position. An **`Essence`** is a packed bit mask stored in the block payload for a column and reading. Each Essence bit contributes its Rune with a sign: `1` means `+1 × Rune`; `0` means `−1 × Rune`. For Runes `[a, b, c, d]`, Essence `1010` produces `a − b + c − d`.
 
 ```text
 [S0] [S1]
