@@ -4,7 +4,7 @@
 
 The database starts with 2 Superblocks (`S0`, `S1`); all remaining blocks come from a shared storage pool. A Record block (`R`) starts an extent, and Continuation blocks extend it when its payload fills. Each data block belongs to a resolution stream; `stream_id` identifies the stream and `stream_sequence` orders its blocks. Streams can share the pool, so their blocks may be interleaved.
 
-A **chest** is the set of column values for one record, stored in the readings area of an R or C payload; quantization codes are stored separately.
+A **chest** is the set of column values for one record, stored in the readings area of an `R` or `C` payload; quantization codes are stored separately.
 
 ```text
 [S0] [S1]
@@ -63,13 +63,6 @@ S0:    | config | version | magic_number | flags | crc16 | schema_entries |
 S1:    | config | version | magic_number | flags | crc16 | schema_entries |
        +--------+---------+-------------+-------+-------+---------------+
 ```
-
-The Superblock `config` byte uses these bits:
-
-| Bits | Meaning |
-|---|---|
-| 7–4 | Reserved; write as `0`. |
-| 3–0 | Reserved; write as `0`. |
 
 
 ## Schema Entries
@@ -163,7 +156,7 @@ col_units  = [0, 0, 0]        # unspecified units
 
 This describes an unsigned 8-bit column, a signed 16-bit column, and an unsigned 32-bit column. Each schema change appends a new entry to both Superblocks. Existing extents retain their original `schema_id`; new data using a new schema starts in a new record block.
 
-## Record blocks (R)
+## Record blocks (`R`)
 
 Record blocks (`R0`–`Rn`) follow Superblocks `S0` and `S1`. Each record block belongs to a logical resolution stream, identified by `stream_id`, and uses a `schema_id` whose entry is committed in both Superblocks. Different streams can allocate blocks from the same shared pool.
 
@@ -244,7 +237,7 @@ Codec IDs are defined as follows:
 The codec applies to the payload across the record block and its continuation blocks. Until non-raw decoding and record-boundary rules are implemented, write codec ID `0`. Reserved flag bits must be written as zero and ignored by readers.
 
 
-## Continuation blocks (C)
+## Continuation blocks (`C`)
 
 Continuation blocks store records that follow a record block `R` when its payload is full. Each belongs to the same `stream_id` and carries a per-stream block sequence so it can be associated with the preceding extent even when blocks from other streams are physically interleaved. When a continuation block `C` fills, another continuation `C_cont` block is added. See [README-CONSTRAINTS.md](README-CONSTRAINTS.md#continuation-block-association-and-order) for the stream ordering and recovery rules.
 
