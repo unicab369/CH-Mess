@@ -38,7 +38,7 @@ When a database is accessed, it needs at least two things:
 > - `**` means the field size is configurable.
 
 
-## Superblocks (S0, S1)
+## Superblocks (`S0`, `S1`)
 
 The 2 fixed blocks used to configure the database are copies of each other. If one block is corrupted, for example, its **`magic number`** or **`CRC`** does not match, the other block can be used to recover the configuration.
 
@@ -53,9 +53,9 @@ Each Superblock contains:
 | **magic_number** | 2 bytes* | Identifies the start of the Superblock header. |
 | **crc16** | 4 bytes** | Covers `config`, `version`, `magic_number`, and `flags`, excluding the CRC field itself and `schema_entries`. |
 | **flags** | 1 byte* | Stores Superblock flags. |
-| **schema_entries** | Remaining space | Append-only schema entries. Each entry has its own CRC and commit marker; see [schema_entries](README-CONSTRAINTS.md#schema_entries) for the entry layout. |
+| **schema_entries** | Remaining space | Append-only schema entries. Each entry has its own CRC and commit marker; see [Schema Entries](#schema-entries) for the entry layout. |
 
-The Superblock is stored in 2 copies, S0 and S1. Each copy has this field layout:
+The Superblock is stored in 2 copies, `S0` and `S1`. Each copy has this field layout:
 ```text
        +--------+---------+-------------+-------+-------+---------------+
 S0:    | config | version | magic_number | flags | crc16 | schema_entries |
@@ -72,9 +72,96 @@ The Superblock `config` byte uses these bits:
 | 3–0 | Reserved; write as `0`. |
 
 
-Schema entries store the payload layouts referenced by record blocks. A schema supports 1–16 columns. `col_widths` assigns a byte width to each reading column, and every column has a `col_units` code. When `schema_config2` bit 0 is set, a separate `col_quant_bits` array gives the quantization code width for each column. See [schema_entries](README-CONSTRAINTS.md#schema_entries) for details.
+## Schema Entries
 
-> New data uses the new schema ID and **must be written to a new block**. A schema change is a hard boundary: the old extent ends and a new one begins. Since an extent starts with a record block, starting one always requires writing at least one new block.
+Schema definitions are stored as append-only entries in the unused space of both Superblocks. Each new schema is appended after the previous entry in `S0` and `S1`. A record block may use the new `schema_id` only after the entry is committed and validated in both copies. This avoids erasing and rewriting the fixed Superblock fields for each schema change.
+
+The CRC for the fixed Superblock fields does not cover the append-only entries; each entry has its own CRC and commit marker. Readers scan the entries in both copies and build a lookup from `schema_id` to payload layout.
+
+Each schema entry contains:
+
+| Field | Size | Purpose |
+|---|---:|---|
+| **entry_crc** | 2 bytes* | Validates the schema entry. |
+| **commit_marker** | 1 byte* | Marks the entry as fully written. |
+| **schema_config1** | 1 byte* | Selects byte order and indicates optional per-column fields; see [schema_config1](#schema_config1). |
+| **schema_config2** | 1 byte** | Present when `schema_config1` bit 7 is `1`; enables extended options below. |
+| **schema_id** | 1 byte* | Identifies the schema entry. |
+| **col_count** | 1 byte* | Number of columns in the schema: `1`–`16` valid; `0` and `17`–`255` reserved. |
+| **col_widths** | 1 byte / column | Allocates each column's space in the readings area in bytes. It does not store quantization settings. |
+| **col_signs** | `ceil(col_count / 8)` bytes* | Always present; one bit per column. If `schema_config1` bit 0 is `1`, use the bits (`1` = signed); otherwise treat all columns as unsigned. Unused bits are `0`. |
+
+Schema entry fields (continued):
+
+| Field | Size | Purpose |
+|---|---:|---|
+| **col_units** | 1 byte* / column | One unit code per column; see [`col_units` unit codes](#col_units-unit-codes). |
+| **col_scale_mul** | 1 byte** / column | Present when `schema_config1` bit 1 is `1`; one 1-byte multiplier per column (default `1`). E.g., `10` with multiplier `3` becomes `30`. |
+| **col_scale_ratios** | 2 bytes** / column | Present when `schema_config1` bit 3 is `1`; one numerator/denominator pair per column (default `1/1`). E.g., `10` with scale `3/2` becomes `15`. |
+| **col_scale_exp** | 1 signed byte** / column | Present when `schema_config1` bit 2 is `1`; one base-10 exponent per column (default `0`). E.g., `123` with exponent `-2` becomes `1.23`. |
+| **col_quant_bits** | 1 byte** / column | Present when `schema_config2` bit 0 is `1`; one code width per column (`0` = off; `1`, `2`, or `4` bits per reading). Other values are reserved. |
+| **padding** | Variable | Aligns the entry to the flash program unit. |
+
+
+### `schema_config1`
+
+| Bit(s) | Meaning | Purpose |
+|---|---|---|
+| 7 | `schema_config2`: `1` = yes; `0` = no. | Indicates whether the 1-byte `schema_config2` follows. |
+| 6 | `byte_order`: `0` = little-endian; `1` = big-endian. | Sets byte order for multi-byte column values. |
+| 5–4 | `reserved`: write `0`. | Reserved for future options. |
+| 1 | `col_scale_mul`: `1` = yes; `0` = no (multiplier defaults to `1`). | Indicates whether `col_scale_mul` values follow. |
+| 2 | `col_scale_exp`: `1` = yes; `0` = no (exponent defaults to `0`). | Indicates whether `col_scale_exp` follows. |
+| 3 | `col_scale_ratios`: `1` = yes; `0` = no (scale defaults to `1/1`). | Indicates whether `col_scale_ratios` follows. |
+| 0 | `col_signs`: `1` = yes; `0` = no (all columns unsigned). | Enables signedness from `col_signs`. |
+
+If bit 7 of `schema_config1` is `1`, the next byte in the schema entry is `schema_config2`:
+
+### `schema_config2`
+
+| Bit(s) | Meaning | Purpose |
+|---:|---|---|
+| 7 | `schema_config3`: future extension flag; write `0`. | Will indicate whether `schema_config3` follows. |
+| 6–1 | `reserved`: write `0`. | Reserved for future options. |
+| 0 | `col_quant_bits`: `1` = yes; `0` = no. | Indicates whether the per-column quantization bit counts follow. |
+
+### `col_units` Unit Codes
+
+Unit codes are 1 byte and are assigned as follows:
+
+| Codes | Units, in code order |
+|---:|---|
+| `0–1` | Unspecified, Count |
+| `2` | Thaums |
+| `3–4` | Percent (%), Parts per million (ppm) |
+| `5–9` | Lux, Decibel milliwatt (dBm), Decibel (dB), Degree (°), Radian |
+| `10–12` | Kelvin (K), Celsius (°C), Fahrenheit (°F) |
+| `13–16` | Inch, Foot, Yard, Mile |
+| `17–19` | Ounce, Pound, Short ton (US) |
+| `20–22` | Nanosecond, Microsecond, Millisecond |
+| `23–29` | Second, Minute, Hour, Day, Calendar month, Calendar year, Week |
+| `30–32` | Hertz (Hz), kilohertz (kHz), gigahertz (GHz) |
+
+When reading, the schema log answers: “Given a `schema_id`, what is the byte layout of the payload?” For example:
+
+```text
+payload     = 0x01 0x02 0x03 0x04
+temperature = 0x01 0x02
+humidity    = 0x03 0x04
+```
+
+A three-column schema can be represented as:
+
+```text
+schema_id     = 0
+col_count  = 3
+schema_config1   = 0b00000001  # col_signs is enabled
+col_widths = [1, 2, 4]        # bytes per column
+col_signs  = 0b01000000
+col_units  = [0, 0, 0]        # unspecified units
+```
+
+This describes an unsigned 8-bit column, a signed 16-bit column, and an unsigned 32-bit column. Each schema change appends a new entry to both Superblocks. Existing extents retain their original `schema_id`; new data using a new schema starts in a new record block.
 
 ## Record blocks (R)
 
