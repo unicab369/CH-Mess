@@ -151,17 +151,6 @@ Khối `R` dùng một `schema_id` đã xác nhận ở cả hai Superblock và 
 
 `col_essence_bits` nằm trong schema; Essence nằm trong payload của khối.
 
-Header khối `R` chiếm 15 byte. Các ước tính sau không tính vùng Essence:
-
-| Kích thước Chest | Bản ghi/khối `R` | Byte payload chưa dùng |
-|---:|---:|---:|
-| 4 byte | 1.019 | 3 |
-| 8 byte | 509 | 7 |
-| 12 byte | 339 | 11 |
-| 16 byte | 254 | 15 |
-| 20 byte | 203 | 19 |
-| 24 byte | 169 | 23 |
-
 ## Cấu hình Record
 
 `record_config` chiếm 5 byte:
@@ -214,7 +203,7 @@ Mỗi Superblock có 4.087 byte dành cho `schema_entries`. `col_count` hỗ tr�
 
 Với 12 cột có độ rộng bằng nhau, payload khối `C` chứa:
 
-| Độ rộng/cột | Kích thước Chest | Bản ghi/khối `C` | Byte chưa dùng |
+| Độ rộng/cột | Kích thước Chest | Chest/khối `C` | Byte chưa dùng |
 |---:|---:|---:|---:|
 | 1 byte | 12 byte | 340 | 5 |
 | 2 byte | 24 byte | 170 | 5 |
@@ -223,7 +212,7 @@ Với 12 cột có độ rộng bằng nhau, payload khối `C` chứa:
 
 Với 6 cột có độ rộng bằng nhau:
 
-| Độ rộng/cột | Kích thước Chest | Bản ghi/khối `C` | Byte chưa dùng |
+| Độ rộng/cột | Kích thước Chest | Chest/khối `C` | Byte chưa dùng |
 |---:|---:|---:|---:|
 | 1 byte | 6 byte | 680 | 5 |
 | 2 byte | 12 byte | 340 | 5 |

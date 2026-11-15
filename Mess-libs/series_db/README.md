@@ -98,9 +98,6 @@ Per-column fields, in entry order:
 | **col_runes** | 1 byte × total Essence bits** | Present when `schema_config1` bit 1 is `1`; Rune coefficients ordered by column, then bit position. |
 | **padding** | Variable | Aligns the entry to the flash program unit. |
 
-Total Essence bits is the sum of `col_essence_bits` across all columns. For example, 3 columns with 2-bit Essences need 6 Runes, occupying 6 bytes. Runes are stored once in the Schema Entry; each reading's Essence selects which Runes to add.
-
-
 ### `schema_config1`
 
 | Bit(s) | Meaning | Purpose |
@@ -181,20 +178,6 @@ A record block contains:
 
 `col_essence_bits` is stored once in the schema entry and selects the Essence width for each column. The Essences are stored in the block payload.
 
-Approximate records per block, assuming each chest is entirely contained in 1 block. A **chest** contains all column values for one record; its size excludes Essences:
-
-Record block header: 15 bytes.
-
-| Chest size | Records per block | Unused payload bytes |
-|---:|---:|---:|
-| 4 bytes | 1,019 | 3 |
-| 8 bytes | 509 | 7 |
-| 12 bytes | 339 | 11 |
-| 16 bytes | 254 | 15 |
-| 20 bytes | 203 | 19 |
-| 24 bytes | 169 | 23 |
-
-
 ## Record Configuration
 
 `record_config` occupies 5 bytes:
@@ -262,7 +245,7 @@ Assuming 4-byte alignment and no optional scale or quantization arrays: with the
 
 For 12 columns of equal byte width, Continuation block payload capacity is:
 
-| Width per column | Chest size | Records per Continuation block | Unused payload space |
+| Width per column | Chest size | Chests per Continuation block | Unused payload space |
 |---:|---:|---:|---:|
 | 1 byte | 12 bytes | 340 | 5 bytes |
 | 2 bytes | 24 bytes | 170 | 5 bytes |
@@ -271,7 +254,7 @@ For 12 columns of equal byte width, Continuation block payload capacity is:
 
 For 6 columns of equal byte width, Continuation block payload capacity is:
 
-| Width per column | Chest size | Records per Continuation block | Unused payload space |
+| Width per column | Chest size | Chests per Continuation block | Unused payload space |
 |---:|---:|---:|---:|
 | 1 byte | 6 bytes | 680 | 5 bytes |
 | 2 bytes | 12 bytes | 340 | 5 bytes |
