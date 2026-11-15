@@ -229,17 +229,17 @@ Với 6 cột có độ rộng bằng nhau:
 | 4 byte | 24 byte | 170 | 5 |
 | 8 byte | 48 byte | 85 | 5 |
 
-Bảng sau ước tính số bản ghi với Chest 4 byte, cách nhau 1, 10 hoặc 30 giây. Với Chest 8 byte, số bản ghi và thời gian lưu được xấp xỉ bằng một nửa. Đơn vị dung lượng là nhị phân.
+Bảng giả định mỗi bản ghi có một cột 4 byte và một Essence 4 bit, được lưu cách nhau 1, 10 hoặc 30 giây. Số bản ghi bao gồm sức chứa của khối Record và tất cả khối Continuation. Đơn vị dung lượng là nhị phân.
 
 | Dung lượng | Khối `C` | Dung lượng header `C` | Bản ghi | Thời gian (1 giây) | Thời gian (10 giây) | Thời gian (30 giây) |
 |---:|---:|---:|---:|---:|---:|---:|
-| 32 KiB | 5 | 0,04 KiB | 5.105 | ~1,4 giờ | ~14,2 giờ | ~42,5 giờ |
-| 128 KiB | 29 | 0,3 KiB | 29.609 | ~8,2 giờ | ~3,4 ngày | ~10,3 ngày |
-| 1 MiB | 253 | 2 KiB | 258.313 | ~3,0 ngày | ~29,9 ngày | ~89,7 ngày |
-| 32 MiB | 8.189 | 72 KiB | 8,4 × 10⁶ | ~96,8 ngày | ~2,6 năm | ~7,9 năm |
-| 126 MiB | 32.253 | 283 KiB | 32,9 × 10⁶ | ~1,0 năm | ~10,4 năm | ~31,3 năm |
-| 512 MiB | 131.069 | 1.152 KiB | 133,8 × 10⁶ | ~4,2 năm | ~42 năm | ~127 năm |
-| 1 GiB | 262.141 | 2.304 KiB | 267,6 × 10⁶ | ~8,5 năm | ~85 năm | ~254 năm |
+| 32 KiB | 5 | 0,04 KiB | 5.441 | ~1,5 giờ | ~15,1 giờ | ~1,9 ngày |
+| 128 KiB | 29 | 0,3 KiB | 27.209 | ~7,6 giờ | ~3,1 ngày | ~9,4 ngày |
+| 1 MiB | 253 | 2 KiB | 230.377 | ~2,7 ngày | ~26,7 ngày | ~80,0 ngày |
+| 32 MiB | 8.189 | 72 KiB | 7,4 × 10⁶ | ~86,0 ngày | ~2,4 năm | ~7,1 năm |
+| 126 MiB | 32.253 | 283 KiB | 29,3 × 10⁶ | ~338,6 ngày | ~9,3 năm | ~27,8 năm |
+| 512 MiB | 131.069 | 1.152 KiB | 118,9 × 10⁶ | ~3,8 năm | ~37,7 năm | ~113,1 năm |
+| 1 GiB | 262.141 | 2.304 KiB | 237,8 × 10⁶ | ~7,5 năm | ~75,4 năm | ~226,2 năm |
 
-> Giả sử có 2 Superblock và 1 khối `R`; các khối 4 KiB còn lại đều là `C`. Đây là giới hạn trên vì nhiều luồng cần thêm khối `R`.
+> Giả sử có 2 Superblock và 1 khối `R`; các khối 4 KiB còn lại đều là `C`. Mỗi khối `R` chứa 906 bản ghi và mỗi khối `C` chứa 907 bản ghi, đã tính cả vùng Essence 4 bit. Đây là giới hạn trên vì nhiều luồng cần thêm khối `R`.
 

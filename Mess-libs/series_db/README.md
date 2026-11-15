@@ -253,16 +253,16 @@ The entry count includes the initial schema, so the maximum number of schema upd
 
 ### Total Storage Capacity
 
-The table estimates capacity for records with 4-byte chests stored every 1, 10, or 30 seconds. With 8-byte chests, the record count and time to full are approximately half. Storage sizes use binary units.
+The table assumes one 4-byte column and one 4-bit Essence per record, stored every 1, 10, or 30 seconds. Record counts include the capacity of the Record block and all Continuation blocks. Storage sizes use binary units.
 
 | Storage size | Continuation<br>blocks | Continuation<br>header space | Records | Time to full<br>(1 sec) | Time to full<br>(10 secs) | Time to full<br>(30 secs) |
 |---:|---:|---:|---:|---:|---:|---:|
-| 32 KiB | 5 | 0.04 KiB | 5,105 | ~1.4 hours | ~14.2 hours | ~42.5 hours |
-| 128 KiB | 29 | 0.3 KiB | 29,609 | ~8.2 hours | ~3.4 days | ~10.3 days |
-| 1 MiB | 253 | 2 KiB | 258,313 | ~3.0 days | ~29.9 days | ~89.7 days |
-| 32 MiB | 8,189 | 72 KiB | 8.4 × 10⁶ | ~96.8 days | ~2.6 years | ~7.9 years |
-| 126 MiB | 32,253 | 283 KiB | 32.9 × 10⁶ | ~1.0 years | ~10.4 years | ~31.3 years |
-| 512 MiB | 131,069 | 1,152 KiB | 133.8 × 10⁶ | ~4.2 years | ~42 years | ~127 years |
-| 1 GiB | 262,141 | 2,304 KiB | 267.6 × 10⁶ | ~8.5 years | ~85 years | ~254 years |
+| 32 KiB | 5 | 0.04 KiB | 5,441 | ~1.5 hours | ~15.1 hours | ~1.9 days |
+| 128 KiB | 29 | 0.3 KiB | 27,209 | ~7.6 hours | ~3.1 days | ~9.4 days |
+| 1 MiB | 253 | 2 KiB | 230,377 | ~2.7 days | ~26.7 days | ~80.0 days |
+| 32 MiB | 8,189 | 72 KiB | 7.4 × 10⁶ | ~86.0 days | ~2.4 years | ~7.1 years |
+| 126 MiB | 32,253 | 283 KiB | 29.3 × 10⁶ | ~338.6 days | ~9.3 years | ~27.8 years |
+| 512 MiB | 131,069 | 1,152 KiB | 118.9 × 10⁶ | ~3.8 years | ~37.7 years | ~113.1 years |
+| 1 GiB | 262,141 | 2,304 KiB | 237.8 × 10⁶ | ~7.5 years | ~75.4 years | ~226.2 years |
 
-> Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. This is an upper bound; multiple streams need additional Record blocks.
+> Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. Each Record block holds 906 records and each Continuation block holds 907, including their 4-bit Essence storage. This is an upper bound; multiple streams need additional Record blocks.
