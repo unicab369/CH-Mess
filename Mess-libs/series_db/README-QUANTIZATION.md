@@ -16,6 +16,19 @@ Switching from 4-bit to 2-bit Essences halves the Essence area. For a 4-byte che
 
 ## Essence Capacity by Column Width
 
+### 1-byte columns / 0-bit Essence
+
+| Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Essence bytes per block (R \| C) | Unused payload per block (R \| C) |
+|---:|---:|---:|---:|---:|---:|
+| 4 B | 4 | 1,019 \| 1,021 | 4,076 \| 4,084 B | 0 \| 0 B | `3 \| 1 B` |
+| 8 B | 8 | 509 \| 510 | 4,072 \| 4,080 B | 0 \| 0 B | `7 \| 5 B` |
+| 12 B | 12 | 339 \| 340 | 4,068 \| 4,080 B | 0 \| 0 B | `11 \| 5 B` |
+| 16 B | 16 | 254 \| 255 | 4,064 \| 4,080 B | 0 \| 0 B | `15 \| 5 B` |
+| 20 B | 20 | 203 \| 204 | 4,060 \| 4,080 B | 0 \| 0 B | `19 \| 5 B` |
+| 24 B | 24 | 169 \| 170 | 4,056 \| 4,080 B | 0 \| 0 B | `23 \| 5 B` |
+| 28 B | 28 | 145 \| 145 | 4,060 \| 4,060 B | 0 \| 0 B | `19 \| 25 B` |
+| 32 B | 32 | 127 \| 127 | 4,064 \| 4,064 B | 0 \| 0 B | `15 \| 21 B` |
+
 ### 1-byte columns / 2-bit Essence
 
 | Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Essence bytes per block (R \| C) | Unused payload per block (R \| C) |
@@ -42,6 +55,21 @@ Switching from 4-bit to 2-bit Essences halves the Essence area. For a 4-byte che
 | 28 B | 28 | 97 \| 97 | 2,716 \| 2,716 B | 1,358 \| 1,358 B | `5 \| 11 B` |
 | 32 B | 32 | 84 \| 85 | 2,688 \| 2,720 B | 1,344 \| 1,360 B | `47 \| 5 B` |
 
+---
+
+### 2-byte columns / 0-bit Essence
+
+| Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Essence bytes per block (R \| C) | Unused payload per block (R \| C) |
+|---:|---:|---:|---:|---:|---:|
+| 4 B | 2 | 1,019 \| 1,021 | 4,076 \| 4,084 B | 0 \| 0 B | `3 \| 1 B` |
+| 8 B | 4 | 509 \| 510 | 4,072 \| 4,080 B | 0 \| 0 B | `7 \| 5 B` |
+| 12 B | 6 | 339 \| 340 | 4,068 \| 4,080 B | 0 \| 0 B | `11 \| 5 B` |
+| 16 B | 8 | 254 \| 255 | 4,064 \| 4,080 B | 0 \| 0 B | `15 \| 5 B` |
+| 20 B | 10 | 203 \| 204 | 4,060 \| 4,080 B | 0 \| 0 B | `19 \| 5 B` |
+| 24 B | 12 | 169 \| 170 | 4,056 \| 4,080 B | 0 \| 0 B | `23 \| 5 B` |
+| 28 B | 14 | 145 \| 145 | 4,060 \| 4,060 B | 0 \| 0 B | `19 \| 25 B` |
+| 32 B | 16 | 127 \| 127 | 4,064 \| 4,064 B | 0 \| 0 B | `15 \| 21 B` |
+
 ### 2-byte columns / 2-bit Essence
 
 | Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Essence bytes per block (R \| C) | Unused payload per block (R \| C) |
@@ -67,6 +95,21 @@ Switching from 4-bit to 2-bit Essences halves the Essence area. For a 4-byte che
 | 24 B | 12 | 135 \| 136 | 3,240 \| 3,264 B | 810 \| 816 B | `29 \| 5 B` |
 | 28 B | 14 | 116 \| 116 | 3,248 \| 3,248 B | 812 \| 812 B | `19 \| 25 B` |
 | 32 B | 16 | 101 \| 102 | 3,232 \| 3,264 B | 808 \| 816 B | `39 \| 5 B` |
+
+---
+
+### 4-byte columns / 0-bit Essence
+
+| Chest size | Columns per chest | Chests per block (R \| C) | Chest bytes per block (R \| C) | Essence bytes per block (R \| C) | Unused payload per block (R \| C) |
+|---:|---:|---:|---:|---:|---:|
+| 4 B | 1 | 1,019 \| 1,021 | 4,076 \| 4,084 B | 0 \| 0 B | `3 \| 1 B` |
+| 8 B | 2 | 509 \| 510 | 4,072 \| 4,080 B | 0 \| 0 B | `7 \| 5 B` |
+| 12 B | 3 | 339 \| 340 | 4,068 \| 4,080 B | 0 \| 0 B | `11 \| 5 B` |
+| 16 B | 4 | 254 \| 255 | 4,064 \| 4,080 B | 0 \| 0 B | `15 \| 5 B` |
+| 20 B | 5 | 203 \| 204 | 4,060 \| 4,080 B | 0 \| 0 B | `19 \| 5 B` |
+| 24 B | 6 | 169 \| 170 | 4,056 \| 4,080 B | 0 \| 0 B | `23 \| 5 B` |
+| 28 B | 7 | 145 \| 145 | 4,060 \| 4,060 B | 0 \| 0 B | `19 \| 25 B` |
+| 32 B | 8 | 127 \| 127 | 4,064 \| 4,064 B | 0 \| 0 B | `15 \| 21 B` |
 
 ### 4-byte columns / 2-bit Essence
 

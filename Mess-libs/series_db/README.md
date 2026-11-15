@@ -81,7 +81,7 @@ Schema-wide fields:
 | **commit_marker** | 1 byte* | Marks the entry as fully written. |
 | **schema_config1** | 1 byte* | Selects byte order and indicates optional per-column fields; see [schema_config1](#schema_config1). |
 | **schema_id** | 1 byte* | Identifies the schema entry. |
-| **col_count** | 1 byte* | Number of columns in the schema: `1`–`16` valid; `0` and `17`–`255` reserved. |
+| **col_count** | 1 byte* | Number of columns in the schema: `1`–`255` valid; `0` is reserved. |
 | **codec** | 1 byte* | Selects how blocks using this schema encode their payload; IDs use the low 3 bits, and the high 5 bits are `0`. See [Codec IDs](#codec-ids). |
 
 Per-column fields, in entry order:
@@ -237,29 +237,19 @@ The capacity estimates below assume no Essence area; enabling it reduces the num
 
 ## Capacity Estimates
 
-### Schema Entries and Continuation Blocks
+### Schema Entry Capacity
 
-Each Superblock has 4,087 bytes for append-only `schema_entries`. `col_count` is limited to 1–16, although its field is 1 byte. A larger count makes each entry larger and leaves room for fewer entries.
+Each Superblock has 4,087 bytes for append-only `schema_entries`. This estimate assumes 4-byte alignment, `col_signs`, `col_scale_ratios`, 4-bit Essences, and 1-byte Runes. Other optional arrays are absent. The 7 fixed bytes come from the schema-wide fields. For every column, `col_widths` and `col_units` add 2 bytes total: 1 byte each.
 
-Assuming 4-byte alignment and no optional scale or quantization arrays: with the maximum `col_count = 16`, each entry is 44 bytes, so one Superblock holds about 92 entries.
-
-For 12 columns of equal byte width, Continuation block payload capacity is:
-
-| Width per column | Chest size | Chests per Continuation block | Unused payload space |
+| `col_count` | Aligned entry size | Entries per Superblock | Unused bytes per Superblock |
 |---:|---:|---:|---:|
-| 1 byte | 12 bytes | 340 | 5 bytes |
-| 2 bytes | 24 bytes | 170 | 5 bytes |
-| 4 bytes | 48 bytes | 85 | 5 bytes |
-| 8 bytes | 96 bytes | 42 | 53 bytes |
+| 4 | 44 bytes | 92 | 39 |
+| 8 | 80 bytes | 51 | 7 |
+| 16 | 156 bytes | 26 | 31 |
+| 32 | 300 bytes | 13 | 187 |
+| 64 | 592 bytes | 6 | 535 |
 
-For 6 columns of equal byte width, Continuation block payload capacity is:
-
-| Width per column | Chest size | Chests per Continuation block | Unused payload space |
-|---:|---:|---:|---:|
-| 1 byte | 6 bytes | 680 | 5 bytes |
-| 2 bytes | 12 bytes | 340 | 5 bytes |
-| 4 bytes | 24 bytes | 170 | 5 bytes |
-| 8 bytes | 48 bytes | 85 | 5 bytes |
+The entry count includes the initial schema, so the maximum number of schema updates is `entry count − 1`. Both Superblocks store the same entries; they are copies, not extra capacity.
 
 ### Total Storage Capacity
 

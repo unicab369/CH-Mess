@@ -53,7 +53,7 @@ Trường áp dụng cho toàn schema:
 | **commit_marker** | 1 byte* | Đánh dấu mục đã ghi xong. |
 | **schema_config1** | 1 byte* | Chọn thứ tự byte và các trường tùy chọn; xem [schema_config1](#schema_config1). |
 | **schema_id** | 1 byte* | ID của mục schema. |
-| **col_count** | 1 byte* | Số cột; `1`–`16` hợp lệ, các giá trị khác dành riêng. |
+| **col_count** | 1 byte* | Số cột; `1`–`255` hợp lệ, `0` dành riêng. |
 | **codec** | 1 byte* | Chọn cách mã hóa payload cho các khối dùng schema này; dùng 3 bit thấp, 5 bit cao bằng `0`. |
 
 Trường theo cột, theo thứ tự trong mục:
@@ -199,7 +199,17 @@ Xem [README-QUANTIZATION.md](README-QUANTIZATION.md) để biết sức chứa k
 
 ## Ước tính sức chứa
 
-Mỗi Superblock có 4.087 byte dành cho `schema_entries`. `col_count` hỗ trợ 1–16 cột. Với 16 cột, căn chỉnh 4 byte và không có mảng scale hoặc Essence tùy chọn, một mục chiếm 44 byte; mỗi Superblock chứa khoảng 92 mục.
+Mỗi Superblock có 4.087 byte cho `schema_entries`. Ước tính dưới đây giả định căn chỉnh 4 byte, có `col_signs`, `col_scale_ratios`, Essence 4 bit và Rune 1 byte; các mảng tùy chọn khác không có. 7 byte cố định là tổng kích thước các trường áp dụng cho toàn schema. Mỗi cột thêm 2 byte: 1 byte `col_widths` và 1 byte `col_units`.
+
+| `col_count` | Kích thước mục đã căn chỉnh | Mục mỗi Superblock | Byte còn trống mỗi Superblock |
+|---:|---:|---:|---:|
+| 4 | 44 byte | 92 | 39 |
+| 8 | 80 byte | 51 | 7 |
+| 16 | 156 byte | 26 | 31 |
+| 32 | 300 byte | 13 | 187 |
+| 64 | 592 byte | 6 | 535 |
+
+Số mục bao gồm schema ban đầu, nên số lần cập nhật schema tối đa là `số mục − 1`. Hai Superblock lưu cùng các mục; chúng là bản sao, không phải dung lượng bổ sung.
 
 Với 12 cột có độ rộng bằng nhau, payload khối `C` chứa:
 
