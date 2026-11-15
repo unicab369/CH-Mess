@@ -1,4 +1,21 @@
-# Series DB
+# SandglassDB
+
+## Overview
+
+The database starts with 2 Superblocks (`S0`, `S1`); all remaining blocks come from a shared storage pool. A Record block (`R`) starts an extent, and Continuation blocks extend it when its payload fills. Each data block belongs to a resolution stream; `stream_id` identifies the stream and `stream_sequence` orders its blocks. Streams can share the pool, so their blocks may be interleaved.
+
+A **chest** is the set of column values for one record, stored in the readings area of an R or C payload; quantization codes are stored separately.
+
+```text
+[S0] [S1]
+[R0] [R0-C0] [R0-C1] [R0-C2] ...
+[R1] [R1-C0] [R1-C1] [R1-C2] ...
+[R2] [R2-C0] [R2-C1] [R2-C2] ...
+...
+```
+
+> Each bracket represents one 4 KiB block.
+
 
 Flash storage is divided into blocks. Each block can store 4094 bytes of data.
 
@@ -20,6 +37,7 @@ When a database is accessed, it needs at least two things:
 > - `*` means the field is expected to remain part of the format long term.
 > - `**` means the field size is configurable.
 
+
 ## Superblocks (S0, S1)
 
 The 2 fixed blocks used to configure the database are copies of each other. If one block is corrupted, for example, its **`magic number`** or **`CRC`** does not match, the other block can be used to recover the configuration.
@@ -30,20 +48,20 @@ Each Superblock contains:
 
 | field | size | purpose |
 |---|---:|---|
-| **config** (`G`) | 1 byte* | Stores database-wide configuration options. |
-| **version** (`V`) | 1 byte* | Identifies the Superblock format. |
-| **magic_number** (`M`) | 2 bytes* | Identifies the start of the Superblock header. |
-| **crc16** (`C`) | 4 bytes** | Covers `config`, `version`, `magic_number`, and `flags`, excluding the CRC field itself and `schema_entries`. |
-| **flags** (`F`) | 1 byte* | Stores Superblock flags. |
-| **schema_entries** (`S`) | Remaining space | Append-only schema entries. Each entry has its own CRC and commit marker; see [schema_entries](README-CONSTRAINTS.md#schema_entries) for the entry layout. |
+| **config** | 1 byte* | Stores database-wide configuration options. |
+| **version** | 1 byte* | Identifies the Superblock format. |
+| **magic_number** | 2 bytes* | Identifies the start of the Superblock header. |
+| **crc16** | 4 bytes** | Covers `config`, `version`, `magic_number`, and `flags`, excluding the CRC field itself and `schema_entries`. |
+| **flags** | 1 byte* | Stores Superblock flags. |
+| **schema_entries** | Remaining space | Append-only schema entries. Each entry has its own CRC and commit marker; see [schema_entries](README-CONSTRAINTS.md#schema_entries) for the entry layout. |
 
 The Superblock is stored in 2 copies, S0 and S1. Each copy has this field layout:
 ```text
-       +---+---+---+---+---+---+
-S0:    | G | V | M | F | C | S |
-       +---+---+---+---+---+---+
-S1:    | G | V | M | F | C | S |
-       +---+---+---+---+---+---+
+       +--------+---------+-------------+-------+-------+---------------+
+S0:    | config | version | magic_number | flags | crc16 | schema_entries |
+       +--------+---------+-------------+-------+-------+---------------+
+S1:    | config | version | magic_number | flags | crc16 | schema_entries |
+       +--------+---------+-------------+-------+-------+---------------+
 ```
 
 The Superblock `config` byte uses these bits:
@@ -58,7 +76,7 @@ Schema entries store the payload layouts referenced by record blocks. A schema s
 
 > New data uses the new schema ID and **must be written to a new block**. A schema change is a hard boundary: the old extent ends and a new one begins. Since an extent starts with a record block, starting one always requires writing at least one new block.
 
-## Record blocks (R_block)
+## Record blocks (R)
 
 Record blocks (`R0`–`Rn`) follow Superblocks `S0` and `S1`. Each record block belongs to a logical resolution stream, identified by `stream_id`, and uses a `schema_id` whose entry is committed in both Superblocks. Different streams can allocate blocks from the same shared pool.
 
@@ -109,7 +127,7 @@ Record block header: 16 bytes.
 | 20 bytes | 203 | 18 |
 | 24 bytes | 169 | 22 |
 
-## Continuation blocks (C_block)
+## Continuation blocks (C)
 
 Continuation blocks store records that follow a record block `R` when its payload is full. Each belongs to the same `stream_id` and carries a per-stream block sequence so it can be associated with the preceding extent even when blocks from other streams are physically interleaved. When a continuation block `C` fills, another continuation `C_cont` block is added. See [README-CONSTRAINTS.md](README-CONSTRAINTS.md#continuation-block-association-and-order) for the stream ordering and recovery rules.
 
@@ -141,18 +159,6 @@ Continuation block header: 9 bytes.
 | 24 bytes | 170 | 5 |
 
 > Unused bytes are the remaining payload space after storing whole records. The counts assume records are packed consecutively with no alignment padding.
-
-
-```text
-[S0] [S1]
-[R0] [R0-C0] [R0-C1] [R0-C2] ...
-[R1] [R1-C0] [R1-C1] [R1-C2] ...
-[R2] [R2-C0] [R2-C1] [R2-C2] ...
-...
-```
-
-> Each bracket represents one 4 KiB block.
-
 ## Payload
 
 Each Record or Continuation block stores chests and packed quantization codes in separate areas. Chests grow forward from the start of the payload; codes grow backward from its end:
