@@ -13,34 +13,6 @@
 - Readers scan the full block region because an erased/free block does not end every stream's log. Define how readers and the allocator distinguish erased/free blocks from allocated but invalid blocks.
 - Cleanup or compaction must preserve each stream's sequence or rewrite that stream as a new sequence.
 
-## Record Configuration
-
-`record_config` occupies 6 bytes:
-
-| field | size | purpose |
-|---|---:|---|
-| `time_value` | 4 bytes | Stores the time value for records in the block. |
-| `time_format` | 1 byte | Identifies how the time value is represented. |
-| `flags` | 1 byte (8 bits) | Stores record configuration flags. Bits 7–5 encode the codec; bits 4–0 are reserved. |
-
-```text
-bit:    7   6   5   4   3   2   1   0
-      +-----------+-------------------+
-      | codec (3) |    reserved (5)   |
-      +-----------+-------------------+
-```
-
-Codec IDs are defined as follows:
-
-| ID | codec | meaning |
-|---:|---|---|
-| `0` | Raw | Store records unchanged according to the schema; default. |
-| `1` | Run-length encoding (RLE) | Store repeated identical records once with a count. |
-| `2` | Delta + varint | Store the first record raw, then signed per-field differences from the previous record as variable-length integers. The exact integer encoding and field ordering must be specified before implementation. |
-| `3`–`7` | Reserved | Do not write; readers should reject blocks using these IDs as unsupported. |
-
-The codec applies to the payload across the record block and its continuation blocks. Until non-raw decoding and record-boundary rules are implemented, write codec ID `0`. Reserved flag bits must be written as zero and ignored by readers.
-
 ## Superblock Recovery
 
 Define the Superblock update and recovery procedure. If both copies are valid but differ, specify how to choose the current copy; consider a generation counter or sequence number.
