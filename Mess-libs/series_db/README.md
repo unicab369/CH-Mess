@@ -58,7 +58,7 @@ Schema entries store the payload layouts referenced by record blocks. A schema s
 
 > New data uses the new schema ID and **must be written to a new block**. A schema change is a hard boundary: the old extent ends and a new one begins. Since an extent starts with a record block, starting one always requires writing at least one new block.
 
-## Record blocks (R)
+## Record blocks (R_block)
 
 Record blocks (`R0`–`Rn`) follow Superblocks `S0` and `S1`. Each record block belongs to a logical resolution stream, identified by `stream_id`, and uses a `schema_id` whose entry is committed in both Superblocks. Different streams can allocate blocks from the same shared pool.
 
@@ -109,7 +109,7 @@ Record block header: 16 bytes.
 | 20 bytes | 203 | 18 |
 | 24 bytes | 169 | 22 |
 
-## Continuation blocks (C)
+## Continuation blocks (C_block)
 
 Continuation blocks store records that follow a record block `R` when its payload is full. Each belongs to the same `stream_id` and carries a per-stream block sequence so it can be associated with the preceding extent even when blocks from other streams are physically interleaved. When a continuation block `C` fills, another continuation `C_cont` block is added. See [README-CONSTRAINTS.md](README-CONSTRAINTS.md#continuation-block-association-and-order) for the stream ordering and recovery rules.
 
