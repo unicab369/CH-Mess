@@ -71,7 +71,9 @@ The fixed fields occupy 10 bytes. The 2-byte `alignment_padding` places `schema_
 
 ## Schema Entries
 
-Schema definitions are stored as append-only entries in the unused space of both Superblocks. Each new schema is appended after the previous entry in `S0` and `S1`. A record block may use the new `schema_id` only after the entry is committed and validated in both copies. This avoids erasing and rewriting the fixed Superblock fields for each schema change.
+Schema definitions are stored as append-only entries in the unused space of both Superblocks. Each schema update gets a new, unused `schema_id` and is appended after the previous entry in `S0` and `S1`; existing entries and IDs are not changed or reused. A record block may use the new `schema_id` only after the entry is committed and validated in both copies. This avoids erasing and rewriting the fixed Superblock fields for each schema change.
+
+The application selects the `schema_id` for each new `R` block. Appending a schema entry does not switch streams automatically. For example, after adding `schema_id = 4`, the application switches a stream by writing its next `R` with `schema_id = 4`; that `R`'s `C` blocks use the same schema. Other streams can keep using their existing IDs.
 
 The CRC for the fixed Superblock fields does not cover the append-only entries; each entry has its own CRC and commit marker. Readers scan the entries in both copies and build a lookup from `schema_id` to payload layout.
 
@@ -164,6 +166,20 @@ col_units  = [0, 0, 0]        # unspecified units
 
 This describes an unsigned 8-bit column, a signed 16-bit column, and an unsigned 32-bit column. Each schema change appends a new entry to both Superblocks. Existing extents retain their original `schema_id`; new data using a new schema starts in a new record block.
 
+### Schema Entry Capacity
+
+Each Superblock has 4,084 bytes for append-only `schema_entries`. This estimate assumes 4-byte entry alignment, `col_signs`, `col_scale_ratios`, 4-bit Essences, and 1-byte Runes. Other optional arrays are absent. The 7 fixed bytes come from the schema-wide fields. For every column, `col_widths` and `col_units` add 2 bytes total: 1 byte each.
+
+| `col_count` | Aligned entry size | Entries per Superblock | Unused bytes per Superblock |
+|---:|---:|---:|---:|
+| 4 | 44 bytes | 92 | 36 |
+| 8 | 80 bytes | 51 | 4 |
+| 16 | 156 bytes | 26 | 28 |
+| 32 | 300 bytes | 13 | 184 |
+| 64 | 592 bytes | 6 | 532 |
+
+The entry count includes the initial schema, so the maximum number of schema updates is `entry count − 1`. Both Superblocks store the same entries; they are copies, not extra capacity.
+
 ## Streams
 
 Both `R` and `C` block headers contain a `stream_id` and a `stream_counter`. The application chooses a `stream_id` for each dataset. The library appends all streams to one physical log, so blocks from different streams can interleave. `stream_counter` starts at `0` for each stream and increases by `1` for every `R` or `C` block in that stream.
@@ -180,6 +196,8 @@ Reader separates the streams:
 stream_id = 0: [R, stream_counter = 0] → [C, stream_counter = 1] → [C, stream_counter = 2]
 stream_id = 1: [R, stream_counter = 0] → [C, stream_counter = 1]
 ```
+
+`schema_id` is independent of `stream_id`. Each `R` selects the schema for its extent, and its `C` blocks use that schema. Different streams can use different schemas; a stream can switch schemas by starting a new `R` extent.
 
 ## Record blocks (`R`)
 
@@ -251,7 +269,10 @@ Continuation block header: 11 bytes.
 Each Record or Continuation block stores chests and packed Essences in separate areas. Chests grow forward from the start of the payload; Essences grow backward from its end:
 
 ```text
-[block header] [chests grow →             ][← packed Essences]
+Extent example (each row is one 4 KiB block):
+[R block header] [chests grow →             ][← packed Essences]
+[C block header] [chests grow →             ][← packed Essences]
+[C block header] [chests grow →             ][← packed Essences]
 ```
 
 The schema's `col_widths` determines each chest's column sizes in bytes. When `schema_config1` bit 1 enables `col_essence_bits`, each nonzero entry gives the number of Essence bits stored for that column in each chest. Essences are packed in chest order. Each Continuation block has its own Essence area. The schema stores the bit counts; the payload stores the Essences.
@@ -262,23 +283,7 @@ See [README-QUANTIZATION.md](README-QUANTIZATION.md) for Record and Continuation
 
 The block capacity estimates in [README-QUANTIZATION.md](README-QUANTIZATION.md) account for the 2-byte `chest_count` in each block header.
 
-## Capacity Estimates
-
-### Schema Entry Capacity
-
-Each Superblock has 4,084 bytes for append-only `schema_entries`. This estimate assumes 4-byte entry alignment, `col_signs`, `col_scale_ratios`, 4-bit Essences, and 1-byte Runes. Other optional arrays are absent. The 7 fixed bytes come from the schema-wide fields. For every column, `col_widths` and `col_units` add 2 bytes total: 1 byte each.
-
-| `col_count` | Aligned entry size | Entries per Superblock | Unused bytes per Superblock |
-|---:|---:|---:|---:|
-| 4 | 44 bytes | 92 | 36 |
-| 8 | 80 bytes | 51 | 4 |
-| 16 | 156 bytes | 26 | 28 |
-| 32 | 300 bytes | 13 | 184 |
-| 64 | 592 bytes | 6 | 532 |
-
-The entry count includes the initial schema, so the maximum number of schema updates is `entry count − 1`. Both Superblocks store the same entries; they are copies, not extra capacity.
-
-### Total Storage Capacity
+## Total Storage Capacity
 
 The table assumes one 4-byte column and one 4-bit Essence per record, stored every 1, 10, or 30 seconds. Record counts include the capacity of the Record block and all Continuation blocks. Storage sizes use binary units.
 
