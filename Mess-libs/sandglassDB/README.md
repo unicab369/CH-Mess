@@ -285,12 +285,15 @@ The table assumes one 4-byte column and one 4-bit Essence per record, stored eve
 
 **Schema log:**
 
-- Use a schema entry only when its committed copies validate in both Superblocks. Recovery from interrupted or mismatched writes still needs definition.
+- Use a schema entry only when its committed copies validate in both Superblocks.
+- If one copy has a valid entry and the other is missing or invalid, append it to the latter; use it only after both validate.
+- If copies conflict for a `schema_id`, reject it and its records. New records may use the previous valid schema if compatible; a corrected schema needs a new ID.
+- Recovery for partial or invalid entries, duplicate `schema_id`s, or entries in a different order between copies still needs definition.
 
 **Append log and streams:**
 
-- The application selects `stream_id`; the library appends at the next physical block. The first fully erased (`0xFF`) block marks the append point. A non-erased block with an invalid `magic_number` or `crc16` is damaged: skip it and do not overwrite it.
-- Group valid blocks by `stream_id` and order them by `stream_sequence`. A valid Record block (`R`) starts an extent; a Continuation block (`C`) extends it only if its stream matches and its sequence follows. A gap or invalid block ends the extent; ignore `C` blocks until the next valid `R` for that stream.
+- The application selects `stream_id`; the library appends physically. The first fully erased (`0xFF`) block marks the append point. Skip non-erased blocks with invalid `magic_number` or `crc16`; do not overwrite them.
+- Scan blocks in physical order and group valid blocks by `stream_id`. `stream_sequence` verifies each stream's order and reveals gaps, including if cleanup moves blocks. A valid Record block (`R`) starts an extent; a Continuation block (`C`) extends it only if its stream matches and its sequence follows. A gap or invalid block ends the extent; ignore `C` blocks until the next valid `R` for that stream.
 
 **Cleanup:**
 
