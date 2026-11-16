@@ -2,7 +2,7 @@
 
 ## Overview
 
-The database starts with 2 Superblocks (`S0`, `S1`); all remaining blocks come from a shared storage pool. A Record block (`R`) starts an extent, and Continuation blocks (`C`) extend it when its payload fills. Each data block belongs to a resolution stream; `stream_id` identifies the stream and `stream_sequence` orders its blocks. Streams can share the pool, so their blocks may be interleaved.
+The database starts with 2 Superblocks (`S0`, `S1`); all remaining blocks come from a shared storage pool. A Record block (`R`) starts an extent, and Continuation blocks (`C`) extend it when its payload fills. Each data block belongs to a resolution stream; `stream_id` identifies the stream and `stream_sequence` orders its blocks. The application selects the stream for each write, and the library appends all streams to the shared physical log, so their blocks may be interleaved.
 
 A **Chest** is the set of column values for one record, stored in the readings area of an `R` or `C` payload. A **`Rune`** is a 1-byte coefficient assigned to a bit position. An **`Essence`** is a packed bit mask stored in the block payload for a column and reading. Each Essence bit contributes its Rune with a sign: `1` means `+1 × Rune`; `0` means `−1 × Rune`. For Runes `[a, b, c, d]`, Essence `1010` produces `a − b + c − d`.
 
@@ -277,7 +277,7 @@ The table assumes one 4-byte column and one 4-bit Essence per record, stored eve
 
 > Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. Each Record block holds 906 records and each Continuation block holds 907, including their 4-bit Essence storage and 2-byte `chest_count`. This is an upper bound; multiple streams need additional Record blocks.
 
-## Recovery
+## Recovery and Log Scanning
 
 **Superblocks:**
 
@@ -285,15 +285,16 @@ The table assumes one 4-byte column and one 4-bit Essence per record, stored eve
 
 **Schema log:**
 
-- Use a schema entry only when its committed copies validate in both Superblocks.
-- If one copy has a valid entry and the other is missing or invalid, append it to the latter; use it only after both validate.
+- Use a schema entry only after both committed copies validate. If one copy is missing or invalid, append the valid entry to it first.
 - If copies conflict for a `schema_id`, reject it and its records. New records may use the previous valid schema if compatible; a corrected schema needs a new ID.
 - Recovery for partial or invalid entries, duplicate `schema_id`s, or entries in a different order between copies still needs definition.
 
 **Append log and streams:**
 
-- The application selects `stream_id`; the library appends physically. The first fully erased (`0xFF`) block marks the append point. Skip non-erased blocks with invalid `magic_number` or `crc16`; do not overwrite them.
-- Scan blocks in physical order and group valid blocks by `stream_id`. `stream_sequence` verifies each stream's order and reveals gaps, including if cleanup moves blocks. A valid Record block (`R`) starts an extent; a Continuation block (`C`) extends it only if its stream matches and its sequence follows. A gap or invalid block ends the extent; ignore `C` blocks until the next valid `R` for that stream.
+- The first fully erased (`0xFF`) block marks the append point. Skip non-erased blocks with invalid `magic_number` or `crc16`; do not overwrite them.
+- While scanning in physical order, track streams by `stream_id` and use `stream_sequence` to verify order and detect gaps, including after cleanup moves blocks.
+- A valid Record block (`R`) starts an extent. A Continuation block (`C`) extends it only if its stream matches and its sequence follows.
+- A gap or invalid block ends the extent. Ignore `C` blocks until the next valid `R` for that stream.
 
 **Cleanup:**
 
