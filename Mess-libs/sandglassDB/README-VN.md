@@ -2,7 +2,7 @@
 
 ## Tổng quan
 
-Cơ sở dữ liệu bắt đầu bằng 2 Superblock (`S0`, `S1`). Các khối còn lại thuộc một vùng lưu trữ chung. Khối Record (`R`) bắt đầu một extent; các khối Continuation (`C`) nối dài extent đó khi payload đầy. `stream_id` xác định luồng độ phân giải, còn `stream_sequence` xác định thứ tự khối trong từng luồng. Khối của nhiều luồng có thể xen kẽ nhau.
+Cơ sở dữ liệu bắt đầu bằng 2 Superblock (`S0`, `S1`). Các khối còn lại thuộc một vùng lưu trữ chung. Khối Record (`R`) bắt đầu một extent; các khối Continuation (`C`) nối dài extent đó khi payload đầy. `stream_id` xác định luồng độ phân giải, còn `stream_counter` xác định thứ tự khối trong từng luồng. Khối của nhiều luồng có thể xen kẽ nhau.
 
 **Chest** là tập giá trị cột của một bản ghi, nằm trong vùng dữ liệu đọc của payload `R` hoặc `C`. **Rune** là hệ số 1 byte gắn với một vị trí bit. **Essence** là mặt nạ bit được đóng gói trong payload cho từng cột và lần đọc. Mỗi bit Essence đóng góp Rune tương ứng với dấu: `1` nghĩa là `+1 × Rune`; `0` nghĩa là `−1 × Rune`. Với Rune `[a, b, c, d]`, Essence `1010` cho kết quả `a − b + c − d`.
 
@@ -149,7 +149,7 @@ Khối `R` dùng một `schema_id` đã xác nhận ở cả hai Superblock và 
 | **crc16** | 2 byte** | Bao phủ header và payload, gồm `chest_count`; không gồm chính nó. |
 | **schema_id** | 1 byte* | Chọn schema của khối. |
 | **stream_id** | 1 byte* | ID luồng độ phân giải. |
-| **stream_sequence** | 4 byte* | Thứ tự khối trong luồng. |
+| **stream_counter** | 4 byte* | Thứ tự khối trong luồng. |
 | **chest_count** | 2 byte* | Số Chest trong khối; ghi khi hoàn tất để xác định ranh giới các vùng payload. |
 | **record_config** | 5 byte** | Thời gian và định dạng thời gian của khối. |
 | **payload** | Thay đổi | Chứa Chest và Essence được đóng gói khi bật; xem [Payload](#payload). |
@@ -169,14 +169,14 @@ Header khối `R` chiếm 17 byte. Khi hoàn tất khối, ghi `chest_count`, sa
 
 ## Khối Continuation (`C`)
 
-Khối `C` chứa các bản ghi nối tiếp của một extent khi payload khối `R` đầy. `stream_id` và `stream_sequence` giúp reader nối và sắp xếp các khối dù nhiều luồng xen kẽ. Xem [quy tắc khôi phục luồng](README.md#recovery).
+Khối `C` chứa các bản ghi nối tiếp của một extent khi payload khối `R` đầy. `stream_id` và `stream_counter` giúp reader nối và sắp xếp các khối dù nhiều luồng xen kẽ. Xem [quy tắc khôi phục luồng](README.md#recovery-and-log-scanning).
 
 | Trường | Kích thước | Mục đích |
 |---|---:|---|
 | **magic_number** | 2 byte* | Đánh dấu đầu khối. |
 | **crc16** | 2 byte** | Bao phủ header và payload, gồm `chest_count`; không gồm chính nó. |
 | **stream_id** | 1 byte* | ID luồng độ phân giải. |
-| **stream_sequence** | 4 byte* | Thứ tự khối trong luồng. |
+| **stream_counter** | 4 byte* | Thứ tự khối trong luồng. |
 | **chest_count** | 2 byte* | Số Chest trong khối; ghi khi hoàn tất để xác định ranh giới các vùng payload. |
 | **payload** | Thay đổi | Chứa Chest và Essence theo schema của khối `R` cùng extent. |
 
