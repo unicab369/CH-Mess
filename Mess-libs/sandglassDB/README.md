@@ -226,8 +226,8 @@ The Record block header is 17 bytes. At finalization, write `chest_count`, then 
 
 | field | size | purpose |
 |---|---:|---|
-| `time_value` | 4 bytes | Stores the time value for records in the block. |
 | `time_format` | 1 byte | Identifies how the time value is represented. |
+| `time_value` | 4 bytes | Stores the time value for records in the block. |
 
 ## Continuation blocks (`C`)
 
@@ -270,9 +270,9 @@ Each Record or Continuation block stores chests and packed Essences in separate 
 
 ```text
 Extent example (each row is one 4 KiB block):
-[R block header] [chests grow →             ][← packed Essences]
-[C block header] [chests grow →             ][← packed Essences]
-[C block header] [chests grow →             ][← packed Essences]
+[R header] [Chests grow →             ][← packed Essences]
+[C header] [Chests grow →             ][← packed Essences]
+[C header] [Chests grow →             ][← packed Essences]
 ```
 
 The schema's `col_widths` determines each chest's column sizes in bytes. When `schema_config1` bit 1 enables `col_essence_bits`, each nonzero entry gives the number of Essence bits stored for that column in each chest. Essences are packed in chest order. Each Continuation block has its own Essence area. The schema stores the bit counts; the payload stores the Essences.
@@ -321,3 +321,7 @@ The table assumes one 4-byte column and one 4-bit Essence per record, stored eve
 **Cleanup:**
 
 - Copy and validate live data before erasing old blocks. Preserve stream sequences or rewrite them; define recovery from power loss during cleanup or compaction.
+
+## Future Consideration
+
+- Consider computing `crc16` incrementally as block data is written, then storing the final CRC at block finalization. This processes the same bytes as a full-block calculation but spreads the work across writes; measure the call overhead on the target MCU.

@@ -26,3 +26,13 @@ At standard atmospheric pressure, water freezes at `0 °C` (`32 °F`) and boils 
 | Lowest recorded air temperature to propane flame temperature | 2,069 °C | 3,725 °F | 8.115 °C<br>14.606 °F | 0.505 °C<br>0.910 °F | 0.032 °C<br>0.057 °F |
 
 Resolution assumes unsigned codes map linearly from the range's low endpoint to its high endpoint. The 1-byte, 1.5-byte, and 2-byte columns use 256, 4,096, and 65,536 code values respectively. A 1.5-byte value requires 12-bit packing; the current `col_widths` format only allocates whole bytes.
+
+
+Monthly * 240 = ~20 years
+Weekly * 960 = ~20 years
+Daily * 361 = ~1 year
+Hourly * 240 = ~10 days
+10 mins * 720 = ~10 days
+1 mins * 1440 = 1 day
+5 secs * 720 = 1 hour
+1 sec * 3600 = 1 hour
