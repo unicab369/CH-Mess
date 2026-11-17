@@ -2,7 +2,7 @@
 
 ## Overview
 
-The database starts with 2 Superblocks (`S0`, `S1`); all remaining blocks come from a shared storage pool. A Record block (`R`) starts an extent, and Continuation blocks (`C`) extend it when its payload fills. Each data block belongs to a resolution stream; `stream_id` identifies the stream and `stream_counter` orders its blocks. The application selects the stream for each write, and the library appends all streams to the shared physical log, so their blocks may be interleaved.
+The database starts with 2 Superblocks (`S0`, `S1`); all remaining blocks come from a shared storage pool. A Record block (`R`) starts an extent, and Continuation blocks (`C`) extend it when its payload fills. Each data block belongs to a stream identified by its `dataset_id` and `interval_id`; `stream_counter` orders its blocks. The application selects the stream for each write, and the library appends all streams to the shared physical log, so their blocks may be interleaved.
 
 A **Chest** is the set of column values for one record, stored in the readings area of an `R` or `C` payload. A **`Rune`** is a 1-byte coefficient assigned to a bit position. An **`Essence`** is a packed bit mask stored in the block payload for a column and reading. Each Essence bit contributes its Rune with a sign: `1` means `+1 × Rune`; `0` means `−1 × Rune`. For Runes `[a, b, c, d]`, Essence `1010` produces `a − b + c − d`.
 
@@ -182,26 +182,45 @@ The entry count includes the initial schema, so the maximum number of schema upd
 
 ## Streams
 
-Both `R` and `C` block headers contain a `stream_id` and a `stream_counter`. The application chooses a `stream_id` for each dataset. The library appends all streams to one physical log, so blocks from different streams can interleave. `stream_counter` starts at `0` for each stream and increases by `1` for every `R` or `C` block in that stream.
+Both `R` and `C` block headers contain a 1-byte `dataset_id`, a 1-byte `interval_id`, and a `stream_counter`. The pair (`dataset_id`, `interval_id`) identifies one stream. Each field has 256 possible values.
+
+| `interval_id` | Interval |
+|---:|---|
+| 36–255 | Reserved |
+| 31–35 | 31 = 1 year; 32 = 2 years; 33 = 3 years; 34 = 4 years; 35 = 5 years |
+| 28–30 | 28 = 4 months; 29 = 5 months; 30 = 6 months |
+| 25–27 | 25 = 1 month; 26 = 2 months; 27 = 3 months |
+| 22–24 | 22 = 1 week; 23 = 2 weeks; 24 = 3 weeks |
+| 19–21 | 19 = 4 days; 20 = 5 days; 21 = 6 days |
+| 16–18 | 16 = 1 day; 17 = 2 days; 18 = 3 days |
+| 12–15 | 12 = 15 minutes; 13 = 20 minutes; 14 = 30 minutes; 15 = 60 minutes |
+| 8–11 | 8 = 1 minute; 9 = 2 minutes; 10 = 5 minutes; 11 = 10 minutes |
+| 4–7 | 4 = 10 seconds; 5 = 15 seconds; 6 = 20 seconds; 7 = 30 seconds |
+| 1–3 | 1 = 1 second; 2 = 2 seconds; 3 = 5 seconds |
+| 0 | Timestamp stored in each Chest |
+
+The application selects the (`dataset_id`, `interval_id`) pair for each write. For `interval_id = 0`, the timestamp column and its format must be defined for the Chest; how the schema marks that column remains to be specified. For codes `1`–`15`, the reader derives timestamps from the extent's start time and each Chest's position. Calendar boundaries, time zone, and week start for codes `16`–`35` still need definition.
+
+The library appends all streams to one physical log, so their blocks can interleave. `stream_counter` starts at `0` for each (`dataset_id`, `interval_id`) pair and increases by `1` for every `R` or `C` block in that stream.
 
 ```text
 Physical append order (each row is one 4 KiB block):
-[R header: stream_id = 0, stream_counter = 0] [payload]
-[R header: stream_id = 1, stream_counter = 0] [payload]
-[C header: stream_id = 0, stream_counter = 1] [payload]
-[C header: stream_id = 1, stream_counter = 1] [payload]
-[C header: stream_id = 0, stream_counter = 2] [payload]
+[R header: dataset_id = 0, interval_id = 1, stream_counter = 0] [payload]
+[R header: dataset_id = 0, interval_id = 2, stream_counter = 0] [payload]
+[C header: dataset_id = 0, interval_id = 1, stream_counter = 1] [payload]
+[C header: dataset_id = 0, interval_id = 2, stream_counter = 1] [payload]
+[C header: dataset_id = 0, interval_id = 1, stream_counter = 2] [payload]
 
 Reader separates the streams:
-stream_id = 0: [R, stream_counter = 0] → [C, stream_counter = 1] → [C, stream_counter = 2]
-stream_id = 1: [R, stream_counter = 0] → [C, stream_counter = 1]
+dataset_id = 0, interval_id = 1: [R, stream_counter = 0] → [C, stream_counter = 1] → [C, stream_counter = 2]
+dataset_id = 0, interval_id = 2: [R, stream_counter = 0] → [C, stream_counter = 1]
 ```
 
-`schema_id` is independent of `stream_id`. Each `R` selects the schema for its extent, and its `C` blocks use that schema. Different streams can use different schemas; a stream can switch schemas by starting a new `R` extent.
+`schema_id` is independent of the (`dataset_id`, `interval_id`) pair. Each `R` selects the schema for its extent, and its `C` blocks use that schema. Different streams can use different schemas; a stream can switch schemas by starting a new `R` extent.
 
 ## Record blocks (`R`)
 
-Record blocks (`R0`–`Rn`) follow Superblocks `S0` and `S1`. Each record block belongs to a logical resolution stream, identified by `stream_id`, and uses a `schema_id` whose entry is committed in both Superblocks. Different streams can allocate blocks from the same shared pool.
+Record blocks (`R0`–`Rn`) follow Superblocks `S0` and `S1`. Each record block belongs to a stream identified by its (`dataset_id`, `interval_id`) pair and uses a `schema_id` whose entry is committed in both Superblocks. Different streams can allocate blocks from the same shared pool.
 
 A record block contains:
 
@@ -210,13 +229,14 @@ A record block contains:
 | **magic_number** | 2 bytes* | Identifies the start of the record block. |
 | **crc16** | 2 bytes** | Covers the block header and payload, including `chest_count`; excludes itself. |
 | **schema_id** | 1 byte* | Identifies the schema containing this block's `col_widths` and optional `col_essence_bits`. |
-| **stream_id** | 1 byte* | Identifies the resolution stream this block belongs to. |
+| **dataset_id** | 1 byte* | Identifies the dataset. |
+| **interval_id** | 1 byte* | Identifies the interval within the dataset. |
 | **stream_counter** | 4 bytes* | Orders this block within its stream. |
 | **chest_count** | 2 bytes* | Number of Chests in this block; written at finalization to locate the payload areas. |
 | **record_config** | 5 bytes** | Stores the block time and time format. |
 | **payload** | Variable | Stores readings and, when enabled, a packed Essence area; see [Payload](#payload). |
 
-The Record block header is 17 bytes. At finalization, write `chest_count`, then compute and store `crc16`; readers use the count only if the CRC validates.
+The Record block header is 18 bytes. At finalization, write `chest_count`, then compute and store `crc16`; readers use the count only if the CRC validates.
 
 `col_essence_bits` is stored once in the schema entry and selects the Essence width for each column. The Essences are stored in the block payload.
 
@@ -231,7 +251,7 @@ The Record block header is 17 bytes. At finalization, write `chest_count`, then 
 
 ## Continuation blocks (`C`)
 
-Continuation blocks store records that follow a record block `R` when its payload is full. Each belongs to the same `stream_id` and carries a per-stream `stream_counter` so it can be associated with the preceding extent even when blocks from other streams are physically interleaved. When a continuation block `C` fills, another continuation block is added. See [Recovery and Log Scanning](#recovery-and-log-scanning) for the ordering rules.
+Continuation blocks store records that follow a record block `R` when its payload is full. Each belongs to the same (`dataset_id`, `interval_id`) pair and carries a per-stream `stream_counter` so it can be associated with the preceding extent even when blocks from other streams are physically interleaved. When a continuation block `C` fills, another continuation block is added. See [Recovery and Log Scanning](#recovery-and-log-scanning) for the ordering rules.
 
 A continuation block contains:
 
@@ -239,12 +259,13 @@ A continuation block contains:
 |---|---:|---|
 | **magic_number** | 2 bytes* | Identifies the start of the continuation block. |
 | **crc16** | 2 bytes** | Covers the block header and payload, including `chest_count`; excludes itself. |
-| **stream_id** | 1 byte* | Identifies the resolution stream this block belongs to. |
+| **dataset_id** | 1 byte* | Identifies the dataset. |
+| **interval_id** | 1 byte* | Identifies the interval within the dataset. |
 | **stream_counter** | 4 bytes* | Orders this block within its stream. |
 | **chest_count** | 2 bytes* | Number of Chests in this block; written at finalization to locate the payload areas. |
 | **payload** | Variable | Stores more readings and their packed Essences using the schema of this extent's Record block. |
 
-The Continuation block header is 11 bytes. At finalization, write `chest_count`, then compute and store `crc16`; readers use the count only if the CRC validates.
+The Continuation block header is 12 bytes. At finalization, write `chest_count`, then compute and store `crc16`; readers use the count only if the CRC validates.
 
 > Using a 4-byte instead of a 2-byte `stream_counter` adds 2 bytes to each Continuation header. Assuming all remaining blocks are Continuation blocks, that adds about 506 bytes for 1 MiB of storage, 32 MiB for 64 GiB, and 64 MiB for 128 GiB.
 
@@ -252,16 +273,16 @@ Continuation blocks may be physically interleaved with blocks from other streams
 
 Approximate records per block, assuming each chest is entirely contained in 1 block:
 
-Continuation block header: 11 bytes.
+Continuation block header: 12 bytes.
 
 | Chest size | Records per block | Unused payload bytes |
 |---:|---:|---:|
-| 4 bytes | 1,020 | 3 |
-| 8 bytes | 510 | 3 |
-| 12 bytes | 340 | 3 |
-| 16 bytes | 255 | 3 |
-| 20 bytes | 204 | 3 |
-| 24 bytes | 170 | 3 |
+| 4 bytes | 1,020 | 2 |
+| 8 bytes | 510 | 2 |
+| 12 bytes | 340 | 2 |
+| 16 bytes | 255 | 2 |
+| 20 bytes | 204 | 2 |
+| 24 bytes | 170 | 2 |
 
 > Unused bytes are the remaining payload space after storing whole records. The counts assume records are packed consecutively with no alignment padding.
 ## Payload
@@ -289,15 +310,15 @@ The table assumes one 4-byte column and one 4-bit Essence per record, stored eve
 
 | Storage size | Continuation<br>blocks | Continuation<br>header space | Records | Time to full<br>(1 sec) | Time to full<br>(10 secs) | Time to full<br>(30 secs) |
 |---:|---:|---:|---:|---:|---:|---:|
-| 32 KiB | 5 | 0.05 KiB | 5,441 | ~1.5 hours | ~15.1 hours | ~1.9 days |
-| 128 KiB | 29 | 0.3 KiB | 27,209 | ~7.6 hours | ~3.1 days | ~9.4 days |
-| 1 MiB | 253 | 2.7 KiB | 230,377 | ~2.7 days | ~26.7 days | ~80.0 days |
-| 32 MiB | 8,189 | 88 KiB | 7.4 × 10⁶ | ~86.0 days | ~2.4 years | ~7.1 years |
-| 126 MiB | 32,253 | 346 KiB | 29.3 × 10⁶ | ~338.6 days | ~9.3 years | ~27.8 years |
-| 512 MiB | 131,069 | 1,408 KiB | 118.9 × 10⁶ | ~3.8 years | ~37.7 years | ~113.1 years |
-| 1 GiB | 262,141 | 2,816 KiB | 237.8 × 10⁶ | ~7.5 years | ~75.4 years | ~226.2 years |
+| 32 KiB | 5 | 0.06 KiB | 5,440 | ~1.5 hours | ~15.1 hours | ~1.9 days |
+| 128 KiB | 29 | 0.3 KiB | 27,208 | ~7.6 hours | ~3.1 days | ~9.4 days |
+| 1 MiB | 253 | 3.0 KiB | 230,376 | ~2.7 days | ~26.7 days | ~80.0 days |
+| 32 MiB | 8,189 | 96 KiB | 7.4 × 10⁶ | ~86.0 days | ~2.4 years | ~7.1 years |
+| 126 MiB | 32,253 | 378 KiB | 29.3 × 10⁶ | ~338.6 days | ~9.3 years | ~27.8 years |
+| 512 MiB | 131,069 | 1,536 KiB | 118.9 × 10⁶ | ~3.8 years | ~37.7 years | ~113.1 years |
+| 1 GiB | 262,141 | 3,072 KiB | 237.8 × 10⁶ | ~7.5 years | ~75.4 years | ~226.2 years |
 
-> Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. Each Record block holds 906 records and each Continuation block holds 907, including their 4-bit Essence storage and 2-byte `chest_count`. This is an upper bound; multiple streams need additional Record blocks.
+> Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. Each Record block holds 905 records and each Continuation block holds 907, including their 4-bit Essence storage and 2-byte `chest_count`. This is an upper bound; multiple streams need additional Record blocks.
 
 ## Recovery and Log Scanning
 
@@ -314,7 +335,7 @@ The table assumes one 4-byte column and one 4-bit Essence per record, stored eve
 **Append log and streams:**
 
 - The first fully erased (`0xFF`) block marks the append point. Skip non-erased blocks with invalid `magic_number` or `crc16`; do not overwrite them.
-- While scanning in physical order, track streams by `stream_id` and use `stream_counter` to verify order and detect gaps, including after cleanup moves blocks.
+- While scanning in physical order, track streams by (`dataset_id`, `interval_id`) and use `stream_counter` to verify order and detect gaps, including after cleanup moves blocks.
 - A valid Record block (`R`) starts an extent. A Continuation block (`C`) extends it only if its stream matches and its sequence follows.
 - A gap or invalid block ends the extent. Ignore later `C` blocks for that stream; only a new valid `R` can start another extent.
 
