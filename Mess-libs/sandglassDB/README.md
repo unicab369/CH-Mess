@@ -195,9 +195,11 @@ Both `R` and `C` block headers contain a 1-byte `dataset_id`, a 1-byte `interval
 | 16–18 | 16 = 1 day; 17 = 2 days; 18 = 3 days |
 | 12–15 | 12 = 15 minutes; 13 = 20 minutes; 14 = 30 minutes; 15 = 60 minutes |
 | 8–11 | 8 = 1 minute; 9 = 2 minutes; 10 = 5 minutes; 11 = 10 minutes |
-| 4–7 | 4 = 10 seconds; 5 = 15 seconds; 6 = 20 seconds; 7 = 30 seconds |
-| 1–3 | 1 = 1 second; 2 = 2 seconds; 3 = 5 seconds |
-| 0 | Timestamp stored in each Chest |
+| 4–7\* | 4 = 10 seconds; 5 = 15 seconds; 6 = 20 seconds; 7 = 30 seconds |
+| 1–3\* | 1 = 1 second; 2 = 2 seconds; 3 = 5 seconds |
+| 0\* | Timestamp stored in each Chest |
+
+> \* These codes are for records written live. Archiving processes all records in a completed source block to produce records for longer intervals.
 
 The application selects the (`dataset_id`, `interval_id`) pair for each write. For `interval_id = 0`, the timestamp column and its format must be defined for the Chest; how the schema marks that column remains to be specified. For codes `1`–`15`, the reader derives timestamps from the extent's start time and each Chest's position. Calendar boundaries, time zone, and week start for codes `16`–`35` still need definition.
 
