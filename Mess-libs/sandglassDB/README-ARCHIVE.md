@@ -32,13 +32,15 @@ Resolution assumes unsigned codes map linearly from the range's low endpoint to 
 
 For a temperature range of −40.0 to 120.0 °F, multiply by 10 to express values in tenths: −400 to 1200. Add 400 to normalize the integer range to 0–1600. This gives 1,601 distinct values, so storing every 0.1 °F step exactly requires 11 bits.
 
-For the 6-bit option, a Record block stores an average temperature and each reading stores a difference from it. The 8- and 10-bit options encode the full temperature range directly. The rounding error assumes decoding to the nearest level.
+For the offset options, a Record block stores an average temperature and each reading stores a difference from it. The other options encode the full temperature range directly. The rounding error assumes decoding to the nearest level.
 
-| Bits per reading | Encoded range | Decoded levels | Maximum rounding error | Readings per 32-bit word | Unused bits per word |
+| Bits per reading | Encoded range | Decoded levels | Maximum rounding error (°F / °C) | Readings per 32-bit word | Unused bits per word |
 |---:|---|---:|---:|---:|---:|
-| 6 | −20 to +20 °F from block average | 64 | 0.317 °F | 5 | 2 |
-| 8 | −40 to 120 °F | 256 | 0.314 °F | 4 | 0 |
-| 10 | −40 to 120 °F | 1,024 | 0.078 °F | 3 | 2 |
+| 6 | −20 to +20 °F from block average | 64 | 0.317 °F / 0.176 °C | 5 | 2 |
+| 7 | −20 to +20 °F from block average | 128 | 0.157 °F / 0.087 °C | 4 | 4 |
+| 8 | −20 to +20 °F from block average | 256 | 0.078 °F / 0.044 °C | 4 | 0 |
+| 8 | −40 to 120 °F | 256 | 0.314 °F / 0.174 °C | 4 | 0 |
+| 10 | −40 to 120 °F | 1,024 | 0.078 °F / 0.043 °C | 3 | 2 |
 
 The final block average is unknown while readings are being appended. This method requires buffering the readings until finalization or using a reference temperature chosen before writing. Continuation blocks would also need a defined reference if they use the same encoding.
 
