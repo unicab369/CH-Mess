@@ -75,6 +75,8 @@ Schema definitions are stored as append-only entries in the unused space of both
 
 The application selects the `schema_id` for each new `R` block. Appending a schema entry does not switch streams automatically. For example, after adding `schema_id = 4`, the application switches a stream by writing its next `R` with `schema_id = 4`; that `R`'s `C` blocks use the same schema. Other streams can keep using their existing IDs.
 
+To change a dataset's codec, append a new schema entry with the desired codec and start a new `R` using its `schema_id`. The new entry may keep the same column definitions. Existing `C` blocks continue using their parent `R`'s schema.
+
 The CRC for the fixed Superblock fields does not cover the append-only entries; each entry has its own CRC and commit marker. Readers scan the entries in both copies and build a lookup from `schema_id` to payload layout.
 
 Each schema entry contains schema-wide fields and per-column fields.
@@ -88,6 +90,7 @@ Schema-wide fields:
 | **schema_config1** | 1 byte* | Selects byte order and indicates optional per-column fields; see [schema_config1](#schema_config1). |
 | **schema_id** | 1 byte* | Identifies the schema entry. |
 | **col_count** | 1 byte* | Number of columns in the schema: `1`–`255` valid; `0` is reserved. |
+| **codec** | 1 byte* | Selects the value representation and compression steps for every extent using this schema; see [Codec Byte](#codec-byte). |
 
 Per-column fields, in entry order:
 
@@ -116,7 +119,7 @@ Per-column fields, in entry order:
 
 ### Codec Byte
 
-Each `R` and `C` header has its own 1-byte `codec`. The proposed bits separate the stored value representation from the lossless compression steps:
+Each schema entry stores a 1-byte `codec`. An `R` selects the schema for its extent, and its `C` blocks inherit that codec. The proposed bits separate the stored value representation from the lossless compression steps:
 
 | Bit(s) | Meaning | Purpose |
 |---:|---|---|
@@ -161,6 +164,7 @@ A three-column schema can be represented as:
 ```text
 schema_id     = 0
 col_count  = 3
+codec = 0x00                 # raw values
 schema_config1   = 0b00000001  # col_signs is enabled
 col_widths = [1, 2, 4]        # bytes per column
 col_signs  = 0b01000000
@@ -171,13 +175,13 @@ This describes an unsigned 8-bit column, a signed 16-bit column, and an unsigned
 
 ### Schema Entry Capacity
 
-Each Superblock has 4,084 bytes for append-only `schema_entries`. This estimate assumes 4-byte entry alignment, `col_signs` and `col_scale_ratios` present, and other optional arrays absent. The 6 fixed bytes come from the schema-wide fields. For every column, `col_widths`, `col_units`, and `col_scale_ratios` add 4 bytes total.
+Each Superblock has 4,084 bytes for append-only `schema_entries`. This estimate assumes 4-byte entry alignment, `col_signs` and `col_scale_ratios` present, and other optional arrays absent. The 7 fixed bytes come from the schema-wide fields. For every column, `col_widths`, `col_units`, and `col_scale_ratios` add 4 bytes total.
 
 | `col_count` | Aligned entry size | Entries per Superblock | Unused bytes per Superblock |
 |---:|---:|---:|---:|
 | 4 | 24 bytes | 170 | 4 |
 | 8 | 40 bytes | 102 | 4 |
-| 16 | 72 bytes | 56 | 52 |
+| 16 | 76 bytes | 53 | 56 |
 | 32 | 140 bytes | 29 | 24 |
 | 64 | 272 bytes | 15 | 4 |
 
@@ -186,25 +190,7 @@ The entry count includes the initial schema, so the maximum number of schema upd
 ## Streams
 
 Each `dataset_id` identifies one stream and is assigned to only one `interval_code` for the lifetime of the stored log. The `R` header stores both fields; its `C` blocks store `dataset_id` and inherit `interval_code` from that `R`. `stream_counter` orders blocks within the stream. This permits up to 256 dataset IDs, including separate IDs for the same measurements at different intervals.
-
-| `interval_code` | Interval |
-|---:|---|
-| 36–255 | Reserved |
-| 31–35 | 31 = 1 year; 32 = 2 years; 33 = 3 years; 34 = 4 years; 35 = 5 years |
-| 28–30 | 28 = 4 months; 29 = 5 months; 30 = 6 months |
-| 25–27 | 25 = 1 month; 26 = 2 months; 27 = 3 months |
-| 22–24 | 22 = 1 week; 23 = 2 weeks; 24 = 3 weeks |
-| 19–21 | 19 = 4 days; 20 = 5 days; 21 = 6 days |
-| 16–18 | 16 = 1 day; 17 = 2 days; 18 = 3 days |
-| 12–15 | 12 = 15 minutes; 13 = 20 minutes; 14 = 30 minutes; 15 = 60 minutes |
-| 8–11 | 8 = 1 minute; 9 = 2 minutes; 10 = 5 minutes; 11 = 10 minutes |
-| 4–7\* | 4 = 10 seconds; 5 = 15 seconds; 6 = 20 seconds; 7 = 30 seconds |
-| 1–3\* | 1 = 1 second; 2 = 2 seconds; 3 = 5 seconds |
-| 0\* | Timestamp stored in each Chest |
-
-> \* These codes are for records written live. Archiving processes all records in a completed source block to produce records for longer intervals.
-
-The application selects a `dataset_id` for each write and assigns its `interval_code` when creating its first `R`. For `interval_code = 0`, the timestamp column and its format must be defined for the Chest; how the schema marks that column remains to be specified. For codes `1`–`15`, the reader derives timestamps from the extent's start time and each Chest's position. Calendar boundaries, time zone, and week start for codes `16`–`35` still need definition.
+The application selects a `dataset_id` for each write. Its interval is set in the stream's `R`; see [Interval Codes](#interval-codes).
 
 The library appends all streams to one physical log, so their blocks can interleave. `stream_counter` starts at `0` for each `dataset_id` and increases by `1` for every `R` or `C` block in that stream.
 
@@ -233,25 +219,39 @@ A record block contains:
 |---|---:|---|
 | **magic_number** | 2 bytes* | Identifies the start of the record block. |
 | **crc16** | 2 bytes** | Covers the block header and payload, including `chest_count`; excludes itself. |
-| **codec** | 1 byte* | Selects this block's value representation and compression steps; see [Codec Byte](#codec-byte). |
 | **schema_id** | 1 byte* | Identifies the schema defining this block's Chest layout. |
 | **dataset_id** | 1 byte* | Identifies the dataset. |
 | **interval_code** | 1 byte* | Selects the stream's timestamp interval. |
 | **stream_counter** | 4 bytes* | Orders this block within its stream. |
 | **chest_count** | 2 bytes* | Number of Chests in this block; written at finalization to locate the payload areas. |
-| **record_config** | 5 bytes** | Stores the block time and time format. |
+| **time_format** | 1 byte** | Identifies how the block's time value is represented. |
+| **time_value** | 4 bytes** | Stores the block's time value. |
 | **payload** | Variable | Stores Chests using the selected codec; see [Payload](#payload). |
 
-The Record block header is 19 bytes. At finalization, write `chest_count`, then compute and store `crc16`; readers use the count only if the CRC validates.
+The Record block header is 18 bytes. At finalization, write `chest_count`, then compute and store `crc16`; readers use the count only if the CRC validates. The `schema_id` selects this extent's codec; its `C` blocks use the same schema and codec.
 
-### Record Configuration
+### Interval Codes
 
-`record_config` occupies 5 bytes:
+Each `dataset_id` uses one `interval_code` for the lifetime of the stored log. The `R` header stores this code; its `C` blocks inherit it.
 
-| field | size | purpose |
-|---|---:|---|
-| `time_format` | 1 byte | Identifies how the time value is represented. |
-| `time_value` | 4 bytes | Stores the time value for records in the block. |
+| `interval_code` | Interval |
+|---:|---|
+| 36–255 | Reserved |
+| 31–35 | 31 = 1 year; 32 = 2 years; 33 = 3 years; 34 = 4 years; 35 = 5 years |
+| 28–30 | 28 = 4 months; 29 = 5 months; 30 = 6 months |
+| 25–27 | 25 = 1 month; 26 = 2 months; 27 = 3 months |
+| 22–24 | 22 = 1 week; 23 = 2 weeks; 24 = 3 weeks |
+| 19–21 | 19 = 4 days; 20 = 5 days; 21 = 6 days |
+| 16–18 | 16 = 1 day; 17 = 2 days; 18 = 3 days |
+| 12–15 | 12 = 15 minutes; 13 = 20 minutes; 14 = 30 minutes; 15 = 60 minutes |
+| 8–11 | 8 = 1 minute; 9 = 2 minutes; 10 = 5 minutes; 11 = 10 minutes |
+| 4–7\* | 4 = 10 seconds; 5 = 15 seconds; 6 = 20 seconds; 7 = 30 seconds |
+| 1–3\* | 1 = 1 second; 2 = 2 seconds; 3 = 5 seconds |
+| 0\* | Timestamp stored in each Chest |
+
+> \* These codes are for records written live. Archiving processes all records in a completed source block to produce records for longer intervals.
+
+For `interval_code = 0`, the timestamp column and its format must be defined for the Chest; how the schema marks that column remains to be specified. For codes `1`–`15`, the reader derives timestamps from the extent's start time and each Chest's position. Calendar boundaries, time zone, and week start for codes `16`–`35` still need definition.
 
 ## Continuation blocks (`C`)
 
@@ -266,10 +266,9 @@ A continuation block contains:
 | **dataset_id** | 1 byte* | Identifies the dataset. |
 | **stream_counter** | 4 bytes* | Orders this block within its stream. |
 | **chest_count** | 2 bytes* | Number of Chests in this block; written at finalization to locate the payload areas. |
-| **codec** | 1 byte* | Selects this block's value representation and compression steps; see [Codec Byte](#codec-byte). |
-| **payload** | Variable | Stores more Chests using the schema of this extent's Record block and this block's codec. |
+| **payload** | Variable | Stores more Chests using the schema and codec of this extent's Record block. |
 
-The Continuation block header is 12 bytes. At finalization, write `chest_count`, then compute and store `crc16`; readers use the count only if the CRC validates.
+The Continuation block uses the codec in its parent `R`'s schema entry. Its header is 11 bytes. At finalization, write `chest_count`, then compute and store `crc16`; readers use the count only if the CRC validates.
 
 > Using a 4-byte instead of a 2-byte `stream_counter` adds 2 bytes to each Continuation header. Assuming all remaining blocks are Continuation blocks, that adds about 506 bytes for 1 MiB of storage, 32 MiB for 64 GiB, and 64 MiB for 128 GiB.
 
@@ -277,16 +276,16 @@ Continuation blocks may be physically interleaved with blocks from other streams
 
 Approximate records per block, assuming each chest is entirely contained in 1 block:
 
-Continuation block header: 12 bytes.
+Continuation block header: 11 bytes.
 
 | Chest size | Records per block | Unused payload bytes |
 |---:|---:|---:|
-| 4 bytes | 1,020 | 2 |
-| 8 bytes | 510 | 2 |
-| 12 bytes | 340 | 2 |
-| 16 bytes | 255 | 2 |
-| 20 bytes | 204 | 2 |
-| 24 bytes | 170 | 2 |
+| 4 bytes | 1,020 | 3 |
+| 8 bytes | 510 | 3 |
+| 12 bytes | 340 | 3 |
+| 16 bytes | 255 | 3 |
+| 20 bytes | 204 | 3 |
+| 24 bytes | 170 | 3 |
 
 > Unused bytes are the remaining payload space after storing whole records. The counts assume records are packed consecutively with no alignment padding.
 ## Payload
@@ -308,15 +307,15 @@ The table assumes one raw 4-byte Chest every 1, 10, or 30 seconds. Counts includ
 
 | Storage size | Continuation<br>blocks | Continuation<br>header space | Records | Time to full<br>(1 sec) | Time to full<br>(10 secs) | Time to full<br>(30 secs) |
 |---:|---:|---:|---:|---:|---:|---:|
-| 32 KiB | 5 | 0.06 KiB | 6,118 | ~1.7 hours | ~17.0 hours | ~2.1 days |
-| 128 KiB | 29 | 0.3 KiB | 30,598 | ~8.5 hours | ~3.5 days | ~10.6 days |
-| 1 MiB | 253 | 3.0 KiB | 259,078 | ~3.0 days | ~30.0 days | ~90.0 days |
-| 32 MiB | 8,189 | 96 KiB | 8.4 × 10⁶ | ~96.7 days | ~2.6 years | ~7.9 years |
-| 126 MiB | 32,253 | 378 KiB | 32.9 × 10⁶ | ~1.0 years | ~10.4 years | ~31.3 years |
-| 512 MiB | 131,069 | 1,536 KiB | 133.7 × 10⁶ | ~4.2 years | ~42.4 years | ~127.1 years |
-| 1 GiB | 262,141 | 3,072 KiB | 267.4 × 10⁶ | ~8.5 years | ~84.7 years | ~254.2 years |
+| 32 KiB | 5 | 0.05 KiB | 6,119 | ~1.7 hours | ~17.0 hours | ~2.1 days |
+| 128 KiB | 29 | 0.3 KiB | 30,599 | ~8.5 hours | ~3.5 days | ~10.6 days |
+| 1 MiB | 253 | 2.7 KiB | 259,079 | ~3.0 days | ~30.0 days | ~90.0 days |
+| 32 MiB | 8,189 | 88 KiB | 8.4 × 10⁶ | ~96.7 days | ~2.6 years | ~7.9 years |
+| 126 MiB | 32,253 | 347 KiB | 32.9 × 10⁶ | ~1.0 years | ~10.4 years | ~31.3 years |
+| 512 MiB | 131,069 | 1,408 KiB | 133.7 × 10⁶ | ~4.2 years | ~42.4 years | ~127.1 years |
+| 1 GiB | 262,141 | 2,816 KiB | 267.4 × 10⁶ | ~8.5 years | ~84.7 years | ~254.2 years |
 
-> Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. With codec `0`, the Record block holds 1,018 Chests and each Continuation block holds 1,020. Multiple streams need additional Record blocks.
+> Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. With codec `0`, the Record block holds 1,019 Chests and each Continuation block holds 1,020. Multiple streams need additional Record blocks.
 
 ## Recovery and Log Scanning
 

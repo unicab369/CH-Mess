@@ -2,7 +2,7 @@
 
 ## Live and Archive Encoding Plan
 
-Each block selects its value representation and compression steps through the `codec` byte described in [Codec Byte](README.md#codec-byte). Live blocks may use raw values or uniform quantization. Archive blocks may make that choice independently after the source block is finalized and its readings have been converted to the desired interval. Raw fixed-point temperature values can also serve as a comparison baseline for quantized live readings; match samples by timestamp when they are written in separate streams.
+Each schema selects its value representation and compression steps through the `codec` byte described in [Codec Byte](README.md#codec-byte). A live stream can use a raw or uniformly quantized schema. After finalizing a source block and producing readings for a longer interval, an archive stream can select its own schema and codec. To change a codec within one dataset, start a new `R` with a new `schema_id`; its `C` blocks use that schema. Raw fixed-point temperature values can serve as a comparison baseline for quantized live readings; match samples by timestamp when they are written in separate streams.
 
 Uniform quantization maps a configured value range to evenly spaced integer codes. Delta records changes between consecutive values; delta-of-delta records changes between consecutive deltas. RLE records repeated predictor results with a count. The lossless steps can be combined with either raw values or quantized codes. For example:
 
