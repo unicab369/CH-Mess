@@ -1,4 +1,34 @@
-# Water Temperature Range
+# Archiving and Temperature Encoding
+
+## Live and Archive Encoding Plan
+
+Each block selects its value representation and compression steps through the `codec` byte described in [Codec Byte](README.md#codec-byte). Live blocks may use raw values or uniform quantization. Archive blocks may make that choice independently after the source block is finalized and its readings have been converted to the desired interval. Raw fixed-point temperature values can also serve as a comparison baseline for quantized live readings; match samples by timestamp when they are written in separate streams.
+
+Uniform quantization maps a configured value range to evenly spaced integer codes. Delta records changes between consecutive values; delta-of-delta records changes between consecutive deltas. RLE records repeated predictor results with a count. The lossless steps can be combined with either raw values or quantized codes. For example:
+
+| Codec | Representation | Predictor | RLE |
+|---|---|---|---|
+| `0x00` | Raw | None | Off |
+| `0x01` | Uniform quantization | None | Off |
+| `0x02` | Raw | Delta | Off |
+| `0x03` | Uniform quantization | Delta | Off |
+| `0x0B` | Uniform quantization | Delta | On |
+
+Only `0x00` has a defined payload format today. Compare candidate combinations on representative readings before defining the other formats. In particular, record the total bytes per block, decoding work, quantization error, and the effect of out-of-range values. A uniform range and bit width must be stored in the schema before quantized blocks can be written.
+
+Other lossless methods to compare include:
+
+| Candidate | Stored information | Best case |
+|---|---|---|
+| Shared upper bits | Common high bits once, then low bits per Chest | All codes stay within one aligned range. |
+| Base + packed offsets | A base code once, then small differences from that base | Codes stay within a narrow range, even across a high-bit boundary. |
+| Delta encoding | First code, then differences between consecutive codes | Consecutive codes change very little. |
+
+For example, 8-bit codes `0101 0010`, `0101 0011`, and `0101 0100` use 24 bits raw. Storing the shared `0101` once and the low parts `0010`, `0011`, `0100` uses 16 bits before format overhead. A code that crosses the shared-bit boundary needs a new group or an escape rule. Base + packed offsets can avoid that boundary problem.
+
+These methods can preserve the input codes exactly. Mapping temperatures to fewer codes first is uniform quantization and introduces rounding error. Define each compressed payload layout, predictor seed, run format, Chest count, and decoding rules before writing blocks with that codec.
+
+## Water Temperature Range
 
 At standard atmospheric pressure, water freezes at `0 °C` (`32 °F`) and boils at `100 °C` (`212 °F`).
 
