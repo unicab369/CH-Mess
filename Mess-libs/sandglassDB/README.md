@@ -53,16 +53,16 @@ Each Superblock contains:
 | **generation** | 1 byte* | Identifies the newer fixed Superblock header; wraps from `255` to `0`. |
 | **magic_number** | 2 bytes* | Identifies the start of the Superblock header. |
 | **flags** | 1 byte* | Stores Superblock flags. |
-| **crc16** | 4 bytes** | Covers the fixed header and alignment padding, excluding the CRC field itself and `schema_entries`. |
+| **crc** | 4 bytes** | Covers the fixed header and alignment padding, excluding the CRC field itself and `schema_entries`. |
 | **alignment_padding** | 2 bytes* | Set to `0`; aligns `schema_entries` to a 4-byte boundary. |
 | **schema_entries** | 4,084 bytes | Append-only schema entries. Each entry has its own CRC and commit marker; see [Schema Entries](#schema-entries) for the entry layout. |
 
 The Superblock is stored in 2 copies, `S0` and `S1`. Each copy has this field layout:
 ```text
        +--------+---------+------------+-------------+-------+-------+-------------------+---------------+
-S0:    | config | version | generation | magic_number | flags | crc16 | alignment_padding | schema_entries |
+S0:    | config | version | generation | magic_number | flags | crc | alignment_padding | schema_entries |
        +--------+---------+------------+-------------+-------+-------+-------------------+---------------+
-S1:    | config | version | generation | magic_number | flags | crc16 | alignment_padding | schema_entries |
+S1:    | config | version | generation | magic_number | flags | crc | alignment_padding | schema_entries |
        +--------+---------+------------+-------------+-------+-------+-------------------+---------------+
 ```
 
@@ -91,6 +91,7 @@ Schema-wide fields:
 | **schema_id** | 1 byte* | Identifies the schema entry. |
 | **col_count** | 1 byte* | Number of columns in the schema: `1`–`255` valid; `0` is reserved. |
 | **codec** | 1 byte* | Selects the value representation and compression steps for every extent using this schema; see [Codec Byte](#codec-byte). |
+| **time_format** | 1 byte* | Defines how the 4-byte `time_value` in each `R` using this schema is interpreted; format codes still need definition. |
 
 Per-column fields, in entry order:
 
@@ -175,12 +176,12 @@ This describes an unsigned 8-bit column, a signed 16-bit column, and an unsigned
 
 ### Schema Entry Capacity
 
-Each Superblock has 4,084 bytes for append-only `schema_entries`. This estimate assumes 4-byte entry alignment, `col_signs` and `col_scale_ratios` present, and other optional arrays absent. The 7 fixed bytes come from the schema-wide fields. For every column, `col_widths`, `col_units`, and `col_scale_ratios` add 4 bytes total.
+Each Superblock has 4,084 bytes for append-only `schema_entries`. This estimate assumes 4-byte entry alignment, `col_signs` and `col_scale_ratios` present, and other optional arrays absent. The 8 fixed bytes come from the schema-wide fields. For every column, `col_widths`, `col_units`, and `col_scale_ratios` add 4 bytes total.
 
 | `col_count` | Aligned entry size | Entries per Superblock | Unused bytes per Superblock |
 |---:|---:|---:|---:|
-| 4 | 24 bytes | 170 | 4 |
-| 8 | 40 bytes | 102 | 4 |
+| 4 | 28 bytes | 145 | 24 |
+| 8 | 44 bytes | 92 | 36 |
 | 16 | 76 bytes | 53 | 56 |
 | 32 | 140 bytes | 29 | 24 |
 | 64 | 272 bytes | 15 | 4 |
@@ -189,8 +190,9 @@ The entry count includes the initial schema, so the maximum number of schema upd
 
 ## Streams
 
-Each `dataset_id` identifies one stream and is assigned to only one `interval_code` for the lifetime of the stored log. The `R` header stores both fields; its `C` blocks store `dataset_id` and inherit `interval_code` from that `R`. `stream_counter` orders blocks within the stream. This permits up to 256 dataset IDs, including separate IDs for the same measurements at different intervals.
-The application selects a `dataset_id` for each write. Its interval is set in the stream's `R`; see [Interval Codes](#interval-codes).
+Each `dataset_id` identifies one stream. The `R` header stores its `interval_code`; its `C` blocks store `dataset_id` and inherit the interval from that `R`. `stream_counter` orders blocks within the stream. This permits up to 256 dataset IDs.
+
+The application can change a dataset's interval by starting a new `R` with the next `stream_counter`. That ends the previous extent; later `C` blocks for this dataset belong to the new `R`. Use separate dataset IDs to write multiple intervals at the same time. See [Interval Codes](#interval-codes).
 
 The library appends all streams to one physical log, so their blocks can interleave. `stream_counter` starts at `0` for each `dataset_id` and increases by `1` for every `R` or `C` block in that stream.
 
@@ -217,22 +219,21 @@ A record block contains:
 
 | field | size | purpose |
 |---|---:|---|
+| **crc** | 2 bytes** | Covers the block header and payload, including `chest_count`; excludes itself. |
 | **magic_number** | 2 bytes* | Identifies the start of the record block. |
-| **crc16** | 2 bytes** | Covers the block header and payload, including `chest_count`; excludes itself. |
+| **stream_counter** | 4 bytes* | Orders this block within its stream. |
+| **time_value** | 4 bytes** | Stores the block's time value in the format specified by its schema. |
+| **chest_count** | 2 bytes* | Number of Chests in this block; written at finalization to locate the payload areas. |
 | **schema_id** | 1 byte* | Identifies the schema defining this block's Chest layout. |
 | **dataset_id** | 1 byte* | Identifies the dataset. |
 | **interval_code** | 1 byte* | Selects the stream's timestamp interval. |
-| **stream_counter** | 4 bytes* | Orders this block within its stream. |
-| **chest_count** | 2 bytes* | Number of Chests in this block; written at finalization to locate the payload areas. |
-| **time_format** | 1 byte** | Identifies how the block's time value is represented. |
-| **time_value** | 4 bytes** | Stores the block's time value. |
 | **payload** | Variable | Stores Chests using the selected codec; see [Payload](#payload). |
 
-The Record block header is 18 bytes. At finalization, write `chest_count`, then compute and store `crc16`; readers use the count only if the CRC validates. The `schema_id` selects this extent's codec; its `C` blocks use the same schema and codec.
+The Record block header is 17 bytes. At finalization, write `chest_count`, then compute and store `crc`; readers use the count only if the CRC validates. The `schema_id` selects this extent's codec and `time_format`; its `C` blocks use the same schema and codec.
 
 ### Interval Codes
 
-Each `dataset_id` uses one `interval_code` for the lifetime of the stored log. The `R` header stores this code; its `C` blocks inherit it.
+Each `R` stores the `interval_code` for its extent; its `C` blocks inherit it. A new `R` may select a different interval for the same `dataset_id`.
 
 | `interval_code` | Interval |
 |---:|---|
@@ -261,14 +262,14 @@ A continuation block contains:
 
 | Field | Size | Purpose |
 |---|---:|---|
+| **crc** | 2 bytes** | Covers the block header and payload, including `chest_count`; excludes itself. |
 | **magic_number** | 2 bytes* | Identifies the start of the continuation block. |
-| **crc16** | 2 bytes** | Covers the block header and payload, including `chest_count`; excludes itself. |
-| **dataset_id** | 1 byte* | Identifies the dataset. |
 | **stream_counter** | 4 bytes* | Orders this block within its stream. |
 | **chest_count** | 2 bytes* | Number of Chests in this block; written at finalization to locate the payload areas. |
+| **dataset_id** | 1 byte* | Identifies the dataset. |
 | **payload** | Variable | Stores more Chests using the schema and codec of this extent's Record block. |
 
-The Continuation block uses the codec in its parent `R`'s schema entry. Its header is 11 bytes. At finalization, write `chest_count`, then compute and store `crc16`; readers use the count only if the CRC validates.
+The Continuation block uses the codec in its parent `R`'s schema entry. Its header is 11 bytes. At finalization, write `chest_count`, then compute and store `crc`; readers use the count only if the CRC validates.
 
 > Using a 4-byte instead of a 2-byte `stream_counter` adds 2 bytes to each Continuation header. Assuming all remaining blocks are Continuation blocks, that adds about 506 bytes for 1 MiB of storage, 32 MiB for 64 GiB, and 64 MiB for 128 GiB.
 
@@ -299,7 +300,7 @@ Extent example (each row is one 4 KiB block):
 [C header] [Chest 0] [Chest 1] [Chest 2] ...
 ```
 
-The schema's `col_widths` determines each raw Chest's column sizes in bytes. At finalization, write the 2-byte `chest_count` in the header, then compute and store `crc16` over the header and payload, excluding the CRC field. Readers use the validated count and schema to find the end of the raw Chests. Any remaining payload bytes are unused. A future compressed codec must define its own byte layout and how the count maps to decoded Chests.
+The schema's `col_widths` determines each raw Chest's column sizes in bytes. At finalization, write the 2-byte `chest_count` in the header, then compute and store `crc` over the header and payload, excluding the CRC field. Readers use the validated count and schema to find the end of the raw Chests. Any remaining payload bytes are unused. A future compressed codec must define its own byte layout and how the count maps to decoded Chests.
 
 ## Total Storage Capacity
 
@@ -331,7 +332,7 @@ The table assumes one raw 4-byte Chest every 1, 10, or 30 seconds. Counts includ
 
 **Append log and streams:**
 
-- The first fully erased (`0xFF`) block marks the append point. Skip non-erased blocks with invalid `magic_number` or `crc16`; do not overwrite them.
+- The first fully erased (`0xFF`) block marks the append point. Skip non-erased blocks with invalid `magic_number` or `crc`; do not overwrite them.
 - After restart, start a new `R` for each stream that resumes writing; do not resume an older `R` or `C`.
 - While scanning in physical order, track streams by `dataset_id` and use `stream_counter` to verify order and detect gaps, including after cleanup moves blocks. Read each stream's `interval_code` from its `R` blocks.
 - A valid Record block (`R`) starts an extent. A Continuation block (`C`) extends it only if its stream matches and its sequence follows.
@@ -343,4 +344,4 @@ The table assumes one raw 4-byte Chest every 1, 10, or 30 seconds. Counts includ
 
 ## Future Consideration
 
-- Consider computing `crc16` incrementally as block data is written, then storing the final CRC at block finalization. This processes the same bytes as a full-block calculation but spreads the work across writes; measure the call overhead on the target MCU.
+- Consider computing `crc` incrementally as block data is written, then storing the final CRC at block finalization. This processes the same bytes as a full-block calculation but spreads the work across writes; measure the call overhead on the target MCU.
