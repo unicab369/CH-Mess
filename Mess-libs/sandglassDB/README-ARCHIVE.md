@@ -74,6 +74,21 @@ For the offset options, a Record block stores an average temperature and each re
 
 The final block average is unknown while readings are being appended. This method requires buffering the readings until finalization or using a reference temperature chosen before writing. Continuation blocks would also need a defined reference if they use the same encoding.
 
+## Time Range by Interval
+
+This table shows the duration represented by each number of interval steps.
+
+| Number of steps | 1 ns | 1 μs | 1 ms | 1 second | 1 minute | 1 hour | 1 day |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| `2⁸ = 256` | 256 ns | 256 μs | 256 ms | 4.3 minutes | 0.18 days | 10.67 days | 256 days |
+| `2¹² = 4,096` | 4.10 μs | 4.10 ms | 4.10 s | 1.14 hours | 2.84 days | 170.67 days | ~11 years |
+| `2¹⁶ = 65,536` | 65.54 μs | 65.54 ms | 1.09 minutes | 18.2 hours | 45.51 days | ~8 years | ~179 years |
+| `2¹⁸ = 262,144` | 262.14 μs | 262.14 ms | 4.37 minutes | ~3.0 days | ~182.0 days | ~30 years |  |
+| `2²⁰ = 1,048,576` | 1.05 ms | 1.05 s | 17.48 minutes | ~12.1 days | ~2 years | ~120 years |  |
+| `2²⁴ = 16,777,216` | 16.78 ms | 16.78 s | ~4.66 hours | ~194.2 days | ~32 years |  |  |
+| `2³² = 4,294,967,296` | ~4.29 seconds | ~71.6 minutes | ~49.7 days | ~136 years | ~8,166 years |  |  |
+
+There are **86,400 seconds in a day** (`24 × 60 × 60`).
 
 Monthly * 240 = ~20 years<br>
 Weekly * 960 = ~20 years<br>
