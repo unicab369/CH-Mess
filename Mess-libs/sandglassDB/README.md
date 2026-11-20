@@ -2,9 +2,9 @@
 
 ## Overview
 
-The database starts with 2 Superblocks (`S0`, `S1`); all remaining blocks come from a shared storage pool. A Record block (`R`) starts an extent, and Continuation blocks (`C`) extend it when its payload fills. Each `dataset_id` identifies one stream; its `R` block specifies the `interval_code`. Blocks are ordered by their physical position in the log, so blocks from different streams may be interleaved.
+The database starts with 2 Superblocks (`S0`, `S1`); all remaining blocks come from a shared storage pool. A Record block (`R`) starts an extent, and Continuation blocks (`C`) extend it when its payload fills. Each `dataset_id` identifies one stream; its `R` block specifies the `interval_code` and `interval_value`. Blocks from different datasets may interleave. Each `C` belongs to the most recent preceding `R` with the same `dataset_id`.
 
-A **Chest** is the set of column values for one reading, stored in an `R` or `C` payload. Live and archive blocks can each choose raw or uniformly quantized values, with optional lossless compression. Raw temperature values can use fixed-point integers; see [Archiving](README-ARCHIVE.md).
+A **Chest** is the set of column values for one reading, stored in an `R` or `C` payload. Live and archive blocks can each choose raw or uniformly quantized values, with optional lossless compression. Raw values can use fixed-point integers; see [Archiving](README-ARCHIVE.md) for an encoding example.
 
 ```text
 [S0] [S1]
@@ -43,34 +43,30 @@ Each Superblock contains:
 |---|---:|---|
 | **crc** | 4 B | Covers the fixed header and alignment padding, excluding the CRC field itself and `schema_entries`. |
 | **magic_number** | 2 B | Identifies the start of the Superblock header. |
-| **config** | 1 B | Stores database-wide configuration options. |
 | **version** | 1 B | Identifies the Superblock format. |
+| **config** | 1 B | Stores database-wide configuration options. |
 | **generation** | 1 B | Identifies the newer fixed Superblock header; wraps from `255` to `0`. |
-| **flags** | 1 B | Stores Superblock flags. |
-| **alignment_padding** | 2 B | Set to `0`; aligns `schema_entries` to a 4-byte boundary. |
-| **schema_entries** | 4,084 B | Append-only schema entries. Each entry has its own CRC and commit marker; see [Schema Entries](#schema-entries) for the entry layout. |
+| **alignment_padding** | 3 B | Set to `0`; aligns `schema_entries` to a 4-byte boundary. |
+| **schema_entries** | 4,084 B | Append-only schema entries. Each entry has its own CRC and `commit` field; see [Schema Entries](#schema-entries) for the entry layout. |
 
 The Superblock is stored in 2 copies, `S0` and `S1`. Each copy has this field layout:
 ```text
-       +--------+---------+------------+-------------+-------+-------+-------------------+---------------+
-S0:    | config | version | generation | magic_number | flags | crc | alignment_padding | schema_entries |
-       +--------+---------+------------+-------------+-------+-------+-------------------+---------------+
-S1:    | config | version | generation | magic_number | flags | crc | alignment_padding | schema_entries |
-       +--------+---------+------------+-------------+-------+-------+-------------------+---------------+
+       +-----+--------------+---------+--------+------------+-------------------+----------------+
+S0:    | crc | magic_number | version | config | generation | alignment_padding | schema_entries |
+       +-----+--------------+---------+--------+------------+-------------------+----------------+
+S1:    | crc | magic_number | version | config | generation | alignment_padding | schema_entries |
+       +-----+--------------+---------+--------+------------+-------------------+----------------+
 ```
-
-The fixed fields occupy 10 bytes. The 2-byte `alignment_padding` places `schema_entries` at byte offset 12; each schema entry is also padded to a 4-byte boundary.
-
 
 ## Schema Entries
 
-Schema definitions are stored as append-only entries in the unused space of both Superblocks. Each schema update gets a new, unused `schema_id` and is appended after the previous entry in `S0` and `S1`; existing entries and IDs are not changed or reused. A record block may use the new `schema_id` only after the entry is committed and validated in both copies. This avoids erasing and rewriting the fixed Superblock fields for each schema change.
+Schema updates append entries to unused space in both Superblocks. Each update gets a new `schema_id`; existing entries and IDs are never changed or reused. An `R` may use the new ID only after its entry is committed and valid in `S0` and `S1`.
 
-The application selects the `schema_id` for each new `R` block. Appending a schema entry does not switch streams automatically. For example, after adding `schema_id = 4`, the application switches a stream by writing its next `R` with `schema_id = 4`; that `R`'s `C` blocks use the same schema. Other streams can keep using their existing IDs.
+The application selects the `schema_id` for each new `R` block. Adding a schema does not change existing streams. For example, a stream can use `schema_id = 4` in its next `R`; subsequent `C` blocks in that stream also use schema 4.
 
 To change a dataset's codec, append a new schema entry with the desired codec and start a new `R` using its `schema_id`. The new entry may keep the same column definitions. Existing `C` blocks continue using their parent `R`'s schema.
 
-The CRC for the fixed Superblock fields does not cover the append-only entries; each entry has its own CRC and commit marker. Readers scan the entries in both copies and build a lookup from `schema_id` to payload layout.
+The CRC for the fixed Superblock fields does not cover the append-only entries; each entry has its own CRC and `commit` field. Readers scan the entries in both copies and build a lookup from `schema_id` to payload layout.
 
 Each schema entry contains schema-wide fields and per-column fields.
 
@@ -79,7 +75,7 @@ Schema-wide fields:
 | Field | Size | Purpose |
 |---|---:|---|
 | **entry_crc** | 4 B | Validates the schema entry. |
-| **commit_marker** | 1 B | Marks the entry as fully written. |
+| **commit** | 1 B | Marks the entry as fully written. |
 | **schema_config1** | 1 B | Selects byte order and indicates optional per-column fields; see [schema_config1](#schema_config1). |
 | **schema_id** | 1 B | Identifies the schema entry. |
 | **col_count** | 1 B | Number of columns in the schema: `1`–`255` valid; `0` is reserved. |
@@ -183,7 +179,7 @@ The entry count includes the initial schema, so the maximum number of schema upd
 
 ## Streams
 
-Each `dataset_id` identifies one stream. The `R` header stores its `interval_code`; its `C` blocks store `dataset_id` and inherit the interval from the current `R`. This permits up to 256 dataset IDs.
+Each `dataset_id` identifies one stream. The `R` header stores its `interval_code` and `interval_value`; its `C` blocks store `dataset_id` and inherit the interval from the current `R`. This permits up to 256 dataset IDs.
 
 The application can change a dataset's interval by starting a new `R`, which ends the previous extent for that dataset. Following `C` blocks for the dataset belong to the new `R`. Use separate dataset IDs to write multiple intervals at the same time. See [Interval Codes](#interval-codes).
 
@@ -218,17 +214,17 @@ A record block contains:
 | **time_value** | 4 B | Stores the block's time value in the format specified by its schema. |
 | **dataset_id** | 1 B | Identifies the dataset. |
 | **schema_id** | 1 B | Identifies the schema defining this block's Chest layout. |
-| **interval_code** | 1 B | Selects the stream's timestamp interval. |
-| **alignment_padding** | 1 B | Set to `0`; aligns the payload to a 4-byte boundary. |
+| **interval_code** | 1 B | Selects the base timestamp interval. |
+| **interval_value** | 1 B | Multiplies the interval selected by `interval_code`; `1` uses the listed interval. |
 | **payload** | 4,078 B remaining | Stores Chests using the selected codec; see [Payload](#payload). |
 
 The Record block header is 16 bytes. At finalization, write `chest_count`, then compute and store `crc`; readers use the count only if the CRC validates. The `schema_id` selects this extent's codec and `time_format`; its `C` blocks use the same schema and codec.
 
 ### Interval Codes
 
-Each `R` stores the `interval_code` for its extent; its `C` blocks inherit it. A new `R` may select a different interval for the same `dataset_id`.
+Each `R` stores an `interval_code` and `interval_value` for its extent; its `C` blocks inherit both. For codes `1`–`35`, `interval_value` is a multiplier from `1` to `255`; `0` is reserved. For code `0`, write `interval_value = 0` because each Chest carries its own timestamp. A new `R` may select a different interval for the same `dataset_id`.
 
-| `interval_code` | Interval |
+| `interval_code` | Base interval |
 |---:|---|
 | 36–255 | Reserved |
 | 31–35 | 31 = 1 year; 32 = 2 years; 33 = 3 years; 34 = 4 years; 35 = 5 years |
@@ -245,11 +241,11 @@ Each `R` stores the `interval_code` for its extent; its `C` blocks inherit it. A
 
 > \* These codes are for records written live. Archiving processes all records in a completed source block to produce records for longer intervals.
 
-For `interval_code = 0`, the timestamp column and its format must be defined for the Chest; how the schema marks that column remains to be specified. For codes `1`–`15`, the reader derives timestamps from the extent's start time and each Chest's position. Calendar boundaries, time zone, and week start for codes `16`–`35` still need definition.
+For `interval_code = 0`, the timestamp column and its format must be defined for the Chest; how the schema marks that column remains to be specified. For codes `1`–`15`, the reader derives timestamps from the extent's start time, `interval_value`, and each Chest's position. Calendar boundaries, time zone, and week start for codes `16`–`35` still need definition.
 
 ## Continuation blocks (`C`)
 
-Continuation blocks store records that follow a record block `R` when its payload is full. Each carries the same `dataset_id` and is associated with the current extent for that dataset by physical log order, even when other streams' blocks are interleaved. It inherits `interval_code` and `schema_id` from the preceding `R` for that dataset. When a continuation block `C` fills, another continuation block is added. See [Recovery and Log Scanning](#recovery-and-log-scanning) for the ordering rules.
+Continuation blocks store records that follow a record block `R` when its payload is full. Each carries the same `dataset_id` and is associated with the current extent for that dataset by physical log order, even when other streams' blocks are interleaved. It inherits `interval_code`, `interval_value`, and `schema_id` from the preceding `R` for that dataset. When a continuation block `C` fills, another continuation block is added. See [Recovery and Log Scanning](#recovery-and-log-scanning) for the ordering rules.
 
 A continuation block contains:
 
@@ -262,7 +258,7 @@ A continuation block contains:
 | **alignment_padding** | 3 B | Set to `0`; aligns the payload to a 4-byte boundary. |
 | **payload** | 4,082 B remaining | Stores more Chests using the schema and codec of this extent's Record block. |
 
-The Continuation block uses the `time_value`, `interval_code`, time format, schema, and codec from its parent `R`. Its header is 12 bytes. For interval codes, readers derive each Chest's time from the `R`'s starting time and its position across the `R` and following `C` blocks. For `interval_code = 0`, each Chest stores its own timestamp. At finalization, write `chest_count`, then compute and store `crc`; readers use the count only if the CRC validates.
+The Continuation block uses the `time_value`, `interval_code`, `interval_value`, time format, schema, and codec from its parent `R`. Its header is 12 bytes. For interval codes, readers derive each Chest's time from the `R`'s starting time, the selected interval multiplied by `interval_value`, and its position across the `R` and following `C` blocks. For `interval_code = 0`, each Chest stores its own timestamp. At finalization, write `chest_count`, then compute and store `crc`; readers use the count only if the CRC validates.
 
 Approximate records per block, assuming each chest is entirely contained in 1 block:
 
@@ -323,7 +319,7 @@ The table assumes one raw 4-byte Chest every 1, 10, or 30 seconds. Counts includ
 
 - The first fully erased (`0xFF`) block marks the append point. Skip non-erased blocks with invalid `magic_number` or `crc`; do not overwrite them.
 - After restart, start a new `R` for each stream that resumes writing; do not resume an older `R` or `C`.
-- While scanning in physical order, track the current extent for each `dataset_id`. Read its `interval_code` and `schema_id` from the `R` block.
+- While scanning in physical order, track the current extent for each `dataset_id`. Read its `interval_code`, `interval_value`, and `schema_id` from the `R` block.
 - A valid Record block (`R`) starts an extent for its dataset. A valid Continuation block (`C`) extends that dataset's current extent; ignore a `C` when no valid extent is active.
 - An invalid block ends the current extent for its dataset. Cleanup must preserve physical order within each dataset so Continuation blocks remain associated with the correct `R`.
 
