@@ -31,13 +31,6 @@ When a database is accessed, it needs at least two things:
 
   If the checksums match, the data is likely the same; if they differ, the data is different or corrupted.
 
-
-> In the field lists:
->
-> - `*` means the field is expected to remain part of the format long term.
-> - `**` means the field size is configurable.
-
-
 ## Superblocks (`S0`, `S1`)
 
 The 2 fixed blocks used to configure the database are copies of each other. If one block is corrupted, for example, its **`magic number`** or **`CRC`** does not match, the other block can be used to recover the configuration.
@@ -48,14 +41,14 @@ Each Superblock contains:
 
 | field | size | purpose |
 |---|---:|---|
-| **config** | 1 byte* | Stores database-wide configuration options. |
-| **version** | 1 byte* | Identifies the Superblock format. |
-| **generation** | 1 byte* | Identifies the newer fixed Superblock header; wraps from `255` to `0`. |
-| **magic_number** | 2 bytes* | Identifies the start of the Superblock header. |
-| **flags** | 1 byte* | Stores Superblock flags. |
-| **crc** | 4 bytes** | Covers the fixed header and alignment padding, excluding the CRC field itself and `schema_entries`. |
-| **alignment_padding** | 2 bytes* | Set to `0`; aligns `schema_entries` to a 4-byte boundary. |
-| **schema_entries** | 4,084 bytes | Append-only schema entries. Each entry has its own CRC and commit marker; see [Schema Entries](#schema-entries) for the entry layout. |
+| **crc** | 4 B | Covers the fixed header and alignment padding, excluding the CRC field itself and `schema_entries`. |
+| **magic_number** | 2 B | Identifies the start of the Superblock header. |
+| **config** | 1 B | Stores database-wide configuration options. |
+| **version** | 1 B | Identifies the Superblock format. |
+| **generation** | 1 B | Identifies the newer fixed Superblock header; wraps from `255` to `0`. |
+| **flags** | 1 B | Stores Superblock flags. |
+| **alignment_padding** | 2 B | Set to `0`; aligns `schema_entries` to a 4-byte boundary. |
+| **schema_entries** | 4,084 B | Append-only schema entries. Each entry has its own CRC and commit marker; see [Schema Entries](#schema-entries) for the entry layout. |
 
 The Superblock is stored in 2 copies, `S0` and `S1`. Each copy has this field layout:
 ```text
@@ -85,24 +78,24 @@ Schema-wide fields:
 
 | Field | Size | Purpose |
 |---|---:|---|
-| **entry_crc** | 2 bytes* | Validates the schema entry. |
-| **commit_marker** | 1 byte* | Marks the entry as fully written. |
-| **schema_config1** | 1 byte* | Selects byte order and indicates optional per-column fields; see [schema_config1](#schema_config1). |
-| **schema_id** | 1 byte* | Identifies the schema entry. |
-| **col_count** | 1 byte* | Number of columns in the schema: `1`–`255` valid; `0` is reserved. |
-| **codec** | 1 byte* | Selects the value representation and compression steps for every extent using this schema; see [Codec Byte](#codec-byte). |
-| **time_format** | 1 byte* | Defines how the 4-byte `time_value` in each `R` using this schema is interpreted; format codes still need definition. |
+| **entry_crc** | 4 B | Validates the schema entry. |
+| **commit_marker** | 1 B | Marks the entry as fully written. |
+| **schema_config1** | 1 B | Selects byte order and indicates optional per-column fields; see [schema_config1](#schema_config1). |
+| **schema_id** | 1 B | Identifies the schema entry. |
+| **col_count** | 1 B | Number of columns in the schema: `1`–`255` valid; `0` is reserved. |
+| **codec** | 1 B | Selects the value representation and compression steps for every extent using this schema; see [Codec Byte](#codec-byte). |
+| **time_format** | 1 B | Defines how the 4-byte `time_value` in each `R` using this schema is interpreted; format codes still need definition. |
 
 Per-column fields, in entry order:
 
 | Field | Size | Purpose |
 |---|---:|---|
-| **col_widths** | 1 byte / column | Allocates each column's space in a raw Chest in bytes. |
-| **col_units** | 1 byte* / column | One unit code per column; see [`col_units` unit codes](#col_units-unit-codes). |
-| **col_scale_mul** | 1 byte** / column | Present when `schema_config1` bit 4 is `1`; one 1-byte multiplier per column (default `1`). E.g., `10` with multiplier `3` becomes `30`. |
-| **col_scale_exp** | 1 signed byte** / column | Present when `schema_config1` bit 2 is `1`; one base-10 exponent per column (default `0`). E.g., `123` with exponent `-2` becomes `1.23`. |
-| **col_scale_ratios** | 2 bytes** / column | Present when `schema_config1` bit 3 is `1`; one numerator/denominator pair per column (default `1/1`). E.g., `10` with scale `3/2` becomes `15`. |
-| **col_signs** | `ceil(col_count / 8)` bytes* | Used when `schema_config1` bit 0 is `1`; one bit per column (`1` = signed, `0` = unsigned). Unused bits are `0`. |
+| **col_widths** | 1 B / column | Allocates each column's space in a raw Chest in B. |
+| **col_units** | 1 B / column | One unit code per column; see [`col_units` unit codes](#col_units-unit-codes). |
+| **col_scale_mul** | 1 B / column | Present when `schema_config1` bit 4 is `1`; one 1-byte multiplier per column (default `1`). E.g., `10` with multiplier `3` becomes `30`. |
+| **col_scale_exp** | 1 B / column | Present when `schema_config1` bit 2 is `1`; one signed base-10 exponent per column (default `0`). E.g., `123` with exponent `-2` becomes `1.23`. |
+| **col_scale_ratios** | 2 B / column | Present when `schema_config1` bit 3 is `1`; one numerator/denominator pair per column (default `1/1`). E.g., `10` with scale `3/2` becomes `15`. |
+| **col_signs** | `ceil(col_count / 8)` B | Used when `schema_config1` bit 0 is `1`; one bit per column (`1` = signed, `0` = unsigned). Unused bits are `0`. |
 | **padding** | Variable | Aligns the entry to the flash program unit. |
 
 ### `schema_config1`
@@ -176,15 +169,15 @@ This describes an unsigned 8-bit column, a signed 16-bit column, and an unsigned
 
 ### Schema Entry Capacity
 
-Each Superblock has 4,084 bytes for append-only `schema_entries`. This estimate assumes 4-byte entry alignment, `col_signs` and `col_scale_ratios` present, and other optional arrays absent. The 8 fixed bytes come from the schema-wide fields. For every column, `col_widths`, `col_units`, and `col_scale_ratios` add 4 bytes total.
+Each Superblock has 4,084 bytes for append-only `schema_entries`. This estimate assumes 4-byte entry alignment, `col_signs` and `col_scale_ratios` present, and other optional arrays absent. The 10 fixed bytes come from the schema-wide fields. For every column, `col_widths`, `col_units`, and `col_scale_ratios` add 4 bytes total.
 
-| `col_count` | Aligned entry size | Entries per Superblock | Unused bytes per Superblock |
+| `col_count` | Aligned entry size | Entries per Superblock | Unused space (B) per Superblock |
 |---:|---:|---:|---:|
-| 4 | 28 bytes | 145 | 24 |
-| 8 | 44 bytes | 92 | 36 |
-| 16 | 76 bytes | 53 | 56 |
-| 32 | 140 bytes | 29 | 24 |
-| 64 | 272 bytes | 15 | 4 |
+| 4 | 28 B | 145 | 24 |
+| 8 | 44 B | 92 | 36 |
+| 16 | 76 B | 53 | 56 |
+| 32 | 144 B | 28 | 52 |
+| 64 | 276 B | 14 | 220 |
 
 The entry count includes the initial schema, so the maximum number of schema updates is `entry count − 1`. Both Superblocks store the same entries; they are copies, not extra capacity.
 
@@ -219,16 +212,17 @@ A record block contains:
 
 | field | size | purpose |
 |---|---:|---|
-| **crc** | 2 bytes** | Covers the block header and payload, including `chest_count`; excludes itself. |
-| **magic_number** | 2 bytes* | Identifies the start of the record block. |
-| **time_value** | 4 bytes** | Stores the block's time value in the format specified by its schema. |
-| **chest_count** | 2 bytes* | Number of Chests in this block; written at finalization to locate the payload areas. |
-| **dataset_id** | 1 byte* | Identifies the dataset. |
-| **schema_id** | 1 byte* | Identifies the schema defining this block's Chest layout. |
-| **interval_code** | 1 byte* | Selects the stream's timestamp interval. |
-| **payload** | Variable | Stores Chests using the selected codec; see [Payload](#payload). |
+| **crc** | 4 B | Covers the block header and payload, including `chest_count`; excludes itself. |
+| **magic_number** | 2 B | Identifies the start of the record block. |
+| **chest_count** | 2 B | Number of Chests in this block; written at finalization to locate the payload areas. |
+| **time_value** | 4 B | Stores the block's time value in the format specified by its schema. |
+| **dataset_id** | 1 B | Identifies the dataset. |
+| **schema_id** | 1 B | Identifies the schema defining this block's Chest layout. |
+| **interval_code** | 1 B | Selects the stream's timestamp interval. |
+| **alignment_padding** | 1 B | Set to `0`; aligns the payload to a 4-byte boundary. |
+| **payload** | 4,078 B remaining | Stores Chests using the selected codec; see [Payload](#payload). |
 
-The Record block header is 13 bytes. At finalization, write `chest_count`, then compute and store `crc`; readers use the count only if the CRC validates. The `schema_id` selects this extent's codec and `time_format`; its `C` blocks use the same schema and codec.
+The Record block header is 16 bytes. At finalization, write `chest_count`, then compute and store `crc`; readers use the count only if the CRC validates. The `schema_id` selects this extent's codec and `time_format`; its `C` blocks use the same schema and codec.
 
 ### Interval Codes
 
@@ -261,27 +255,27 @@ A continuation block contains:
 
 | Field | Size | Purpose |
 |---|---:|---|
-| **crc** | 2 bytes** | Covers the block header and payload, including `chest_count`; excludes itself. |
-| **magic_number** | 2 bytes* | Identifies the start of the continuation block. |
-| **time_value** | 4 bytes** | Stores the time of the first Chest in this block, using the format specified by its schema. |
-| **chest_count** | 2 bytes* | Number of Chests in this block; written at finalization to locate the payload areas. |
-| **dataset_id** | 1 byte* | Identifies the dataset. |
-| **payload** | Variable | Stores more Chests using the schema and codec of this extent's Record block. |
+| **crc** | 4 B | Covers the block header and payload, including `chest_count`; excludes itself. |
+| **magic_number** | 2 B | Identifies the start of the continuation block. |
+| **chest_count** | 2 B | Number of Chests in this block; written at finalization to locate the payload areas. |
+| **dataset_id** | 1 B | Identifies the dataset. |
+| **alignment_padding** | 3 B | Set to `0`; aligns the payload to a 4-byte boundary. |
+| **payload** | 4,082 B remaining | Stores more Chests using the schema and codec of this extent's Record block. |
 
-The Continuation block uses the codec and time format in its parent `R`'s schema entry. Its header is 11 bytes. `time_value` marks the first Chest in the block; for `interval_code = 0`, each Chest still stores its own timestamp. At finalization, write `chest_count`, then compute and store `crc`; readers use the count only if the CRC validates.
+The Continuation block uses the `time_value`, `interval_code`, time format, schema, and codec from its parent `R`. Its header is 12 bytes. For interval codes, readers derive each Chest's time from the `R`'s starting time and its position across the `R` and following `C` blocks. For `interval_code = 0`, each Chest stores its own timestamp. At finalization, write `chest_count`, then compute and store `crc`; readers use the count only if the CRC validates.
 
 Approximate records per block, assuming each chest is entirely contained in 1 block:
 
-Continuation block header: 11 bytes.
+Continuation block header: 12 bytes.
 
-| Chest size | Records per block | Unused payload bytes |
+| Chest size | Records per block | Unused payload (B) |
 |---:|---:|---:|
-| 4 bytes | 1,020 | 3 |
-| 8 bytes | 510 | 3 |
-| 12 bytes | 340 | 3 |
-| 16 bytes | 255 | 3 |
-| 20 bytes | 204 | 3 |
-| 24 bytes | 170 | 3 |
+| 4 B | 1,020 | 2 |
+| 8 B | 510 | 2 |
+| 12 B | 340 | 2 |
+| 16 B | 255 | 2 |
+| 20 B | 204 | 2 |
+| 24 B | 170 | 2 |
 
 > Unused bytes are the remaining payload space after storing whole records. The counts assume records are packed consecutively with no alignment padding.
 ## Payload
@@ -303,15 +297,15 @@ The table assumes one raw 4-byte Chest every 1, 10, or 30 seconds. Counts includ
 
 | Storage size | Continuation<br>blocks | Continuation<br>header space | Records | Time to full<br>(1 sec) | Time to full<br>(10 secs) | Time to full<br>(30 secs) |
 |---:|---:|---:|---:|---:|---:|---:|
-| 32 KiB | 5 | 0.05 KiB | 6,120 | ~1.7 hours | ~17.0 hours | ~2.1 days |
-| 128 KiB | 29 | 0.3 KiB | 30,600 | ~8.5 hours | ~3.5 days | ~10.6 days |
-| 1 MiB | 253 | 2.7 KiB | 259,080 | ~3.0 days | ~30.0 days | ~90.0 days |
-| 32 MiB | 8,189 | 88 KiB | 8.4 × 10⁶ | ~96.7 days | ~2.6 years | ~7.9 years |
-| 126 MiB | 32,253 | 347 KiB | 32.9 × 10⁶ | ~1.0 years | ~10.4 years | ~31.3 years |
-| 512 MiB | 131,069 | 1,408 KiB | 133.7 × 10⁶ | ~4.2 years | ~42.4 years | ~127.2 years |
-| 1 GiB | 262,141 | 2,816 KiB | 267.4 × 10⁶ | ~8.5 years | ~84.8 years | ~254.4 years |
+| 32 KiB | 5 | 0.06 KiB | 6,119 | ~1.7 hours | ~17.0 hours | ~2.1 days |
+| 128 KiB | 29 | 0.3 KiB | 30,599 | ~8.5 hours | ~3.5 days | ~10.6 days |
+| 1 MiB | 253 | 3.0 KiB | 259,079 | ~3.0 days | ~30.0 days | ~90.0 days |
+| 32 MiB | 8,189 | 96 KiB | 8.4 × 10⁶ | ~96.7 days | ~2.6 years | ~7.9 years |
+| 126 MiB | 32,253 | 378 KiB | 32.9 × 10⁶ | ~1.0 years | ~10.4 years | ~31.3 years |
+| 512 MiB | 131,069 | 1,536 KiB | 133.7 × 10⁶ | ~4.2 years | ~42.4 years | ~127.2 years |
+| 1 GiB | 262,141 | 3,072 KiB | 267.4 × 10⁶ | ~8.5 years | ~84.8 years | ~254.4 years |
 
-> Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. With codec `0`, the Record block and each Continuation block hold 1,020 Chests. Multiple streams need additional Record blocks.
+> Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. With codec `0`, the Record block holds 1,019 Chests and each Continuation block holds 1,020. Multiple streams need additional Record blocks.
 
 ## Recovery and Log Scanning
 
