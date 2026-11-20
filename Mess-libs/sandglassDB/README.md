@@ -187,15 +187,15 @@ The library appends all streams to one physical log, so their blocks can interle
 
 ```text
 Physical append order (each row is one 4 KiB block):
-[R header: dataset_id = 0, interval_code = 1] [payload]
-[R header: dataset_id = 1, interval_code = 2] [payload]
+[R header: dataset_id = 0, interval_code = 4, interval_value = 1] [payload]
+[R header: dataset_id = 1, interval_code = 5, interval_value = 5] [payload]
 [C header: dataset_id = 0] [payload]
 [C header: dataset_id = 1] [payload]
 [C header: dataset_id = 0] [payload]
 
 Reader separates the streams:
-dataset_id = 0, interval_code = 1: [R] → [C] → [C]
-dataset_id = 1, interval_code = 2: [R] → [C]
+dataset_id = 0, 1 second: [R] → [C] → [C]
+dataset_id = 1, 5 minutes: [R] → [C]
 ```
 
 `schema_id` is independent of `dataset_id`. Each `R` selects the schema for its extent, and its `C` blocks use that schema. Different streams can use different schemas; a stream can switch schemas by starting a new `R` extent.
@@ -214,34 +214,32 @@ A record block contains:
 | **time_value** | 4 B | Stores the block's time value in the format specified by its schema. |
 | **dataset_id** | 1 B | Identifies the dataset. |
 | **schema_id** | 1 B | Identifies the schema defining this block's Chest layout. |
-| **interval_code** | 1 B | Selects the base timestamp interval. |
-| **interval_value** | 1 B | Multiplies the interval selected by `interval_code`; `1` uses the listed interval. |
+| **interval_code** | 1 B | Selects the time unit. |
+| **interval_value** | 1 B | Sets the number of units between Chests. |
 | **payload** | 4,078 B remaining | Stores Chests using the selected codec; see [Payload](#payload). |
 
 The Record block header is 16 bytes. At finalization, write `chest_count`, then compute and store `crc`; readers use the count only if the CRC validates. The `schema_id` selects this extent's codec and `time_format`; its `C` blocks use the same schema and codec.
 
 ### Interval Codes
 
-Each `R` stores an `interval_code` and `interval_value` for its extent; its `C` blocks inherit both. For codes `1`–`35`, `interval_value` is a multiplier from `1` to `255`; `0` is reserved. For code `0`, write `interval_value = 0` because each Chest carries its own timestamp. A new `R` may select a different interval for the same `dataset_id`.
+Each `R` stores an `interval_code` and `interval_value` for its extent; its `C` blocks inherit both. For codes `1`–`10`, `interval_value` ranges from `1` to `255`. For code `0`, write `interval_value = 0` because each Chest carries its own timestamp. For example, code `5` with value `10` means one Chest every 10 minutes.
 
-| `interval_code` | Base interval |
+| `interval_code` | Time unit |
 |---:|---|
-| 36–255 | Reserved |
-| 31–35 | 31 = 1 year; 32 = 2 years; 33 = 3 years; 34 = 4 years; 35 = 5 years |
-| 28–30 | 28 = 4 months; 29 = 5 months; 30 = 6 months |
-| 25–27 | 25 = 1 month; 26 = 2 months; 27 = 3 months |
-| 22–24 | 22 = 1 week; 23 = 2 weeks; 24 = 3 weeks |
-| 19–21 | 19 = 4 days; 20 = 5 days; 21 = 6 days |
-| 16–18 | 16 = 1 day; 17 = 2 days; 18 = 3 days |
-| 12–15 | 12 = 15 minutes; 13 = 20 minutes; 14 = 30 minutes; 15 = 60 minutes |
-| 8–11 | 8 = 1 minute; 9 = 2 minutes; 10 = 5 minutes; 11 = 10 minutes |
-| 4–7\* | 4 = 10 seconds; 5 = 15 seconds; 6 = 20 seconds; 7 = 30 seconds |
-| 1–3\* | 1 = 1 second; 2 = 2 seconds; 3 = 5 seconds |
-| 0\* | Timestamp stored in each Chest |
+| 11–255 | Reserved |
+| 10 | Year |
+| 9 | Month |
+| 8 | Week |
+| 7 | Day |
+| 6 | Hour |
+| 5 | Minute |
+| 4 | Second |
+| 3 | Millisecond (ms) |
+| 2 | Microsecond (μs) |
+| 1 | Nanosecond (ns) |
+| 0 | Timestamp stored in each Chest |
 
-> \* These codes are for records written live. Archiving processes all records in a completed source block to produce records for longer intervals.
-
-For `interval_code = 0`, the timestamp column and its format must be defined for the Chest; how the schema marks that column remains to be specified. For codes `1`–`15`, the reader derives timestamps from the extent's start time, `interval_value`, and each Chest's position. Calendar boundaries, time zone, and week start for codes `16`–`35` still need definition.
+For `interval_code = 0`, the timestamp column and its format must be defined for the Chest; how the schema marks that column remains to be specified. For codes `1`–`6`, the reader derives timestamps from the extent's start time, `interval_value`, and each Chest's position. Calendar boundaries, time zone, and week start for codes `7`–`10` still need definition.
 
 ## Continuation blocks (`C`)
 
