@@ -80,7 +80,7 @@ Schema-wide fields:
 | **schema_id** | 1 B | Identifies the schema entry. |
 | **col_count** | 1 B | Number of columns in the schema: `1`–`255` valid; `0` is reserved. |
 | **codec** | 1 B | Selects the value representation and compression steps for every extent using this schema; see [Codec Byte](#codec-byte). |
-| **time_format** | 1 B | Defines how the 4-byte `time_value` in each `R` using this schema is interpreted; format codes still need definition. |
+| **time_format** | 1 B | Defines how the 4-byte `time_value` in each `R` and `C` using this schema is interpreted; format codes still need definition. |
 
 Per-column fields, in entry order:
 
@@ -211,7 +211,7 @@ A record block contains:
 | **crc** | 4 B | Covers the block header and payload, including `chest_count`; excludes itself. |
 | **magic_number** | 2 B | Identifies the start of the record block. |
 | **chest_count** | 2 B | Number of Chests in this block; written at finalization to locate the payload areas. |
-| **time_value** | 4 B | Stores the block's time value in the format specified by its schema. |
+| **time_value** | 4 B | Stores the time of the first Chest in this block, using the format specified by its schema. |
 | **dataset_id** | 1 B | Identifies the dataset. |
 | **schema_id** | 1 B | Identifies the schema defining this block's Chest layout. |
 | **interval_code** | 1 B | Selects the time unit. |
@@ -239,7 +239,7 @@ Each `R` stores an `interval_code` and `interval_value` for its extent; its `C` 
 | 1 | Nanosecond (ns) |
 | 0 | Timestamp stored in each Chest |
 
-For `interval_code = 0`, the timestamp column and its format must be defined for the Chest; how the schema marks that column remains to be specified. For codes `1`–`6`, the reader derives timestamps from the extent's start time, `interval_value`, and each Chest's position. Calendar boundaries, time zone, and week start for codes `7`–`10` still need definition.
+For `interval_code = 0`, the timestamp column and its format must be defined for the Chest; how the schema marks that column remains to be specified. For codes `1`–`6`, the reader derives timestamps from each block's `time_value`, `interval_value`, and the Chest's position within that block. Calendar boundaries, time zone, and week start for codes `7`–`10` still need definition.
 
 ## Continuation blocks (`C`)
 
@@ -252,24 +252,25 @@ A continuation block contains:
 | **crc** | 4 B | Covers the block header and payload, including `chest_count`; excludes itself. |
 | **magic_number** | 2 B | Identifies the start of the continuation block. |
 | **chest_count** | 2 B | Number of Chests in this block; written at finalization to locate the payload areas. |
+| **time_value** | 4 B | Stores the measured time of the first Chest in this block, using the format specified by its schema. |
 | **dataset_id** | 1 B | Identifies the dataset. |
 | **alignment_padding** | 3 B | Set to `0`; aligns the payload to a 4-byte boundary. |
-| **payload** | 4,082 B remaining | Stores more Chests using the schema and codec of this extent's Record block. |
+| **payload** | 4,078 B remaining | Stores more Chests using the schema and codec of this extent's Record block. |
 
-The Continuation block uses the `time_value`, `interval_code`, `interval_value`, time format, schema, and codec from its parent `R`. Its header is 12 bytes. For interval codes, readers derive each Chest's time from the `R`'s starting time, the selected interval multiplied by `interval_value`, and its position across the `R` and following `C` blocks. For `interval_code = 0`, each Chest stores its own timestamp. At finalization, write `chest_count`, then compute and store `crc`; readers use the count only if the CRC validates.
+The Continuation block uses its own `time_value` and inherits `interval_code`, `interval_value`, time format, schema, and codec from its parent `R`. Its header is 16 bytes. Each block's `time_value` anchors its first Chest, so timing drift does not accumulate across blocks. For `interval_code = 0`, each Chest stores its own timestamp. At finalization, write `chest_count`, then compute and store `crc`; readers use the count only if the CRC validates.
 
 Approximate records per block, assuming each chest is entirely contained in 1 block:
 
-Continuation block header: 12 bytes.
+Continuation block header: 16 bytes.
 
 | Chest size | Records per block | Unused payload (B) |
 |---:|---:|---:|
-| 4 B | 1,020 | 2 |
-| 8 B | 510 | 2 |
-| 12 B | 340 | 2 |
-| 16 B | 255 | 2 |
-| 20 B | 204 | 2 |
-| 24 B | 170 | 2 |
+| 4 B | 1,019 | 2 |
+| 8 B | 509 | 6 |
+| 12 B | 339 | 10 |
+| 16 B | 254 | 14 |
+| 20 B | 203 | 18 |
+| 24 B | 169 | 22 |
 
 > Unused bytes are the remaining payload space after storing whole records. The counts assume records are packed consecutively with no alignment padding.
 ## Payload
@@ -291,15 +292,15 @@ The table assumes one raw 4-byte Chest every 1, 10, or 30 seconds. Counts includ
 
 | Storage size | Continuation<br>blocks | Continuation<br>header space | Records | Time to full<br>(1 sec) | Time to full<br>(10 secs) | Time to full<br>(30 secs) |
 |---:|---:|---:|---:|---:|---:|---:|
-| 32 KiB | 5 | 0.06 KiB | 6,119 | ~1.7 hours | ~17.0 hours | ~2.1 days |
-| 128 KiB | 29 | 0.3 KiB | 30,599 | ~8.5 hours | ~3.5 days | ~10.6 days |
-| 1 MiB | 253 | 3.0 KiB | 259,079 | ~3.0 days | ~30.0 days | ~90.0 days |
-| 32 MiB | 8,189 | 96 KiB | 8.4 × 10⁶ | ~96.7 days | ~2.6 years | ~7.9 years |
-| 126 MiB | 32,253 | 378 KiB | 32.9 × 10⁶ | ~1.0 years | ~10.4 years | ~31.3 years |
-| 512 MiB | 131,069 | 1,536 KiB | 133.7 × 10⁶ | ~4.2 years | ~42.4 years | ~127.2 years |
-| 1 GiB | 262,141 | 3,072 KiB | 267.4 × 10⁶ | ~8.5 years | ~84.8 years | ~254.4 years |
+| 32 KiB | 5 | 0.08 KiB | 6,114 | ~1.7 hours | ~17.0 hours | ~2.1 days |
+| 128 KiB | 29 | 0.5 KiB | 30,570 | ~8.5 hours | ~3.5 days | ~10.6 days |
+| 1 MiB | 253 | 4.0 KiB | 258,826 | ~3.0 days | ~30.0 days | ~89.9 days |
+| 32 MiB | 8,189 | 128 KiB | 8.3 × 10⁶ | ~96.6 days | ~2.6 years | ~7.9 years |
+| 126 MiB | 32,253 | 504 KiB | 32.9 × 10⁶ | ~1.0 years | ~10.4 years | ~31.3 years |
+| 512 MiB | 131,069 | 2,048 KiB | 133.6 × 10⁶ | ~4.2 years | ~42.4 years | ~127.1 years |
+| 1 GiB | 262,141 | 4,096 KiB | 267.1 × 10⁶ | ~8.5 years | ~84.7 years | ~254.1 years |
 
-> Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. With codec `0`, the Record block holds 1,019 Chests and each Continuation block holds 1,020. Multiple streams need additional Record blocks.
+> Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. With codec `0`, the Record block and each Continuation block hold 1,019 Chests. Multiple streams need additional Record blocks.
 
 ## Recovery and Log Scanning
 
