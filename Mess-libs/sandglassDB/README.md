@@ -274,19 +274,19 @@ The block header's `payload_length` marks the end of the last segment. Readers p
 
 ## Total Storage Capacity
 
-The table assumes one raw 4 B value per reading every 1, 10, or 30 seconds (`interval_code = 4`). Counts include the capacity of 1 `R` block and all `C` blocks. Storage sizes use binary units.
+The table estimates segmented temperature storage (`codec = 0x10`) with a 2 B base and exactly 4 segments per block. Each 4,078 B payload holds up to 4,066 readings: 4 segments use 16 B for their bases and counts, and the remaining bytes hold 4,062 signed 1 B offsets. Readings arrive every 1, 10, or 30 seconds (`interval_code = 4`). Storage sizes use binary units.
 
 | Storage size | Continuation<br>blocks | Continuation<br>header space | Readings | Time to full<br>(1 sec) | Time to full<br>(10 secs) | Time to full<br>(30 secs) |
 |---:|---:|---:|---:|---:|---:|---:|
-| 32 KiB | 5 | 0.08 KiB | 6,114 | ~1.7 hours | ~17.0 hours | ~2.1 days |
-| 128 KiB | 29 | 0.5 KiB | 30,570 | ~8.5 hours | ~3.5 days | ~10.6 days |
-| 1 MiB | 253 | 4.0 KiB | 258,826 | ~3.0 days | ~30.0 days | ~89.9 days |
-| 32 MiB | 8,189 | 128 KiB | 8.3 × 10⁶ | ~96.6 days | ~2.6 years | ~7.9 years |
-| 126 MiB | 32,253 | 504 KiB | 32.9 × 10⁶ | ~1.0 years | ~10.4 years | ~31.3 years |
-| 512 MiB | 131,069 | 2,048 KiB | 133.6 × 10⁶ | ~4.2 years | ~42.4 years | ~127.1 years |
-| 1 GiB | 262,141 | 4,096 KiB | 267.1 × 10⁶ | ~8.5 years | ~84.7 years | ~254.1 years |
+| 32 KiB | 5 | 0.08 KiB | 24,396 | ~6.8 hours | ~2.8 days | ~8.5 days |
+| 128 KiB | 29 | 0.5 KiB | 121,980 | ~1.4 days | ~14.1 days | ~42.4 days |
+| 1 MiB | 253 | 4.0 KiB | 1,032,764 | ~12.0 days | ~119.5 days | ~358.6 days |
+| 32 MiB | 8,189 | 128 KiB | 33,300,540 | ~1.1 years | ~10.6 years | ~31.7 years |
+| 126 MiB | 32,253 | 504 KiB | 131,144,764 | ~4.2 years | ~41.6 years | ~124.7 years |
+| 512 MiB | 131,069 | 2,048 KiB | 532,930,620 | ~16.9 years | ~168.9 years | ~506.6 years |
+| 1 GiB | 262,141 | 4,096 KiB | 1,065,869,372 | ~33.8 years | ~337.8 years | ~1,013.3 years |
 
-> Assumes 2 Superblocks and 1 `R` block; all remaining 4 KiB blocks are `C` blocks. With codec `0`, each block holds 1,019 readings. Multiple datasets need additional `R` blocks.
+> Assumes 2 Superblocks and 1 `R` block; all remaining 4 KiB blocks are `C` blocks. The estimate requires every reading to fit within one of the 4 segments in its block. Multiple datasets need additional `R` blocks.
 
 ## Recovery and Log Scanning
 
