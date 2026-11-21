@@ -28,7 +28,7 @@ uint16_t _tft_frame[ST7735_W] = {0};
 void tft_print(const char* str, uint8_t x, uint8_t y, uint16_t color, uint16_t bg_color) {
     uint8_t font_width = 6, font_height = 8;
     uint16_t current_x = x, current_y = y;
-    
+
     INT_TFT_CS_LOW();
 
     while (*str) {
@@ -38,7 +38,7 @@ void tft_print(const char* str, uint8_t x, uint8_t y, uint16_t color, uint16_t b
 
         for (uint8_t y = font_height - 1; y < font_height; y--) {
             uint8_t mask = 0x01 << y;
-            
+
             for (uint8_t x = 0; x < font_width; x++) {
                 _tft_frame[len++] = (glyph[x] & mask) ? color : bg_color;
             }
@@ -245,7 +245,7 @@ static void tft_draw_solid_poly(
 
     // Find the bounding box of the polygon
     int16_t min_y = vertices[0].y, max_y = vertices[0].y;
-    
+
     for (uint16_t i = 1; i < num_vertices; i++) {
         if (vertices[i].y < min_y) min_y = vertices[i].y;
         if (vertices[i].y > max_y) max_y = vertices[i].y;
@@ -288,12 +288,12 @@ static void tft_draw_solid_poly(
             if (i + 1 >= num_intersections) break;
             int16_t x0 = intersections[i];
             int16_t x1 = intersections[i + 1];
-            
+
             // Draw horizontal line between intersections
             tft_draw_line(x0, y, x1, y, fill_color, 1);
         }
     }
-    
+
     // Optionally draw the edges
     if (edge_width > 0) {
         tft_draw_poly2(vertices, num_vertices, edge_color, edge_width); // Draw edges with specified width
@@ -310,7 +310,7 @@ static void tft_draw_solid_poly2(
 
     // Find the bounding box of the polygon
     int16_t min_y = vertices[0].y, max_y = vertices[0].y;
-    
+
     for (uint16_t i = 1; i < num_vertices; i++) {
         if (vertices[i].y < min_y) min_y = vertices[i].y;
         if (vertices[i].y > max_y) max_y = vertices[i].y;
@@ -322,16 +322,15 @@ static void tft_draw_solid_poly2(
         int32_t x_step;  // Fixed-point slope (dx/dy)
         int32_t x_curr;  // Fixed-point current x
     } EdgeInfo;
-    
+
     EdgeInfo edges[num_vertices];
     uint8_t valid_edges = 0;
-    
+
     for (uint16_t i = 0; i < num_vertices; i++) {
         const Point16_t* p0 = &vertices[i];
         const Point16_t* p1 = &vertices[(i + 1) % num_vertices];
-        
         if (p0->y == p1->y) continue; // Skip horizontal edges
-        
+
         // Order vertices top to bottom
         int16_t y_min, y_max, x_start;
         if (p0->y < p1->y) {
@@ -389,7 +388,7 @@ static void tft_draw_solid_poly2(
             }
         }
     }
-    
+
     // Optionally draw the edges
     if (edge_width > 0) {
         tft_draw_poly2(vertices, num_vertices, edge_color, edge_width); // Draw edges with specified width
@@ -405,7 +404,7 @@ static void tft_draw_circle(
     int16_t err = 1 - radius; // Initial error term
 
     INT_TFT_CS_LOW();
-    
+
     while (x <= y) {
         // Draw symmetric points in all octants
         _render_pixel(center.x + x, center.y + y, color); // Octant 1

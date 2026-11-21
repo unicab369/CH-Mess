@@ -25,7 +25,7 @@ static void SPI_init(uint8_t rst_pin, uint8_t dc_pin) {
     SPI1->CTLR1 |= SPI_CPHA_1Edge | SPI_CPOL_Low
                 | SPI_Mode_Master| SPI_BaudRatePrescaler_4
                 | SPI_NSS_Soft | SPI_DataSize_8b;
-    
+
     SPI1->CTLR1 |= SPI_Direction_2Lines_FullDuplex;
     // SPI1->CTLR1 |= SPI_Direction_1Line_Tx;
 
@@ -35,17 +35,17 @@ static void SPI_init(uint8_t rst_pin, uint8_t dc_pin) {
     if (rst_pin != -1) {
         funPinMode(rst_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
         funDigitalWrite(rst_pin, 1);
-        
+
         // Reset Spi Devices
         funDigitalWrite(rst_pin, 0);
         Delay_Ms(100);
         funDigitalWrite(rst_pin, 1);
         Delay_Ms(100);
     }
-    
+
     if (dc_pin != -1) {
         funPinMode(dc_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
-        SPI_DC_PIN = dc_pin;   
+        SPI_DC_PIN = dc_pin;
     }
 }
 
@@ -58,7 +58,7 @@ static void SPI_DMA_init(DMA_Channel_TypeDef* DMA_Channel) {
 
     // Configure DMA
     DMA_Channel->PADDR = (uint32_t)&SPI1->DATAR;
-    DMA_Channel->CFGR = DMA_M2M_Disable | DMA_Priority_VeryHigh 
+    DMA_Channel->CFGR = DMA_M2M_Disable | DMA_Priority_VeryHigh
                         | DMA_MemoryDataSize_Byte | DMA_PeripheralDataSize_Byte
                         | DMA_MemoryInc_Enable | DMA_PeripheralInc_Disable
                         | DMA_Mode_Circular | DMA_DIR_PeripheralDST;
@@ -66,12 +66,12 @@ static void SPI_DMA_init(DMA_Channel_TypeDef* DMA_Channel) {
 
 static void SPI_send_DMA(const uint8_t* buffer, uint16_t len) {
     FN_SPI_DC_HIGH();
-    
+
     DMA1_Channel3->CNTR  = len;
     DMA1_Channel3->MADDR = (uint32_t)buffer;
 
     // Start DMA transfer
-    DMA1_Channel3->CFGR |= DMA_CFGR1_EN;  
+    DMA1_Channel3->CFGR |= DMA_CFGR1_EN;
 
     DMA1->INTFCR = DMA1_FLAG_TC3;
     while (!(DMA1->INTFR & DMA1_FLAG_TC3));
