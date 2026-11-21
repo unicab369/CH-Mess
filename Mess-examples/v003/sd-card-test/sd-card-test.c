@@ -55,12 +55,17 @@ int main(void) {
 		while (1) { }
 	}
 
-	printf("Writing to %s...\n", SD_TEST_FILE);
-	printf("Create %s on the card first; it must be at least %u bytes.\n",
-	       SD_TEST_FILE, (unsigned)(sizeof(message) - 1));
-	fs_result = pf_open(SD_TEST_FILE);
+	printf("Creating %s (%u bytes)...\n", SD_TEST_FILE,
+	       (unsigned)(sizeof(message) - 1));
+	fs_result = pf_create(SD_TEST_FILE, sizeof(message) - 1);
+	if (fs_result == FR_EXIST) {
+		/* Reuse the file from a previous run; it must have enough capacity. */
+		fs_result = pf_open(SD_TEST_FILE);
+	} else if (fs_result == FR_OK) {
+		printf("Created %s\n", SD_TEST_FILE);
+	}
 	if (fs_result != FR_OK) {
-		printf("Open for write failed (Petit FatFs result %u)\n", (unsigned)fs_result);
+		printf("Create/open failed (Petit FatFs result %u)\n", (unsigned)fs_result);
 		while (1) { }
 	}
 	fs_result = pf_write(message, sizeof(message) - 1, &bytes_written);

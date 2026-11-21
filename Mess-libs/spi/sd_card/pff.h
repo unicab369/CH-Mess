@@ -106,10 +106,11 @@ typedef struct {
 	BYTE	fs_type;	/* FAT sub type */
 	BYTE	flag;		/* File status flags */
 	BYTE	csize;		/* Number of sectors per cluster */
-	BYTE	pad1;
+	BYTE	nfats;		/* Number of FAT copies */
 	WORD	n_rootdir;	/* Number of root directory entries (0 on FAT32) */
 	CLUST	n_fatent;	/* Number of FAT entries (= number of clusters + 2) */
 	DWORD	fatbase;	/* FAT start sector */
+	DWORD	fatsize;	/* Sectors per FAT */
 	DWORD	dirbase;	/* Root directory start sector (Cluster# on FAT32) */
 	DWORD	database;	/* Data start sector */
 	DWORD	fptr;		/* File R/W pointer */
@@ -148,7 +149,9 @@ typedef enum {
 	FR_NO_FILE,			/* 3 */
 	FR_NOT_OPENED,		/* 4 */
 	FR_NOT_ENABLED,		/* 5 */
-	FR_NO_FILESYSTEM	/* 6 */
+	FR_NO_FILESYSTEM,	/* 6 */
+	FR_EXIST,			/* 7: File already exists */
+	FR_DENIED			/* 8: Operation not supported or no space */
 } FRESULT;
 
 
@@ -157,6 +160,7 @@ typedef enum {
 
 // FRESULT pf_mount (FATFS* fs);								/* Mount/Unmount a logical drive */
 // FRESULT pf_open (const char* path);							/* Open a file */
+// FRESULT pf_create (const char* path, DWORD size);			/* Create a root-directory file with a fixed size */
 // FRESULT pf_read (void* buff, UINT btr, UINT* br);			/* Read data from the open file */
 // FRESULT pf_write (const void* buff, UINT btw, UINT* bw);	/* Write data to the open file */
 // FRESULT pf_lseek (DWORD ofs);								/* Move file pointer of the open file */
@@ -980,6 +984,84 @@ static BYTE check_fs (	/* 0:The FAT boot record, 1:Valid boot record but not an 
 	return 1;
 }
 
+/* Added helper: write one complete sector through the disk interface. */
+static FRESULT pff_write_sector (DWORD sector, const BYTE *data) {
+	if (disk_writep(0, sector) != RES_OK) return FR_DISK_ERR;
+	if (disk_writep(data, 512) != RES_OK) {
+		(void)disk_writep(0, 0);
+		return FR_DISK_ERR;
+	}
+	return disk_writep(0, 0) == RES_OK ? FR_OK : FR_DISK_ERR;
+}
+
+/* Added helper: update one FAT16/FAT32 entry in every FAT copy. */
+static FRESULT pff_set_fat (CLUST cluster, CLUST value) {
+	FATFS *fs = FatFs;
+	BYTE sector_data[512];
+	UINT offset;
+	DWORD sector;
+	UINT width;
+
+	if (fs->fs_type == FS_FAT16) {
+		width = 2;
+		sector = cluster / 256;
+		offset = (cluster % 256) * 2;
+	} else if (fs->fs_type == FS_FAT32) {
+		width = 4;
+		sector = cluster / 128;
+		offset = (cluster % 128) * 4;
+	} else {
+		return FR_DENIED;
+	}
+
+	for (BYTE copy = 0; copy < fs->nfats; ++copy) {
+		DWORD fat_sector = fs->fatbase + (DWORD)copy * fs->fatsize + sector;
+		if (disk_readp(sector_data, fat_sector, 0, sizeof(sector_data)) != RES_OK) {
+			printf("pf_create: FAT sector read failed at %lu\n", (unsigned long)fat_sector);
+			return FR_DISK_ERR;
+		}
+
+		if (width == 2) {
+			sector_data[offset] = (BYTE)value;
+			sector_data[offset + 1] = (BYTE)(value >> 8);
+		} else {
+			DWORD old_value = ld_dword(&sector_data[offset]);
+			DWORD new_value = (old_value & 0xF0000000UL) | ((DWORD)value & 0x0FFFFFFFUL);
+			sector_data[offset] = (BYTE)new_value;
+			sector_data[offset + 1] = (BYTE)(new_value >> 8);
+			sector_data[offset + 2] = (BYTE)(new_value >> 16);
+			sector_data[offset + 3] = (BYTE)(new_value >> 24);
+		}
+		if (pff_write_sector(fat_sector, sector_data) != FR_OK) return FR_DISK_ERR;
+	}
+	return FR_OK;
+}
+
+/* Added helper: allocate a cluster chain and return its first cluster. */
+static FRESULT pff_allocate_chain (DWORD size, CLUST *first_cluster) {
+	FATFS *fs = FatFs;
+	DWORD cluster_bytes = (DWORD)fs->csize * 512;
+	DWORD needed = (size + cluster_bytes - 1) / cluster_bytes;
+	CLUST first = 0, previous = 0;
+
+	*first_cluster = 0;
+	if (!needed) return FR_OK;
+	if (fs->fs_type != FS_FAT16 && fs->fs_type != FS_FAT32) return FR_DENIED;
+
+	for (CLUST candidate = 2; candidate < fs->n_fatent && needed; ++candidate) {
+		if (get_fat(candidate) != 0) continue;
+		if (!first) first = candidate;
+		if (previous && pff_set_fat(previous, candidate) != FR_OK) return FR_DISK_ERR;
+		previous = candidate;
+		if (pff_set_fat(candidate, fs->fs_type == FS_FAT16 ? 0xFFFF : 0x0FFFFFFF) != FR_OK)
+			return FR_DISK_ERR;
+		--needed;
+	}
+	if (needed) return FR_DENIED;
+	*first_cluster = first;
+	return FR_OK;
+}
+
 /*--------------------------------------------------------------------------
 Public Functions
 --------------------------------------------------------------------------*/
@@ -1025,7 +1107,9 @@ FRESULT pf_mount (
 	fsize = ld_word(buf+BPB_FATSz16-13);				/* Number of sectors per FAT */
 	if (!fsize) fsize = ld_dword(buf+BPB_FATSz32-13);
 
-	fsize *= buf[BPB_NumFATs-13];						/* Number of sectors in FAT area */
+	fs->fatsize = fsize;
+	fs->nfats = buf[BPB_NumFATs-13];
+	fsize *= fs->nfats;									/* Number of sectors in FAT area */
 	fs->fatbase = bsect + ld_word(buf+BPB_RsvdSecCnt-13); /* FAT start sector (lba) */
 	fs->csize = buf[BPB_SecPerClus-13];					/* Number of sectors per cluster */
 	fs->n_rootdir = ld_word(buf+BPB_RootEntCnt-13);		/* Nmuber of root directory entries */
@@ -1059,6 +1143,96 @@ FRESULT pf_mount (
 /*-----------------------------------------------------------------------*/
 /* Open or Create a File                                                 */
 /*-----------------------------------------------------------------------*/
+
+/* Added public method: create a root-directory 8.3 file with a fixed size and leave it open.
+   Petit FatFs writes only within the size recorded in the directory entry. */
+FRESULT pf_create (const char *path, DWORD size) {
+	FATFS *fs = FatFs;
+	DIR dj;
+	BYTE name[12], dir[32], sector_data[512];
+	const char *p = path;
+	DWORD free_sector = 0;
+	UINT free_offset = 0;
+	CLUST first_cluster;
+	FRESULT result;
+
+	if (!fs) return FR_NOT_ENABLED;
+	while (*p == '/') ++p;
+	for (const char *q = p; *q; ++q) if (*q == '/') return FR_DENIED;
+	if (!*p) return FR_DENIED;
+
+	dj.fn = name;
+	result = create_name(&dj, &p);
+	if (result != FR_OK || !name[11] || *p > ' ') return FR_DENIED;
+	dj.sclust = 0; /* Root directory, as used by follow_path(). */
+	result = dir_rewind(&dj); /* Creation is limited to the volume root. */
+	if (result != FR_OK) {
+		printf("pf_create: root directory setup failed (cluster %lu, limit %lu, type %u)\n",
+		       (unsigned long)fs->dirbase, (unsigned long)fs->n_fatent, (unsigned)fs->fs_type);
+		return result;
+	}
+
+	for (;;) {
+		if (disk_readp(dir, dj.sect, (dj.index % 16) * 32, sizeof(dir)) != RES_OK) {
+			printf("pf_create: directory read failed at sector %lu\n", (unsigned long)dj.sect);
+			return FR_DISK_ERR;
+		}
+
+		if (dir[0] == 0 || dir[0] == 0xE5) {
+			if (!free_sector) {
+				free_sector = dj.sect;
+				free_offset = (dj.index % 16) * 32;
+			}
+			if (dir[0] == 0) break;
+		} else if (!(dir[DIR_Attr] & AM_VOL) && !mem_cmp(dir, name, 11)) {
+			return FR_EXIST;
+		}
+		result = dir_next(&dj);
+		if (result != FR_OK) {
+			if (result == FR_DISK_ERR)
+				printf("pf_create: directory chain read failed at index %u\n", (unsigned)dj.index);
+			break;
+		}
+	}
+	if (!free_sector) return FR_DENIED;
+
+	result = pff_allocate_chain(size, &first_cluster);
+	if (result != FR_OK) {
+		printf("pf_create: cluster allocation failed (result %u)\n", (unsigned)result);
+		return result;
+	}
+
+	if (disk_readp(sector_data, free_sector, 0, sizeof(sector_data)) != RES_OK) {
+		printf("pf_create: directory sector read failed at %lu\n", (unsigned long)free_sector);
+		return FR_DISK_ERR;
+	}
+	mem_set(&sector_data[free_offset], 0, 32);
+	for (BYTE i = 0; i < 11; ++i) sector_data[free_offset + i] = name[i];
+	sector_data[free_offset + DIR_Attr] = AM_ARC;
+
+	if (_FS_32ONLY || (PF_FS_FAT32 && fs->fs_type == FS_FAT32)) {
+		sector_data[free_offset + DIR_FstClusHI] = (BYTE)(first_cluster >> 16);
+		sector_data[free_offset + DIR_FstClusHI + 1] = (BYTE)(first_cluster >> 24);
+	}
+	sector_data[free_offset + DIR_FstClusLO] = (BYTE)first_cluster;
+	sector_data[free_offset + DIR_FstClusLO + 1] = (BYTE)(first_cluster >> 8);
+	sector_data[free_offset + DIR_FileSize] = (BYTE)size;
+	sector_data[free_offset + DIR_FileSize + 1] = (BYTE)(size >> 8);
+	sector_data[free_offset + DIR_FileSize + 2] = (BYTE)(size >> 16);
+	sector_data[free_offset + DIR_FileSize + 3] = (BYTE)(size >> 24);
+	result = pff_write_sector(free_sector, sector_data);
+	if (result != FR_OK) {
+		printf("pf_create: directory sector write failed at %lu\n", (unsigned long)free_sector);
+		return result;
+	}
+
+	fs->org_clust = first_cluster;
+	fs->curr_clust = 0;
+	fs->fsize = size;
+	fs->fptr = 0;
+	fs->flag = FA_OPENED;
+	return FR_OK;
+}
 
 FRESULT pf_open (
 	const char *path	/* Pointer to the file name */
