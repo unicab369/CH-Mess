@@ -51,25 +51,25 @@ uint8_t ST7735_XOFFSET = 0;
 uint8_t ST7735_YOFFSET = 0;
 
 void TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
-    SPI_cmd_8(ST7735_CASET);
-    SPI_cmd_data_16(x0 + ST7735_XOFFSET);
-    SPI_cmd_data_16(x1 + ST7735_XOFFSET);
-    SPI_cmd_8(ST7735_RASET);
-    SPI_cmd_data_16(y0 + ST7735_YOFFSET);
-    SPI_cmd_data_16(y1 + ST7735_YOFFSET);
-    SPI_cmd_8(ST7735_RAMWR);
+    SPI_CMD_8(ST7735_CASET);
+    SPI_CMD_DATA_16(x0 + ST7735_XOFFSET);
+    SPI_CMD_DATA_16(x1 + ST7735_XOFFSET);
+    SPI_CMD_8(ST7735_RASET);
+    SPI_CMD_DATA_16(y0 + ST7735_YOFFSET);
+    SPI_CMD_DATA_16(y1 + ST7735_YOFFSET);
+    SPI_CMD_8(ST7735_RAMWR);
 }
 
 void TFT_SEND_BUFF8(const uint8_t* buffer, uint16_t len) {
-    for (int i = 0; i < len; i++) SPI_cmd_data_8(buffer[i]);
+    for (int i = 0; i < len; i++) SPI_CMD_DATA_8(buffer[i]);
 }
 
 void TFT_SEND_BUFF16(const uint16_t* buffer, uint16_t len) {
-    for (int i = 0; i < len; i++) SPI_cmd_data_16(buffer[i]);
+    for (int i = 0; i < len; i++) SPI_CMD_DATA_16(buffer[i]);
 }
 
 void TFT_SEND_PIXEL(uint16_t color) {
-    SPI_cmd_data_16(color);
+    SPI_CMD_DATA_16(color);
 }
 
 
@@ -118,20 +118,20 @@ void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
     TFT_CS_LOW();
 
     //# Software reset
-    SPI_cmd_8(ST7735_SWRESET);
+    SPI_CMD_8(ST7735_SWRESET);
     Delay_Ms(110);                      //! 1.8" display need at least 110ms
-    SPI_cmd_8(ST7735_SLEEPOFF);
+    SPI_CMD_8(ST7735_SLEEPOFF);
     Delay_Ms(20);
 
     //# Interface Pixel Format
-    SPI_cmd_8(ST7735_COLMODE);
-    SPI_cmd_data_8(0x05);               // 0x03: 12-bit, 0x05: 16-bit, 0x06: 18-bit, 0x07: Not used
+    SPI_CMD_8(ST7735_COLMODE);
+    SPI_CMD_DATA_8(0x05);               // 0x03: 12-bit, 0x05: 16-bit, 0x06: 18-bit, 0x07: Not used
 
     //# Display inversion
-    SPI_cmd_8(ST7735_INVERTON);
+    SPI_CMD_8(ST7735_INVERTON);
 
     //# Normal display on
-    SPI_cmd_8(ST7735_NORON);
+    SPI_CMD_8(ST7735_NORON);
 
     //# MADCTL - Memory Access Control
     uint8_t MADCTL_MY = 0b10000000;     // bit7: Row address order
@@ -142,16 +142,16 @@ void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
     uint8_t MADCTL_RGB = 0b00001000;    // bit3: Color order (0 = RGB, 1 = BGR)
 
     // & 0xFF to turn ON, & 0x00 to turn OFF
-    SPI_cmd_8(ST7735_MADCTL);
+    SPI_CMD_8(ST7735_MADCTL);
     uint8_t ctrValue = (MADCTL_MY & 0xFF) | (MADCTL_MV & 0xFF);
-    SPI_cmd_data_8(ctrValue);
+    SPI_CMD_DATA_8(ctrValue);
 
     //# Gamma+ Adjustments Control (magic numbers)
     uint8_t gamma_pos[] = {
         0x09, 0x16, 0x09, 0x20, 0x21, 0x1B, 0x13, 0x19,
         0x17, 0x15, 0x1E, 0x2B, 0x04, 0x05, 0x02, 0x0E
     };
-    SPI_cmd_8(ST7735_GAMCTRP);
+    SPI_CMD_8(ST7735_GAMCTRP);
     TFT_SEND_BUFF8(gamma_pos, 16);
 
     //# Gamma- Adjustments Control (magic numbers)
@@ -159,12 +159,12 @@ void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
         0x0B, 0x14, 0x08, 0x1E, 0x22, 0x1D, 0x18, 0x1E,
         0x1B, 0x1A, 0x24, 0x2B, 0x06, 0x06, 0x02, 0x0F
     };
-    SPI_cmd_8(ST7735_GAMCTRN);
+    SPI_CMD_8(ST7735_GAMCTRN);
     TFT_SEND_BUFF8(gamma_neg, 16);
     // Delay_Ms(10);
 
     //# Display On
-    SPI_cmd_8(ST7735_DISPON);
+    SPI_CMD_8(ST7735_DISPON);
     // Delay_Ms(10);
 
     TFT_CS_HIGH();

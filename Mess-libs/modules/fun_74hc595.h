@@ -46,7 +46,7 @@ void HC595_SET_LATCH() {
 
 void hc595_send8(u8 data) {
 	HC595_RELEASE_LATCH();		// latch OFF
-	SPI_transfer_8(data);
+	SPI_WRITE_8(data);
 	HC595_SET_LATCH();			// latch ON
 }
 
@@ -54,8 +54,8 @@ void hc595_send16(u16 data) {
 	HC595_RELEASE_LATCH();		// latch OFF
 	u8 msb = (data >> 8) & 0xFF;
 	u8 lsb = data & 0xFF;
-	SPI_transfer_8(msb);
-	SPI_transfer_8(lsb);
+	SPI_WRITE_8(msb);
+	SPI_WRITE_8(lsb);
 	HC595_SET_LATCH();			// latch ON
 }
 

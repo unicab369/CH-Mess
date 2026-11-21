@@ -39,20 +39,20 @@ u8 LORA_CS_PIN2 = -1;
 
 void sx126x_write_CMD(u8 opCode, u8* data, u8 len) {
 	if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
-	SPI_transfer_8(opCode);
+	SPI_WRITE_8(opCode);
 
 	for (int i=0; i<len; i++) {
-		SPI_transfer_8(data[i]);
+		SPI_WRITE_8(data[i]);
 	}
 	if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
 }
 
 void sx126x_read_CMD(u8 opCode, u8* data, u8 len) {
 	if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
-	SPI_transfer_8(opCode);
+	SPI_WRITE_8(opCode);
 
 	for (int i=0; i<len; i++) {
-		data[i] = SPI_transfer_8(data[i]);
+		data[i] = SPI_WRITE_8(data[i]);
 	}
 	if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
 }
@@ -62,12 +62,12 @@ void sx126x_read_CMD(u8 opCode, u8* data, u8 len) {
 void sx126x_write_REG(u16 addr, u8 *data, u8 len) {
 	//# 0x0D: Write Register
 	if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
-	SPI_transfer_8(0x0D);
-	SPI_transfer_8((u8)((addr >> 8) & 0xFF));	// trasfer MSB
-	SPI_transfer_8((u8)(addr & 0xFF));			// transfer LSB
+	SPI_WRITE_8(0x0D);
+	SPI_WRITE_8((u8)((addr >> 8) & 0xFF));	// trasfer MSB
+	SPI_WRITE_8((u8)(addr & 0xFF));			// transfer LSB
 
 	for (int i=0; i<len; i++) {
-		SPI_transfer_8(data[i]);
+		SPI_WRITE_8(data[i]);
 	}
 	if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
 }
@@ -75,14 +75,14 @@ void sx126x_write_REG(u16 addr, u8 *data, u8 len) {
 void sx126x_read_REG(u16 addr, u8 *data, u8 len) {
 	//# 0x1D: Read Register
 	if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
-	SPI_transfer_8(0x1D);
-	SPI_transfer_8((u8)((addr >> 8) & 0xFF));	// trasfer MSB
-	SPI_transfer_8((u8)(addr & 0xFF));			// transfer LSB
-	SPI_transfer_8(0x00);						// Dummy Byte
+	SPI_WRITE_8(0x1D);
+	SPI_WRITE_8((u8)((addr >> 8) & 0xFF));	// trasfer MSB
+	SPI_WRITE_8((u8)(addr & 0xFF));			// transfer LSB
+	SPI_WRITE_8(0x00);						// Dummy Byte
 
 	// read data
 	for (int i=0; i<len; i++) {
-		data[i] = SPI_transfer_8(data[i]);
+		data[i] = SPI_WRITE_8(data[i]);
 	}
 
 	if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
@@ -93,23 +93,23 @@ void sx126x_read_REG(u16 addr, u8 *data, u8 len) {
 void sx126x_write_BUFF(u8 offset, u8* data, u8 len) {
 	//# 0x0E: Write Buffer
 	if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
-	SPI_transfer_8(0x0E);
-	SPI_transfer_8(offset);
+	SPI_WRITE_8(0x0E);
+	SPI_WRITE_8(offset);
 
-	for (int i=0; i<len; i++) SPI_transfer_8(data[i]);
+	for (int i=0; i<len; i++) SPI_WRITE_8(data[i]);
 	if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
 }
 
 void sx126x_read_BUFF(u8 offset, u8 *data, u8 len) {
 	//# 0x1E: Read Buffer
 	if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
-	SPI_transfer_8(0x1E);
-	SPI_transfer_8(offset);
-	SPI_transfer_8(0x00);						// Dummy Byte
+	SPI_WRITE_8(0x1E);
+	SPI_WRITE_8(offset);
+	SPI_WRITE_8(0x00);						// Dummy Byte
 
 	// read data
 	for (int i=0; i<len; i++) {
-		data[i] = SPI_transfer_8(data[i]);
+		data[i] = SPI_WRITE_8(data[i]);
 	}
 
 	if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);	

@@ -39,8 +39,8 @@ u8 sx127x_transfer(u8 reg, u8 value) {
 	u8 resp;
 
 	if (SX127X_CS_PIN != -1) funDigitalWrite(SX127X_CS_PIN, 0);
-	resp = SPI_transfer_8(reg);
-	resp = SPI_transfer_8(value);
+	resp = SPI_WRITE_8(reg);
+	resp = SPI_WRITE_8(value);
 	if (SX127X_CS_PIN != -1) funDigitalWrite(SX127X_CS_PIN, 1);
 	return resp;
 }

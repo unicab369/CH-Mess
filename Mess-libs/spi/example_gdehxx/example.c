@@ -22,7 +22,7 @@ int main() {
     funGpioInitAll();
     Delay_Ms(100);
 
-    SPI_init(SPI_PORT_PIN_NONE, SPI_PORT_PIN_NONE);
+    SPI_INIT(SPI_PORT_PIN_NONE, SPI_PORT_PIN_NONE);
     fun_epd_setup(PC3, PC0, PC7);
 
     uint32_t now;
