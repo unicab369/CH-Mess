@@ -77,12 +77,12 @@ Each schema entry describes one value type for a dataset. Its fields appear in t
 | **entry_crc** | 4 B | Validates the schema entry. |
 | **commit** | 1 B | Marks the entry as fully written. |
 | **schema_id** | 1 B | Identifies the schema entry. |
-| **codec** | 1 B | Selects how this value is stored; see [Codec Byte](#codec-byte). |
 | **time_format** | 1 B | Defines the 4 B `base_time` in `R` and `C`; format codes still need definition. |
+| **codec** | 1 B | Selects how this value is stored; see [Codec Byte](#codec-byte). |
 | **value_width** | 1 B | Number of bytes in a decoded raw value (`1`–`8`). |
 | **value_unit** | 1 B | Unit code for the value; see [Unit Codes](#unit-codes). |
 | **value_config** | 1 B | Sets signedness, byte order, and rounding; see [value_config](#value_config). |
-| **scale_config** | 2 B | Sets the byte widths of `value_scale_exp`, `value_scale_numerator`, `value_scale_denominator`, `value_bias`, `value_min`, and `value_max`; see [scale_config](#scale_config). |
+| **scale_config** | 2 B | Sets the sizes of scale and bound fields; see [scale_config](#scale_config). |
 | **value_scale_exp** | 0, 1, 2, or 4 B* | Signed base-10 exponent; if omitted (0 B), use `0`. |
 | **value_scale_numerator** | 0, 1, 2, or 4 B* | Unsigned numerator; if omitted (0 B), use `1`. |
 | **value_scale_denominator** | 0, 1, 2, or 4 B* | Unsigned denominator; if omitted (0 B), use `1`. Must be nonzero when stored. |
