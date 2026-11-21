@@ -77,7 +77,7 @@ Each schema entry describes one value type for a dataset. Its fields appear in t
 | **value_config** | 1 B | Sets signedness, byte order, and optional scale fields; see [value_config](#value_config). |
 | **schema_id** | 1 B | Identifies the schema entry. |
 | **codec** | 1 B | Selects how this value is stored; see [Codec Byte](#codec-byte). |
-| **time_format** | 1 B | Defines the 4 B `time_value` in `R` and `C`; format codes still need definition. |
+| **time_format** | 1 B | Defines the 4 B `base_time` in `R` and `C`; format codes still need definition. |
 | **value_width** | 1 B | Number of bytes in a decoded raw value (`1`–`8`). |
 | **value_unit** | 1 B | Unit code for the value; see [Unit Codes](#unit-codes). |
 | **value_scale_mul** | 1 B | Present when `value_config` bit 4 is `1`; multiplier (default `1`). |
@@ -182,7 +182,7 @@ A record block contains:
 | **crc** | 4 B | Covers the header, including `payload_length`, and the used payload; excludes itself. |
 | **magic_number** | 2 B | Identifies the start of the record block. |
 | **payload_length** | 2 B | Number of valid payload bytes in this block (`0`–`4,078`). |
-| **time_value** | 4 B | Stores the time of the first reading in this block, using the format specified by its schema. |
+| **base_time** | 4 B | Time of the first reading; segmented payloads use it as the base for each segment's `time_offset`. |
 | **dataset_id** | 1 B | Identifies the dataset. |
 | **schema_id** | 1 B | Identifies the schema defining this block's value format. |
 | **interval_code** | 1 B | Selects the time unit. |
@@ -210,7 +210,7 @@ Each `R` stores an `interval_code` and `interval_value` for its extent; its `C` 
 | 1 | Nanosecond (ns) |
 | 0 | Timestamp stored with each reading |
 
-For `interval_code = 0`, store a 4 B timestamp before each raw value, using the schema's `time_format`; the header's `time_value` matches the first timestamp. For codes `1`–`6`, the reader derives timestamps from each block's `time_value`, `interval_value`, and the reading's position within that block. Calendar boundaries, time zone, and week start for codes `7`–`10` still need definition.
+For `interval_code = 0`, store a 4 B timestamp before each raw value, using the schema's `time_format`; the header's `base_time` matches the first timestamp. For codes `1`–`6`, the reader derives timestamps from each block's `base_time`, `interval_value`, and the reading's position within that block. Calendar boundaries, time zone, and week start for codes `7`–`10` still need definition.
 
 ## Continuation blocks (`C`)
 
@@ -223,12 +223,12 @@ A continuation block contains:
 | **crc** | 4 B | Covers the header, including `payload_length`, and the used payload; excludes itself. |
 | **magic_number** | 2 B | Identifies the start of the continuation block. |
 | **payload_length** | 2 B | Number of valid payload bytes in this block (`0`–`4,078`). |
-| **time_value** | 4 B | Stores the measured time of the first reading in this block, using the format specified by its schema. |
+| **base_time** | 4 B | Time of the first reading; segmented payloads use it as the base for each segment's `time_offset`. |
 | **dataset_id** | 1 B | Identifies the dataset. |
 | **alignment_padding** | 3 B | Set to `0`; aligns the payload to a 4-byte boundary. |
 | **payload** | 4,078 B remaining | Stores raw readings or encoded segments using the schema of this extent's Record block. |
 
-The Continuation block uses its own `time_value` and inherits `interval_code`, `interval_value`, time format, schema, and codec from its parent `R`. Its header is 16 B. Each block's `time_value` anchors its first reading, so timing drift does not accumulate across blocks. For `interval_code = 0`, each reading stores its own timestamp. At finalization, write `payload_length`, then compute and store `crc`; readers use the length only if the CRC validates.
+The Continuation block uses its own `base_time` and inherits `interval_code`, `interval_value`, time format, schema, and codec from its parent `R`. Its header is 16 B. For segmented blocks, the first segment has `time_offset = 0`, so `base_time` is the time of the block's first reading. For `interval_code = 0`, each reading stores its own timestamp. At finalization, write `payload_length`, then compute and store `crc`; readers use the length only if the CRC validates.
 
 Raw fixed-interval readings per `C` block, assuming each value is entirely contained in 1 block and the header is 16 B:
 
@@ -262,29 +262,32 @@ For `interval_code = 1`–`10`, each reading is one `value_width`-byte value. Fo
 
 This codec requires `value_width = 2` or `4`, signed values (`value_config` bit 0 = `1`), and `interval_code = 1`–`10`. Each decoded reading has the schema's `value_width`, unit, and scale. Both `R` and `C` retain their existing headers. Each block stores one or more segments consecutively in its payload, with fields in this order:
 
-| Part | Field | Size | Purpose |
-|---|---|---:|---|
-| Property | **reading_count** | 2 B | Number of readings in the segment, including `base_value`; at least `1`. |
-| Property | **base_value** | 2 B or 4 B | First reading in the segment; `value_width` selects its size, and all offsets are relative to it. |
-| Payload | **offsets** | `reading_count − 1` B | One signed 1 B offset per later reading; each is added to `base_value`. |
+| Field | Size | Purpose |
+|---|---:|---|
+| **reading_count** | 2 B | Number of readings in the segment, including `base_value`; at least `1`. |
+| **time_offset** | 2 B unsigned | Time of this segment's first reading after the block's `base_time`. |
+| **base_value** | 2 B or 4 B | First reading in the segment; `value_width` selects its size, and all `value_offsets` are relative to it. |
+| **value_offsets** | `reading_count − 1` B | One signed 1 B offset per later reading; each is added to `base_value`. |
 
-Offsets range from −127 to +127; the `-128` code is reserved. For temperature stored in tenths of a degree Fahrenheit, a 2 B base of 70.0 °F permits readings from 57.3 °F to 82.7 °F in that segment. Start a new segment when the next reading falls outside the offset range. A new `C` starts when another segment or offset does not fit in the current block; its first segment has a new base.
+The first segment has `time_offset = 0`; later time offsets range from `0` to `65,535` in the same time unit as `base_time`. A later segment may start before the previous segment, but never before the block's `base_time`; start a new block if that occurs or the time offset exceeds `65,535`. Within a segment, readings follow the block's `interval_code` and `interval_value`; start a new segment when the next timestamp breaks that interval. The precise time encoding depends on the still-undefined `time_format`.
 
-The block header's `payload_length` marks the end of the last segment. Readers parse segments until they consume exactly that many bytes, rejecting a count that would overrun the used payload. The decoded reading count is the sum of the segment `reading_count` values. The block's `time_value` anchors its first reading; positions continue across segments within the block. The writer must know a segment's count before programming its 2 B count field, so it buffers the current segment and writes it once when the segment closes. The existing block CRC is finalized as usual.
+`value_offsets` range from −127 to +127; the `-128` code is reserved. For temperature stored in tenths of a degree Fahrenheit, a 2 B base of 70.0 °F permits readings from 57.3 °F to 82.7 °F in that segment. Start a new segment when the next reading falls outside the value offset range. A new `C` starts when another segment or value offset does not fit in the current block; its first segment has a new base.
+
+The block header's `payload_length` marks the end of the last segment. Readers parse segments until they consume exactly that many bytes, rejecting a count that would overrun the used payload. The decoded reading count is the sum of the segment `reading_count` values. The writer must know a segment's count before programming its 2 B count field, so it buffers the current segment and writes it once when the segment closes. The existing block CRC is finalized as usual.
 
 ## Total Storage Capacity
 
-The table estimates segmented temperature storage (`codec = 0x10`) with a 2 B base and exactly 4 segments per block. Each 4,078 B payload holds up to 4,066 readings: 4 segments use 16 B for their bases and counts, and the remaining bytes hold 4,062 signed 1 B offsets. Readings arrive every 1, 10, or 30 seconds (`interval_code = 4`). Storage sizes use binary units.
+The table estimates segmented temperature storage (`codec = 0x10`) with a 2 B base, a 2 B `time_offset`, and exactly 4 segments per block. Each 4,078 B payload holds up to 4,058 readings: 4 segments use 24 B for their counts, time offsets, and bases, leaving 4,054 B for signed 1 B value offsets. Readings arrive every 1, 10, or 30 seconds (`interval_code = 4`). Storage sizes use binary units.
 
 | Storage size | Continuation<br>blocks | Continuation<br>header space | Readings | Time to full<br>(1 sec) | Time to full<br>(10 secs) | Time to full<br>(30 secs) |
 |---:|---:|---:|---:|---:|---:|---:|
-| 32 KiB | 5 | 0.08 KiB | 24,396 | ~6.8 hours | ~2.8 days | ~8.5 days |
-| 128 KiB | 29 | 0.5 KiB | 121,980 | ~1.4 days | ~14.1 days | ~42.4 days |
-| 1 MiB | 253 | 4.0 KiB | 1,032,764 | ~12.0 days | ~119.5 days | ~358.6 days |
-| 32 MiB | 8,189 | 128 KiB | 33,300,540 | ~1.1 years | ~10.6 years | ~31.7 years |
-| 126 MiB | 32,253 | 504 KiB | 131,144,764 | ~4.2 years | ~41.6 years | ~124.7 years |
-| 512 MiB | 131,069 | 2,048 KiB | 532,930,620 | ~16.9 years | ~168.9 years | ~506.6 years |
-| 1 GiB | 262,141 | 4,096 KiB | 1,065,869,372 | ~33.8 years | ~337.8 years | ~1,013.3 years |
+| 32 KiB | 5 | 0.08 KiB | 24,348 | ~6.8 hours | ~2.8 days | ~8.5 days |
+| 128 KiB | 29 | 0.5 KiB | 121,740 | ~1.4 days | ~14.1 days | ~42.3 days |
+| 1 MiB | 253 | 4.0 KiB | 1,030,732 | ~11.9 days | ~119.3 days | ~357.9 days |
+| 32 MiB | 8,189 | 128 KiB | 33,235,020 | ~1.1 years | ~10.5 years | ~31.6 years |
+| 126 MiB | 32,253 | 504 KiB | 130,886,732 | ~4.1 years | ~41.5 years | ~124.4 years |
+| 512 MiB | 131,069 | 2,048 KiB | 531,882,060 | ~16.9 years | ~168.5 years | ~505.6 years |
+| 1 GiB | 262,141 | 4,096 KiB | 1,063,772,236 | ~33.7 years | ~337.1 years | ~1,011.3 years |
 
 > Assumes 2 Superblocks and 1 `R` block; all remaining 4 KiB blocks are `C` blocks. The estimate requires every reading to fit within one of the 4 segments in its block. Multiple datasets need additional `R` blocks.
 
