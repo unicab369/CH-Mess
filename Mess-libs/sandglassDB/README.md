@@ -2,7 +2,7 @@
 
 ## Overview
 
-The database starts with 2 Superblocks (`S0`, `S1`); all remaining blocks come from a shared storage pool. A Record block (`R`) starts an extent, and Continuation blocks (`C`) extend it when its payload fills. Each `dataset_id` identifies one stream; its `R` block specifies the `interval_code` and `interval_value`. Blocks from different datasets may interleave. Each `C` belongs to the most recent preceding `R` with the same `dataset_id`.
+The database starts with 2 Superblocks (`S0`, `S1`); all remaining flash sectors form a shared storage pool. A Record block (`R`) starts an extent, and Continuation blocks (`C`) extend it when its payload fills. Each `dataset_id` identifies one stream; its `R` block specifies the `interval_code` and `interval_value`. Blocks from different datasets may interleave. Each `C` belongs to the most recent preceding `R` with the same `dataset_id`.
 
 Each dataset stores one measurement type, such as temperature or humidity. One reading is one value in an `R` or `C` payload. The extent's schema defines that value's width, signedness, unit, scale, and codec. Live and archive datasets can use different schemas; see [Archiving](README-ARCHIVE.md) for an encoding example.
 
@@ -14,10 +14,10 @@ Each dataset stores one measurement type, such as temperature or humidity. One r
 ...
 ```
 
-> Each bracket represents one 4 KiB block.
+> Each bracket represents one database block occupying one 4 KiB flash sector.
 
 
-Flash storage is divided into blocks. Each block can store 4094 bytes of data.
+For this flash layout, each erase sector is 4,096 B. SandglassDB stores one logical block per sector. A block's header and remaining space share those 4,096 B.
 
 When a database is accessed, it needs at least two things:
 
@@ -30,6 +30,8 @@ When a database is accessed, it needs at least two things:
   ```
 
   If the checksums match, the data is likely the same; if they differ, the data is different or corrupted.
+
+> In the field tables, `*` after a size means its length is adjustable.
 
 ## Superblocks (`S0`, `S1`)
 
@@ -74,31 +76,62 @@ Each schema entry describes one value type for a dataset. Its fields appear in t
 |---|---:|---|
 | **entry_crc** | 4 B | Validates the schema entry. |
 | **commit** | 1 B | Marks the entry as fully written. |
-| **value_config** | 1 B | Sets signedness, byte order, and optional scale fields; see [value_config](#value_config). |
 | **schema_id** | 1 B | Identifies the schema entry. |
 | **codec** | 1 B | Selects how this value is stored; see [Codec Byte](#codec-byte). |
 | **time_format** | 1 B | Defines the 4 B `base_time` in `R` and `C`; format codes still need definition. |
 | **value_width** | 1 B | Number of bytes in a decoded raw value (`1`–`8`). |
 | **value_unit** | 1 B | Unit code for the value; see [Unit Codes](#unit-codes). |
-| **value_scale_mul** | 1 B | Present when `value_config` bit 4 is `1`; multiplier (default `1`). |
-| **value_scale_exp** | 1 signed B | Present when `value_config` bit 2 is `1`; base-10 exponent (default `0`). |
-| **value_scale_ratio** | 2 B | Present when `value_config` bit 3 is `1`; numerator and denominator (default `1/1`). |
+| **value_config** | 1 B | Sets signedness, byte order, and rounding; see [value_config](#value_config). |
+| **scale_config** | 2 B | Sets the byte widths of `value_scale_exp`, `value_scale_numerator`, `value_scale_denominator`, `value_bias`, `value_min`, and `value_max`; see [scale_config](#scale_config). |
+| **value_scale_exp** | 0, 1, 2, or 4 B* | Signed base-10 exponent; if omitted (0 B), use `0`. |
+| **value_scale_numerator** | 0, 1, 2, or 4 B* | Unsigned numerator; if omitted (0 B), use `1`. |
+| **value_scale_denominator** | 0, 1, 2, or 4 B* | Unsigned denominator; if omitted (0 B), use `1`. Must be nonzero when stored. |
+| **value_bias** | 0, 1, 2, or 4 B* | Signed constant added after the ratio and before the exponent; if omitted (0 B), use `0`. |
+| **value_min** | 0, 1, 2, 4, or 8 B* | Lowest permitted stored integer before scaling; omitted with `value_max` when no custom bounds are needed. |
+| **value_max** | 0, 1, 2, 4, or 8 B* | Highest permitted stored integer before scaling; uses the same width as `value_min`. |
 | **padding** | Variable | Aligns the entry to the flash program unit. |
-
-Signed values use two's complement. The decoded value is the stored integer multiplied by `value_scale_mul`, `10^value_scale_exp`, and the `value_scale_ratio` numerator divided by its denominator. The denominator must be nonzero. For example, `123` with exponent `-2` represents `1.23`; `10` with ratio `3/2` represents `15`.
 
 ### `value_config`
 
 | Bit(s) | Meaning | Purpose |
 |---|---|---|
 | 7 | Reserved; write `0`. | Reserved for future options. |
-| 6 | `byte_order`: `0` = little-endian; `1` = big-endian. | Sets byte order for multi-byte values. |
-| 5 | Reserved; write `0`. | Reserved for future options. |
-| 4 | `value_scale_mul`: `1` = present; `0` = default `1`. | Enables the multiplier field. |
-| 3 | `value_scale_ratio`: `1` = present; `0` = default `1/1`. | Enables the ratio field. |
-| 2 | `value_scale_exp`: `1` = present; `0` = default `0`. | Enables the exponent field. |
-| 1 | Reserved; write `0`. | Reserved for future options. |
+| 6 | `byte_order`: `0` = little-endian; `1` = big-endian. | Sets byte order for multi-byte value and scale fields. |
+| 5–3 | Reserved; write `0`. | Reserved for future options. |
+| 2–1 | `rounding_mode`:<br>`11` = upward (toward +∞)<br>`10` = downward (toward −∞)<br>`01` = truncate to an integer<br>`00` = nearest, ties to even | Rounds input values before storage. |
 | 0 | `signed`: `1` = signed; `0` = unsigned. | Selects how the value is interpreted. |
+
+`rounding_mode` applies when converting an input value to a stored integer or quantization code. It does not change how readers decode an already-stored value or how applications round for display.
+
+After converting a measurement into storage units, values between integers round as follows:
+
+| Value | `00` nearest | `01` truncate | `10` downward | `11` upward |
+|---:|---:|---:|---:|---:|
+| `2.7` | `3` | `2` | `2` | `3` |
+| `−2.7` | `−3` | `−2` | `−3` | `−2` |
+| `2.5` | `2` | `2` | `2` | `3` |
+| `3.5` | `4` | `3` | `3` | `4` |
+
+### `scale_config`
+
+`scale_config` is stored as a 2 B little-endian value, regardless of `value_config` byte order. It assigns size codes to the bounds, bias, exponent, and ratio. Each pair of bounds or ratio components shares one width:
+
+| Bit(s) | Component |
+|---:|---|
+| 15–9 | Reserved; write `0`. |
+| 8–6 | Shared width of `value_min` and `value_max`:<br>`100` = 8 B<br>`011` = 4 B<br>`010` = 2 B<br>`001` = 1 B<br>`000` = 0 B (both omitted)<br>`101`–`111` = reserved. |
+| 5–4 | `value_bias` width. |
+| 3–2 | `value_scale_exp` width. |
+| 1–0 | Shared width of `value_scale_numerator` and `value_scale_denominator`. |
+
+| 2-bit size code | Byte width |
+|---:|---:|
+| `11` | 4 B |
+| `10` | 2 B |
+| `01` | 1 B |
+| `00` | 0 B (component omitted) |
+
+An omitted exponent or bias defaults to `0`; an omitted numerator and denominator each default to `1`.
 
 ### Codec Byte
 
@@ -139,14 +172,16 @@ For example, a temperature schema can use `value_unit = 12` (°F), `value_width 
 
 ### Schema Entry Capacity
 
-Each Superblock has 4,084 B for append-only `schema_entries`. Entries are padded to 4 B. The 11 fixed bytes are `entry_crc`, `commit`, `value_config`, `schema_id`, `codec`, `time_format`, `value_width`, and `value_unit`.
+Each Superblock has 4,084 B for append-only `schema_entries`. An entry has 13 B of fixed fields plus the bounds, bias, exponent, numerator, and denominator selected by `scale_config`. Each pair of bounds or ratio components uses the same width. Entries are padded to 4 B alignment. With 2 B per bound and all 4 scale components using the same width:
 
-| Scale fields | Aligned entry size | Entries per Superblock | Unused space per Superblock |
-|---|---:|---:|---:|
-| None | 12 B | 256 | 1,012 B |
-| Multiplier, exponent, and ratio | 16 B | 255 | 4 B |
+| Width per scale component | Aligned entry size | Entries per Superblock | Unused space |
+|---:|---:|---:|---:|
+| 0 B | 20 B | 204 | 4 B |
+| 1 B | 24 B | 170 | 4 B |
+| 2 B | 28 B | 145 | 24 B |
+| 4 B | 36 B | 113 | 16 B |
 
-The 1 B `schema_id` limits the table to 256 distinct entries. The entry count includes the initial schema; both Superblocks hold the same entries.
+With bounds and all scale components omitted, an entry is 16 B and 255 entries fit. The 1 B `schema_id` limits the table to 256 entries even when more physical space is available. The count includes the initial schema; both Superblocks hold the same entries. Other widths change the entry size.
 
 ## Streams
 
@@ -157,7 +192,7 @@ The application can change a dataset's interval by starting a new `R`, which end
 The library appends all streams to one physical log, so their blocks can interleave. Readers scan the log in physical order and track the current extent for each `dataset_id`.
 
 ```text
-Physical append order (each row is one 4 KiB block):
+Physical append order (each row is one 4 KiB sector holding one block):
 [R header: dataset_id = 0, interval_code = 4, interval_value = 1] [payload]
 [R header: dataset_id = 1, interval_code = 5, interval_value = 5] [payload]
 [C header: dataset_id = 0] [payload]
@@ -173,7 +208,7 @@ dataset_id = 1, 5 minutes: [R] → [C]
 
 ## Record blocks (`R`)
 
-Record blocks (`R0`–`Rn`) follow Superblocks `S0` and `S1`. Each record block belongs to the stream identified by its `dataset_id` and uses a `schema_id` whose entry is committed in both Superblocks. Different streams can allocate blocks from the same shared pool.
+Record blocks (`R0`–`Rn`) follow Superblocks `S0` and `S1`. Each record block belongs to the stream identified by its `dataset_id` and uses a `schema_id` whose entry is committed in both Superblocks. Different streams can allocate sectors from the same shared pool for their blocks.
 
 A record block contains:
 
@@ -181,13 +216,13 @@ A record block contains:
 |---|---:|---|
 | **crc** | 4 B | Covers the header, including `payload_length`, and the used payload; excludes itself. |
 | **magic_number** | 2 B | Identifies the start of the record block. |
-| **payload_length** | 2 B | Number of valid payload bytes in this block (`0`–`4,078`). |
+| **payload_length** | 2 B | Number of valid payload bytes in this block (`0`–`4,080`). |
 | **base_time** | 4 B | Time of the first reading; segmented payloads use it as the base for each segment's `time_offset`. |
 | **dataset_id** | 1 B | Identifies the dataset. |
 | **schema_id** | 1 B | Identifies the schema defining this block's value format. |
 | **interval_code** | 1 B | Selects the time unit. |
 | **interval_value** | 1 B | Sets the number of units between readings. |
-| **payload** | 4,078 B remaining | Stores raw readings or encoded segments according to the schema's codec; see [Payload Formats](#payload-formats). |
+| **payload** | 4,080 B remaining | Stores raw readings or encoded segments according to the schema's codec; see [Payload Formats](#payload-formats). |
 
 The Record block header is 16 bytes. At finalization, write `payload_length`, then compute and store `crc`; readers use the length only if the CRC validates. The `schema_id` selects this extent's codec and `time_format`; its `C` blocks use the same schema and codec.
 
@@ -222,11 +257,11 @@ A continuation block contains:
 |---|---:|---|
 | **crc** | 4 B | Covers the header, including `payload_length`, and the used payload; excludes itself. |
 | **magic_number** | 2 B | Identifies the start of the continuation block. |
-| **payload_length** | 2 B | Number of valid payload bytes in this block (`0`–`4,078`). |
+| **payload_length** | 2 B | Number of valid payload bytes in this block (`0`–`4,080`). |
 | **base_time** | 4 B | Time of the first reading; segmented payloads use it as the base for each segment's `time_offset`. |
 | **dataset_id** | 1 B | Identifies the dataset. |
 | **alignment_padding** | 3 B | Set to `0`; aligns the payload to a 4-byte boundary. |
-| **payload** | 4,078 B remaining | Stores raw readings or encoded segments using the schema of this extent's Record block. |
+| **payload** | 4,080 B remaining | Stores raw readings or encoded segments using the schema of this extent's Record block. |
 
 The Continuation block uses its own `base_time` and inherits `interval_code`, `interval_value`, time format, schema, and codec from its parent `R`. Its header is 16 B. For segmented blocks, the first segment has `time_offset = 0`, so `base_time` is the time of the block's first reading. For `interval_code = 0`, each reading stores its own timestamp. At finalization, write `payload_length`, then compute and store `crc`; readers use the length only if the CRC validates.
 
@@ -234,23 +269,23 @@ Raw fixed-interval readings per `C` block, assuming each value is entirely conta
 
 | Value width | Readings per block | Unused payload (B) |
 |---:|---:|---:|
-| 1 B | 4,078 | 0 |
-| 2 B | 2,039 | 0 |
-| 4 B | 1,019 | 2 |
-| 8 B | 509 | 6 |
+| 1 B | 4,080 | 0 |
+| 2 B | 2,040 | 0 |
+| 4 B | 1,020 | 0 |
+| 8 B | 510 | 0 |
 
 > Unused bytes are the remaining payload space after storing whole readings. The counts assume readings are packed consecutively with no alignment padding. For `interval_code = 0`, add 4 B per reading for its timestamp.
 
 ## Payload Formats
 
-Before checking the CRC, readers reject a `payload_length` greater than `4,078` B. Only the first `payload_length` bytes of the payload are valid and covered by the CRC.
+Before checking the CRC, readers reject a `payload_length` greater than `4,080` B. Only the first `payload_length` bytes of the payload are valid and covered by the CRC.
 
 ### Raw Readings (`codec = 0x00`)
 
 With codec `0`, each `R` or `C` stores raw readings consecutively from the start of its payload:
 
 ```text
-Extent example (each row is one 4 KiB block):
+Extent example (each row is one 4 KiB sector holding one block):
 [R header] [reading 0] [reading 1] [reading 2] ...
 [C header] [reading 0] [reading 1] [reading 2] ...
 [C header] [reading 0] [reading 1] [reading 2] ...
@@ -264,8 +299,8 @@ This codec requires `value_width = 2` or `4`, signed values (`value_config` bit 
 
 | Field | Size | Purpose |
 |---|---:|---|
+| **time_offset** | 2 B or 4 B | Time of this segment's first reading after the block's `base_time`. |
 | **reading_count** | 2 B | Number of readings in the segment, including `base_value`; at least `1`. |
-| **time_offset** | 2 B unsigned | Time of this segment's first reading after the block's `base_time`. |
 | **base_value** | 2 B or 4 B | First reading in the segment; `value_width` selects its size, and all `value_offsets` are relative to it. |
 | **value_offsets** | `reading_count − 1` B | One signed 1 B offset per later reading; each is added to `base_value`. |
 
@@ -277,19 +312,19 @@ The block header's `payload_length` marks the end of the last segment. Readers p
 
 ## Total Storage Capacity
 
-The table estimates segmented temperature storage (`codec = 0x10`) with a 2 B base, a 2 B `time_offset`, and exactly 4 segments per block. Each 4,078 B payload holds up to 4,058 readings: 4 segments use 24 B for their counts, time offsets, and bases, leaving 4,054 B for signed 1 B value offsets. Readings arrive every 1, 10, or 30 seconds (`interval_code = 4`). Storage sizes use binary units.
+The table estimates segmented temperature storage (`codec = 0x10`) with a 2 B base, a 2 B `time_offset`, and exactly 4 segments per block. Each 4,080 B payload holds up to 4,060 readings: 4 segments use 24 B for their counts, time offsets, and bases, leaving 4,056 B for signed 1 B value offsets. Readings arrive every 1, 10, or 30 seconds (`interval_code = 4`). Storage sizes use binary units.
 
 | Storage size | Continuation<br>blocks | Continuation<br>header space | Readings | Time to full<br>(1 sec) | Time to full<br>(10 secs) | Time to full<br>(30 secs) |
 |---:|---:|---:|---:|---:|---:|---:|
-| 32 KiB | 5 | 0.08 KiB | 24,348 | ~6.8 hours | ~2.8 days | ~8.5 days |
-| 128 KiB | 29 | 0.5 KiB | 121,740 | ~1.4 days | ~14.1 days | ~42.3 days |
-| 1 MiB | 253 | 4.0 KiB | 1,030,732 | ~11.9 days | ~119.3 days | ~357.9 days |
-| 32 MiB | 8,189 | 128 KiB | 33,235,020 | ~1.1 years | ~10.5 years | ~31.6 years |
-| 126 MiB | 32,253 | 504 KiB | 130,886,732 | ~4.1 years | ~41.5 years | ~124.4 years |
-| 512 MiB | 131,069 | 2,048 KiB | 531,882,060 | ~16.9 years | ~168.5 years | ~505.6 years |
-| 1 GiB | 262,141 | 4,096 KiB | 1,063,772,236 | ~33.7 years | ~337.1 years | ~1,011.3 years |
+| 32 KiB | 5 | 0.08 KiB | 24,360 | ~6.8 hours | ~2.8 days | ~8.5 days |
+| 128 KiB | 29 | 0.5 KiB | 121,800 | ~1.4 days | ~14.1 days | ~42.3 days |
+| 1 MiB | 253 | 4.0 KiB | 1,031,240 | ~11.9 days | ~119.4 days | ~358.1 days |
+| 32 MiB | 8,189 | 128 KiB | 33,251,400 | ~1.1 years | ~10.5 years | ~31.6 years |
+| 126 MiB | 32,253 | 504 KiB | 130,951,240 | ~4.1 years | ~41.5 years | ~124.5 years |
+| 512 MiB | 131,069 | 2,048 KiB | 532,144,200 | ~16.9 years | ~168.6 years | ~505.9 years |
+| 1 GiB | 262,141 | 4,096 KiB | 1,064,296,520 | ~33.7 years | ~337.3 years | ~1,011.8 years |
 
-> Assumes 2 Superblocks and 1 `R` block; all remaining 4 KiB blocks are `C` blocks. The estimate requires every reading to fit within one of the 4 segments in its block. Multiple datasets need additional `R` blocks.
+> Assumes 2 Superblocks and 1 `R` block, each occupying one sector; all remaining sectors hold `C` blocks. The estimate requires every reading to fit within one of the 4 segments in its block. Multiple datasets need additional `R` blocks.
 
 ## Recovery and Log Scanning
 
@@ -305,7 +340,7 @@ The table estimates segmented temperature storage (`codec = 0x10`) with a 2 B ba
 
 **Append log and streams:**
 
-- The first fully erased (`0xFF`) block marks the append point. Skip non-erased blocks with invalid `magic_number` or `crc`; do not overwrite them.
+- The first fully erased (`0xFF`) sector marks the append point. Skip non-erased sectors whose blocks have an invalid `magic_number` or `crc`; do not overwrite them.
 - After restart, start a new `R` for each stream that resumes writing; do not resume an older `R` or `C`.
 - While scanning in physical order, track the current extent for each `dataset_id`. Read its `interval_code`, `interval_value`, and `schema_id` from the `R` block.
 - A valid Record block (`R`) starts an extent for its dataset. A valid Continuation block (`C`) extends that dataset's current extent; ignore a `C` when no valid extent is active.
@@ -313,7 +348,7 @@ The table estimates segmented temperature storage (`codec = 0x10`) with a 2 B ba
 
 **Cleanup:**
 
-- Copy and validate live data before erasing old blocks. Preserve physical order within each dataset; define recovery from power loss during cleanup or compaction.
+- Copy and validate live data before erasing old sectors. Preserve physical order within each dataset; define recovery from power loss during cleanup or compaction.
 
 ## Future Consideration
 
