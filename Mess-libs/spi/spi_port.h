@@ -8,7 +8,30 @@
 #define SPI_PORT_PIN_NONE 0xFFu
 
 static uint8_t SPI_DC_PIN = SPI_PORT_PIN_NONE;
+
+/* SPI interface */
+static inline void SPI_INIT(uint8_t reset_pin, uint8_t dc_pin);
+static inline void SPI_START(void);
+static inline void SPI_STOP(void);
+static inline void SPI_WAIT_TX_COMPLETE(void);
+static inline void SPI_WAIT_RX_AVAILABLE(void);
+static inline uint8_t SPI_IS_RX_EMPTY(void);
+static inline void SPI_WAIT_NOT_BUSY(void);
+static inline uint8_t SPI_READ_8(void);
+static inline uint16_t SPI_READ_16(void);
+static inline uint8_t SPI_WRITE_8(uint8_t data);
+static inline uint16_t SPI_WRITE_16(uint16_t data);
+static inline void SPI_DC_LOW(void);
 static inline void SPI_DC_HIGH(void);
+static inline void SPI_CMD_8(uint8_t cmd);
+static inline void SPI_CMD_DATA_8(uint8_t data);
+static inline void SPI_CMD_DATA_16(uint16_t data);
+
+#if defined(CH32V003)
+static inline void SPI_DMA_INIT(DMA_Channel_TypeDef *channel);
+static inline void SPI_SEND_DMA(const uint8_t *buffer, uint16_t len);
+#endif
+
 
 #if defined(CH32V003)
 
@@ -26,7 +49,6 @@ static inline void SPI_INIT(uint8_t reset_pin, uint8_t dc_pin) {
 	              SPI_BaudRatePrescaler_4 | SPI_NSS_Soft |
 	              SPI_Direction_2Lines_FullDuplex;
 	SPI1->CTLR1 &= ~SPI_CTLR1_DFF;
-	SPI1->CTLR1 |= SPI_CTLR1_SPE;
 
 	if (reset_pin != SPI_PORT_PIN_NONE) {
 		funPinMode(reset_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
@@ -38,41 +60,39 @@ static inline void SPI_INIT(uint8_t reset_pin, uint8_t dc_pin) {
 	}
 	if (dc_pin != SPI_PORT_PIN_NONE)
 		funPinMode(dc_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
+	SPI_START();
 }
 
-static inline void SPI_END(void) { SPI1->CTLR1 &= ~SPI_CTLR1_SPE; }
+static inline void SPI_START(void) { SPI1->CTLR1 |= SPI_CTLR1_SPE; }
+static inline void SPI_STOP(void) { SPI1->CTLR1 &= ~SPI_CTLR1_SPE; }
+static inline void SPI_WAIT_TX_COMPLETE(void) { while (!(SPI1->STATR & SPI_STATR_TXE)) { } }
+static inline uint8_t SPI_IS_RX_EMPTY(void) { return !(SPI1->STATR & SPI_STATR_RXNE); }
+static inline void SPI_WAIT_RX_AVAILABLE(void) { while (SPI_IS_RX_EMPTY()) { } }
+static inline void SPI_WAIT_NOT_BUSY(void) { while (SPI1->STATR & SPI_STATR_BSY) { } }
 static inline uint8_t SPI_READ_8(void) { return (uint8_t)SPI1->DATAR; }
 static inline uint16_t SPI_READ_16(void) { return (uint16_t)SPI1->DATAR; }
 
 static inline uint8_t SPI_WRITE_8(uint8_t data) {
 	SPI1->DATAR = data;
-	while (!(SPI1->STATR & SPI_STATR_TXE)) { }
-	while (!(SPI1->STATR & SPI_STATR_RXNE)) { }
+	SPI_WAIT_TX_COMPLETE();
+	SPI_WAIT_RX_AVAILABLE();
 	return (uint8_t)SPI1->DATAR;
 }
 
 static inline uint16_t SPI_WRITE_16(uint16_t data) {
-	while (SPI1->STATR & SPI_STATR_BSY) { }
-	SPI1->CTLR1 &= ~SPI_CTLR1_SPE;
-	SPI1->CTLR1 |= SPI_CTLR1_DFF | SPI_CTLR1_SPE;
-	SPI1->DATAR = data;
-	while (!(SPI1->STATR & SPI_STATR_TXE)) { }
-	while (!(SPI1->STATR & SPI_STATR_RXNE)) { }
-	uint16_t received = (uint16_t)SPI1->DATAR;
-	while (SPI1->STATR & SPI_STATR_BSY) { }
-	SPI1->CTLR1 &= ~SPI_CTLR1_SPE;
-	SPI1->CTLR1 &= ~SPI_CTLR1_DFF;
-	SPI1->CTLR1 |= SPI_CTLR1_SPE;
-	return received;
-}
-
-static inline void SPI_WAIT_TX_COMPLETE(void) { while (!(SPI1->STATR & SPI_STATR_TXE)) { } }
-static inline uint8_t SPI_IS_RX_EMPTY(void) { return (SPI1->STATR & SPI_STATR_RXNE) != 0; }
-static inline void SPI_WAIT_RX_AVAILABLE(void) { while (!(SPI1->STATR & SPI_STATR_RXNE)) { } }
-static inline void SPI_WAIT_NOT_BUSY(void) { while (SPI1->STATR & SPI_STATR_BSY) { } }
-static inline void SPI_WAIT_TRANSMIT_FINISHED(void) {
-	SPI_WAIT_TX_COMPLETE();
 	SPI_WAIT_NOT_BUSY();
+	SPI_STOP();
+	SPI1->CTLR1 |= SPI_CTLR1_DFF;
+	SPI_START();
+	SPI1->DATAR = data;
+	SPI_WAIT_TX_COMPLETE();
+	SPI_WAIT_RX_AVAILABLE();
+	uint16_t received = (uint16_t)SPI1->DATAR;
+	SPI_WAIT_NOT_BUSY();
+	SPI_STOP();
+	SPI1->CTLR1 &= ~SPI_CTLR1_DFF;
+	SPI_START();
+	return received;
 }
 
 static inline void SPI_DMA_INIT(DMA_Channel_TypeDef *channel) {
@@ -106,7 +126,6 @@ static inline void SPI_INIT(uint8_t reset_pin, uint8_t dc_pin) {
 	funPinMode(PA14, GPIO_CFGLR_OUT_2Mhz_PP); /* PA14 MOSI */
 	funPinMode(PA13, GPIO_CFGLR_OUT_2Mhz_PP); /* PA13 SCK */
 	R8_SPI0_CTRL_MOD = RB_SPI_ALL_CLEAR;
-	R8_SPI0_CTRL_MOD = RB_SPI_SCK_OE | RB_SPI_MOSI_OE;
 	R8_SPI0_CTRL_CFG = RB_SPI_AUTO_IF;
 	R8_SPI0_CLOCK_DIV = 4;
 
@@ -120,25 +139,28 @@ static inline void SPI_INIT(uint8_t reset_pin, uint8_t dc_pin) {
 	}
 	if (dc_pin != SPI_PORT_PIN_NONE)
 		funPinMode(dc_pin, GPIO_CFGLR_OUT_2Mhz_PP);
+	SPI_START();
 }
 
-static inline void SPI_END(void) { R8_SPI0_CTRL_MOD = 0; }
+static inline void SPI_START(void) { R8_SPI0_CTRL_MOD = RB_SPI_SCK_OE | RB_SPI_MOSI_OE; }
+static inline void SPI_STOP(void) { R8_SPI0_CTRL_MOD = 0; }
+static inline void SPI_WAIT_TX_COMPLETE(void) { while (!(R8_SPI0_INT_FLAG & RB_SPI_FREE)) { } }
+static inline uint8_t SPI_IS_RX_EMPTY(void) { return !(R8_SPI0_INT_FLAG & RB_SPI_IF_BYTE_END); }
+static inline void SPI_WAIT_RX_AVAILABLE(void) { while (SPI_IS_RX_EMPTY()) { } }
+static inline void SPI_WAIT_NOT_BUSY(void) { while (!(R8_SPI0_INT_FLAG & RB_SPI_FREE)) { } }
 static inline uint8_t SPI_READ_8(void) { return R8_SPI0_BUFFER; }
 static inline uint16_t SPI_READ_16(void) { return R8_SPI0_BUFFER; }
+
 static inline uint8_t SPI_WRITE_8(uint8_t data) {
 	R8_SPI0_BUFFER = data;
-	while (!(R8_SPI0_INT_FLAG & RB_SPI_FREE)) { }
+	SPI_WAIT_TX_COMPLETE();
+	SPI_WAIT_RX_AVAILABLE();
 	return R8_SPI0_BUFFER;
 }
 static inline uint16_t SPI_WRITE_16(uint16_t data) {
 	return (uint16_t)SPI_WRITE_8((uint8_t)(data >> 8)) << 8 |
 	       SPI_WRITE_8((uint8_t)data);
 }
-static inline void SPI_WAIT_TX_COMPLETE(void) { while (!(R8_SPI0_INT_FLAG & RB_SPI_FREE)) { } }
-static inline uint8_t SPI_IS_RX_EMPTY(void) { return (R8_SPI0_INT_FLAG & RB_SPI_FREE) != 0; }
-static inline void SPI_WAIT_RX_AVAILABLE(void) { SPI_WAIT_TX_COMPLETE(); }
-static inline void SPI_WAIT_NOT_BUSY(void) { while (!(R8_SPI0_INT_FLAG & RB_SPI_FREE)) { } }
-static inline void SPI_WAIT_TRANSMIT_FINISHED(void) { SPI_WAIT_TX_COMPLETE(); }
 #else
 #error "spi_port.h supports CH32V003 and CH582/CH583 targets"
 #endif
