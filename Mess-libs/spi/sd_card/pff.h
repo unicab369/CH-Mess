@@ -235,8 +235,30 @@ typedef enum {
 /                     Removed some code pages actually not valid.
 /----------------------------------------------------------------------------*/
 
-#include "pff.h"		/* Petit FatFs configurations and declarations */
-#include "diskio.h"		/* Declarations of low level disk I/O functions */
+/* Low-level disk interface, formerly declared in diskio.h. */
+typedef BYTE DSTATUS;
+
+#define STA_NOINIT 0x01
+#define STA_NODISK 0x02
+
+typedef enum {
+	RES_OK = 0,
+	RES_ERROR,
+	RES_NOTRDY,
+	RES_PARERR
+} DRESULT;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+DSTATUS disk_initialize(void);
+DRESULT disk_readp(BYTE *buffer, DWORD sector, UINT offset, UINT count);
+DRESULT disk_writep(const BYTE *buffer, DWORD sector_or_count);
+
+#ifdef __cplusplus
+}
+#endif
 
 
 /*--------------------------------------------------------------------------

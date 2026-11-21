@@ -19,7 +19,6 @@
 #endif
 
 #include "pff.h"
-#include "diskio.h"
 
 
 #define DLY_US(n)	Delay_Us(n)	/* Delay n microseconds */

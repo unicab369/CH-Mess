@@ -9,7 +9,7 @@
 #define SPI_CS_LOW()  funDigitalWrite(SD_CARD_CS_PIN, FUN_LOW)
 
 #include "../../Mess-libs/spi/spi_port.h"
-#include "../../Mess-libs/spi/sd_card/mmc/mmcbbp.h"
+#include "../../Mess-libs/spi/sd_card/mmcbbp.h"
 
 #define DEMO_FILE "HELLO.TXT"
 #define FORMAT_PARTITION_START 2048UL

@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "ch32fun.h"
 
@@ -8,12 +9,18 @@
 #define SPI_CS_LOW()  funDigitalWrite(SD_CARD_CS_PIN, FUN_LOW)
 
 #include "../../../Mess-libs/spi/spi_port.h"
-#include "../../../Mess-libs/spi/sd_card/mmc/mmcbbp.h"
+#include "../../../Mess-libs/spi/sd_card/mmcbbp.h"
+
+#define SD_TEST_FILE "HELLO.TXT"
 
 static FATFS filesystem;
 
 int main(void) {
 	uint8_t sector[512];
+	static const char message[] = "Hello from CH32V003 SD card test!\r\n";
+	char readback[sizeof(message)];
+	UINT bytes_written = 0;
+	UINT bytes_read = 0;
 	DSTATUS status;
 	DRESULT read_result;
 	FRESULT fs_result;
@@ -47,7 +54,48 @@ int main(void) {
 		printf("Mount failed (Petit FatFs result %u)\n", (unsigned)fs_result);
 		while (1) { }
 	}
-	printf("SD card test passed\n");
+
+	printf("Writing to %s...\n", SD_TEST_FILE);
+	printf("Create %s on the card first; it must be at least %u bytes.\n",
+	       SD_TEST_FILE, (unsigned)(sizeof(message) - 1));
+	fs_result = pf_open(SD_TEST_FILE);
+	if (fs_result != FR_OK) {
+		printf("Open for write failed (Petit FatFs result %u)\n", (unsigned)fs_result);
+		while (1) { }
+	}
+	fs_result = pf_write(message, sizeof(message) - 1, &bytes_written);
+	if (fs_result != FR_OK || bytes_written != sizeof(message) - 1) {
+		printf("Write failed (result %u, wrote %u of %u bytes)\n",
+		       (unsigned)fs_result, (unsigned)bytes_written,
+		       (unsigned)(sizeof(message) - 1));
+		while (1) { }
+	}
+	fs_result = pf_write(0, 0, &bytes_written); /* Finalize the sector write. */
+	if (fs_result != FR_OK) {
+		printf("Write finalize failed (Petit FatFs result %u)\n", (unsigned)fs_result);
+		while (1) { }
+	}
+
+	printf("Reading %s back...\n", SD_TEST_FILE);
+	fs_result = pf_open(SD_TEST_FILE); /* Reopening resets the file pointer to zero. */
+	if (fs_result != FR_OK) {
+		printf("Open for read failed (Petit FatFs result %u)\n", (unsigned)fs_result);
+		while (1) { }
+	}
+	fs_result = pf_read(readback, sizeof(message) - 1, &bytes_read);
+	if (fs_result != FR_OK || bytes_read != sizeof(message) - 1) {
+		printf("Read failed (result %u, read %u of %u bytes)\n",
+		       (unsigned)fs_result, (unsigned)bytes_read,
+		       (unsigned)(sizeof(message) - 1));
+		while (1) { }
+	}
+	readback[bytes_read] = '\0';
+	printf("Read back: %s", readback);
+	if (strcmp(readback, message) != 0) {
+		printf("Readback does not match the written string\n");
+		while (1) { }
+	}
+	printf("SD card string write/read test passed\n");
 
 	while (1) { }
 }
