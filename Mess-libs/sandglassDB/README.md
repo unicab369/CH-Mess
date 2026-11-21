@@ -4,7 +4,7 @@
 
 The database starts with 2 Superblocks (`S0`, `S1`); all remaining blocks come from a shared storage pool. A Record block (`R`) starts an extent, and Continuation blocks (`C`) extend it when its payload fills. Each `dataset_id` identifies one stream; its `R` block specifies the `interval_code` and `interval_value`. Blocks from different datasets may interleave. Each `C` belongs to the most recent preceding `R` with the same `dataset_id`.
 
-A **Chest** is the set of column values for one reading, stored in an `R` or `C` payload. Live and archive blocks can each choose raw or uniformly quantized values, with optional lossless compression. Raw values can use fixed-point integers; see [Archiving](README-ARCHIVE.md) for an encoding example.
+Each dataset stores one measurement type, such as temperature or humidity. One reading is one value in an `R` or `C` payload. The extent's schema defines that value's width, signedness, unit, scale, and codec. Live and archive datasets can use different schemas; see [Archiving](README-ARCHIVE.md) for an encoding example.
 
 ```text
 [S0] [S1]
@@ -64,48 +64,41 @@ Schema updates append entries to unused space in both Superblocks. Each update g
 
 The application selects the `schema_id` for each new `R` block. Adding a schema does not change existing streams. For example, a stream can use `schema_id = 4` in its next `R`; subsequent `C` blocks in that stream also use schema 4.
 
-To change a dataset's codec, append a new schema entry with the desired codec and start a new `R` using its `schema_id`. The new entry may keep the same column definitions. Existing `C` blocks continue using their parent `R`'s schema.
+To change a dataset's codec, append a new schema entry with the desired codec and start a new `R` using its `schema_id`. The new entry may keep the same value definition. Existing `C` blocks continue using their parent `R`'s schema.
 
 The CRC for the fixed Superblock fields does not cover the append-only entries; each entry has its own CRC and `commit` field. Readers scan the entries in both copies and build a lookup from `schema_id` to payload layout.
 
-Each schema entry contains schema-wide fields and per-column fields.
-
-Schema-wide fields:
+Each schema entry describes one value type for a dataset. Its fields appear in this order:
 
 | Field | Size | Purpose |
 |---|---:|---|
 | **entry_crc** | 4 B | Validates the schema entry. |
 | **commit** | 1 B | Marks the entry as fully written. |
-| **schema_config1** | 1 B | Selects byte order and indicates optional per-column fields; see [schema_config1](#schema_config1). |
+| **value_config** | 1 B | Sets signedness, byte order, and optional scale fields; see [value_config](#value_config). |
 | **schema_id** | 1 B | Identifies the schema entry. |
-| **col_count** | 1 B | Number of columns in the schema: `1`–`255` valid; `0` is reserved. |
-| **codec** | 1 B | Selects the value representation and compression steps for every extent using this schema; see [Codec Byte](#codec-byte). |
-| **time_format** | 1 B | Defines how the 4-byte `time_value` in each `R` and `C` using this schema is interpreted; format codes still need definition. |
-
-Per-column fields, in entry order:
-
-| Field | Size | Purpose |
-|---|---:|---|
-| **col_widths** | 1 B / column | Allocates each column's space in a raw Chest in B. |
-| **col_units** | 1 B / column | One unit code per column; see [`col_units` unit codes](#col_units-unit-codes). |
-| **col_scale_mul** | 1 B / column | Present when `schema_config1` bit 4 is `1`; one 1-byte multiplier per column (default `1`). E.g., `10` with multiplier `3` becomes `30`. |
-| **col_scale_exp** | 1 B / column | Present when `schema_config1` bit 2 is `1`; one signed base-10 exponent per column (default `0`). E.g., `123` with exponent `-2` becomes `1.23`. |
-| **col_scale_ratios** | 2 B / column | Present when `schema_config1` bit 3 is `1`; one numerator/denominator pair per column (default `1/1`). E.g., `10` with scale `3/2` becomes `15`. |
-| **col_signs** | `ceil(col_count / 8)` B | Used when `schema_config1` bit 0 is `1`; one bit per column (`1` = signed, `0` = unsigned). Unused bits are `0`. |
+| **codec** | 1 B | Selects how this value is stored; see [Codec Byte](#codec-byte). |
+| **time_format** | 1 B | Defines the 4 B `time_value` in `R` and `C`; format codes still need definition. |
+| **value_width** | 1 B | Number of bytes in a decoded raw value (`1`–`8`). |
+| **value_unit** | 1 B | Unit code for the value; see [Unit Codes](#unit-codes). |
+| **value_scale_mul** | 1 B | Present when `value_config` bit 4 is `1`; multiplier (default `1`). |
+| **value_scale_exp** | 1 signed B | Present when `value_config` bit 2 is `1`; base-10 exponent (default `0`). |
+| **value_scale_ratio** | 2 B | Present when `value_config` bit 3 is `1`; numerator and denominator (default `1/1`). |
 | **padding** | Variable | Aligns the entry to the flash program unit. |
 
-### `schema_config1`
+Signed values use two's complement. The decoded value is the stored integer multiplied by `value_scale_mul`, `10^value_scale_exp`, and the `value_scale_ratio` numerator divided by its denominator. The denominator must be nonzero. For example, `123` with exponent `-2` represents `1.23`; `10` with ratio `3/2` represents `15`.
+
+### `value_config`
 
 | Bit(s) | Meaning | Purpose |
 |---|---|---|
-| 7 | `reserved`: write `0`. | Reserved for future options. |
-| 6 | `byte_order`: `0` = little-endian; `1` = big-endian. | Sets byte order for multi-byte column values. |
-| 5 | `reserved`: write `0`. | Reserved for future options. |
-| 4 | `col_scale_mul`: `1` = yes; `0` = no (multiplier defaults to `1`). | Indicates whether `col_scale_mul` values follow. |
-| 3 | `col_scale_ratios`: `1` = yes; `0` = no (scale defaults to `1/1`). | Indicates whether `col_scale_ratios` follows. |
-| 2 | `col_scale_exp`: `1` = yes; `0` = no (exponent defaults to `0`). | Indicates whether `col_scale_exp` follows. |
-| 1 | `reserved`: write `0`. | Reserved for future options. |
-| 0 | `col_signs`: `1` = use; `0` = ignore (all columns unsigned). | Controls whether readers apply the always-stored `col_signs` bits. |
+| 7 | Reserved; write `0`. | Reserved for future options. |
+| 6 | `byte_order`: `0` = little-endian; `1` = big-endian. | Sets byte order for multi-byte values. |
+| 5 | Reserved; write `0`. | Reserved for future options. |
+| 4 | `value_scale_mul`: `1` = present; `0` = default `1`. | Enables the multiplier field. |
+| 3 | `value_scale_ratio`: `1` = present; `0` = default `1/1`. | Enables the ratio field. |
+| 2 | `value_scale_exp`: `1` = present; `0` = default `0`. | Enables the exponent field. |
+| 1 | Reserved; write `0`. | Reserved for future options. |
+| 0 | `signed`: `1` = signed; `0` = unsigned. | Selects how the value is interpreted. |
 
 ### Codec Byte
 
@@ -113,20 +106,21 @@ Each schema entry stores a 1-byte `codec`. An `R` selects the schema for its ext
 
 | Bit(s) | Meaning | Purpose |
 |---:|---|---|
-| 7–4 | Reserved; write `0`. | Leaves room for future encodings. |
+| 7–5 | Reserved; write `0`. | Leaves room for future encodings. |
+| 4 | `segmented_offsets`: `1` = segmented base and offsets; `0` = normal codec bits. | Selects the segmented payload when bits 3–0 are `0`. |
 | 3 | `rle`: `0` = off; `1` = on. | Run-length encodes repeated results after prediction. |
-| 2–1 | `predictor`: `00` = none; `01` = delta; `10` = delta-of-delta; `11` = reserved. | Encodes changes between consecutive values of each column. |
+| 2–1 | `predictor`: `00` = none; `01` = delta; `10` = delta-of-delta; `11` = reserved. | Encodes changes between consecutive values. |
 | 0 | `representation`: `0` = raw; `1` = uniform quantization. | Selects the values passed to the predictor. |
 
-For example, `0x00` means raw, `0x01` means uniform quantization, `0x03` means quantization plus delta, and `0x0B` adds RLE to that combination. A reader rejects reserved or unsupported combinations.
+For example, `0x00` means raw, `0x01` means uniform quantization, `0x03` means quantization plus delta, and `0x0B` adds RLE to that combination. `0x10` selects segmented base and offsets; no other combination with bit 4 is valid. A reader rejects reserved or unsupported combinations.
 
-Encode in this order: raw values or uniform quantization → predictor → RLE → payload. Decode in reverse order. Delta starts with one unpredicted value per column; delta-of-delta starts with two. Predictor state resets at each block boundary, so every block decodes independently. RLE operates on the predictor results, and `chest_count` is the number of Chests after decoding. Delta and RLE preserve their input exactly; uniform quantization may introduce rounding error.
+For codecs with bit 4 set to `0`, encode in this order: raw values or uniform quantization → predictor → RLE → payload. Decode in reverse order. Delta starts with one unpredicted value; delta-of-delta starts with two. Predictor state resets at each block boundary, so every block decodes independently. RLE operates on the predictor results; its run counts determine the decoded reading count. Delta and RLE preserve their input exactly; uniform quantization may introduce rounding error.
 
-Uniform quantization needs a range and bit width for each quantized column in the schema. The precise metadata fields, bit packing, signed residual encoding, RLE run format, and out-of-range rule still need definition. Until those rules are specified, write only `codec = 0x00`; readers reject other values. See [Archiving](README-ARCHIVE.md) for how to compare the combinations.
+Uniform quantization needs a range and bit width in the schema. The precise metadata fields, bit packing, signed residual encoding, RLE run format, and out-of-range rule still need definition. The payloads for `codec = 0x00` and `codec = 0x10` are defined below; readers reject other values until their formats are specified. See [Archiving](README-ARCHIVE.md) for how to compare the combinations.
 
-### `col_units` Unit Codes
+### Unit Codes
 
-Unit codes are 1 byte and are assigned as follows:
+`value_unit` is 1 B and uses these codes:
 
 | Codes | Units, in code order |
 |---:|---|
@@ -141,41 +135,18 @@ Unit codes are 1 byte and are assigned as follows:
 | `2` | Thaums |
 | `0–1` | Unspecified, Count |
 
-When reading, the schema log answers: “Given a `schema_id`, what is the byte layout of the payload?” For example:
-
-```text
-payload     = 0x01 0x02 0x03 0x04
-temperature = 0x01 0x02
-humidity    = 0x03 0x04
-```
-
-A three-column schema can be represented as:
-
-```text
-schema_id     = 0
-col_count  = 3
-codec = 0x00                 # raw values
-schema_config1   = 0b00000001  # col_signs is enabled
-col_widths = [1, 2, 4]        # bytes per column
-col_signs  = 0b01000000
-col_units  = [0, 0, 0]        # unspecified units
-```
-
-This describes an unsigned 8-bit column, a signed 16-bit column, and an unsigned 32-bit column. Each schema change appends a new entry to both Superblocks. Existing extents retain their original `schema_id`; new data using a new schema starts in a new record block.
+For example, a temperature schema can use `value_unit = 12` (°F), `value_width = 2`, `value_scale_exp = -1`, and `codec = 0x10`. Each stored integer then represents tenths of a degree Fahrenheit. A new schema entry and `schema_id` are needed when its value format changes.
 
 ### Schema Entry Capacity
 
-Each Superblock has 4,084 bytes for append-only `schema_entries`. This estimate assumes 4-byte entry alignment, `col_signs` and `col_scale_ratios` present, and other optional arrays absent. The 10 fixed bytes come from the schema-wide fields. For every column, `col_widths`, `col_units`, and `col_scale_ratios` add 4 bytes total.
+Each Superblock has 4,084 B for append-only `schema_entries`. Entries are padded to 4 B. The 11 fixed bytes are `entry_crc`, `commit`, `value_config`, `schema_id`, `codec`, `time_format`, `value_width`, and `value_unit`.
 
-| `col_count` | Aligned entry size | Entries per Superblock | Unused space (B) per Superblock |
-|---:|---:|---:|---:|
-| 4 | 28 B | 145 | 24 |
-| 8 | 44 B | 92 | 36 |
-| 16 | 76 B | 53 | 56 |
-| 32 | 144 B | 28 | 52 |
-| 64 | 276 B | 14 | 220 |
+| Scale fields | Aligned entry size | Entries per Superblock | Unused space per Superblock |
+|---|---:|---:|---:|
+| None | 12 B | 256 | 1,012 B |
+| Multiplier, exponent, and ratio | 16 B | 255 | 4 B |
 
-The entry count includes the initial schema, so the maximum number of schema updates is `entry count − 1`. Both Superblocks store the same entries; they are copies, not extra capacity.
+The 1 B `schema_id` limits the table to 256 distinct entries. The entry count includes the initial schema; both Superblocks hold the same entries.
 
 ## Streams
 
@@ -208,21 +179,21 @@ A record block contains:
 
 | field | size | purpose |
 |---|---:|---|
-| **crc** | 4 B | Covers the block header and payload, including `chest_count`; excludes itself. |
+| **crc** | 4 B | Covers the header, including `payload_length`, and the used payload; excludes itself. |
 | **magic_number** | 2 B | Identifies the start of the record block. |
-| **chest_count** | 2 B | Number of Chests in this block; written at finalization to locate the payload areas. |
-| **time_value** | 4 B | Stores the time of the first Chest in this block, using the format specified by its schema. |
+| **payload_length** | 2 B | Number of valid payload bytes in this block (`0`–`4,078`). |
+| **time_value** | 4 B | Stores the time of the first reading in this block, using the format specified by its schema. |
 | **dataset_id** | 1 B | Identifies the dataset. |
-| **schema_id** | 1 B | Identifies the schema defining this block's Chest layout. |
+| **schema_id** | 1 B | Identifies the schema defining this block's value format. |
 | **interval_code** | 1 B | Selects the time unit. |
-| **interval_value** | 1 B | Sets the number of units between Chests. |
-| **payload** | 4,078 B remaining | Stores Chests using the selected codec; see [Payload](#payload). |
+| **interval_value** | 1 B | Sets the number of units between readings. |
+| **payload** | 4,078 B remaining | Stores raw readings or encoded segments according to the schema's codec; see [Payload Formats](#payload-formats). |
 
-The Record block header is 16 bytes. At finalization, write `chest_count`, then compute and store `crc`; readers use the count only if the CRC validates. The `schema_id` selects this extent's codec and `time_format`; its `C` blocks use the same schema and codec.
+The Record block header is 16 bytes. At finalization, write `payload_length`, then compute and store `crc`; readers use the length only if the CRC validates. The `schema_id` selects this extent's codec and `time_format`; its `C` blocks use the same schema and codec.
 
 ### Interval Codes
 
-Each `R` stores an `interval_code` and `interval_value` for its extent; its `C` blocks inherit both. For codes `1`–`10`, `interval_value` ranges from `1` to `255`. For code `0`, write `interval_value = 0` because each Chest carries its own timestamp. For example, code `5` with value `10` means one Chest every 10 minutes.
+Each `R` stores an `interval_code` and `interval_value` for its extent; its `C` blocks inherit both. For codes `1`–`10`, `interval_value` ranges from `1` to `255`. For code `0`, write `interval_value = 0` because each reading carries its own timestamp. For example, code `5` with value `10` means one reading every 10 minutes.
 
 | `interval_code` | Time unit |
 |---:|---|
@@ -237,9 +208,9 @@ Each `R` stores an `interval_code` and `interval_value` for its extent; its `C` 
 | 3 | Millisecond (ms) |
 | 2 | Microsecond (μs) |
 | 1 | Nanosecond (ns) |
-| 0 | Timestamp stored in each Chest |
+| 0 | Timestamp stored with each reading |
 
-For `interval_code = 0`, the timestamp column and its format must be defined for the Chest; how the schema marks that column remains to be specified. For codes `1`–`6`, the reader derives timestamps from each block's `time_value`, `interval_value`, and the Chest's position within that block. Calendar boundaries, time zone, and week start for codes `7`–`10` still need definition.
+For `interval_code = 0`, store a 4 B timestamp before each raw value, using the schema's `time_format`; the header's `time_value` matches the first timestamp. For codes `1`–`6`, the reader derives timestamps from each block's `time_value`, `interval_value`, and the reading's position within that block. Calendar boundaries, time zone, and week start for codes `7`–`10` still need definition.
 
 ## Continuation blocks (`C`)
 
@@ -249,48 +220,61 @@ A continuation block contains:
 
 | Field | Size | Purpose |
 |---|---:|---|
-| **crc** | 4 B | Covers the block header and payload, including `chest_count`; excludes itself. |
+| **crc** | 4 B | Covers the header, including `payload_length`, and the used payload; excludes itself. |
 | **magic_number** | 2 B | Identifies the start of the continuation block. |
-| **chest_count** | 2 B | Number of Chests in this block; written at finalization to locate the payload areas. |
-| **time_value** | 4 B | Stores the measured time of the first Chest in this block, using the format specified by its schema. |
+| **payload_length** | 2 B | Number of valid payload bytes in this block (`0`–`4,078`). |
+| **time_value** | 4 B | Stores the measured time of the first reading in this block, using the format specified by its schema. |
 | **dataset_id** | 1 B | Identifies the dataset. |
 | **alignment_padding** | 3 B | Set to `0`; aligns the payload to a 4-byte boundary. |
-| **payload** | 4,078 B remaining | Stores more Chests using the schema and codec of this extent's Record block. |
+| **payload** | 4,078 B remaining | Stores raw readings or encoded segments using the schema of this extent's Record block. |
 
-The Continuation block uses its own `time_value` and inherits `interval_code`, `interval_value`, time format, schema, and codec from its parent `R`. Its header is 16 bytes. Each block's `time_value` anchors its first Chest, so timing drift does not accumulate across blocks. For `interval_code = 0`, each Chest stores its own timestamp. At finalization, write `chest_count`, then compute and store `crc`; readers use the count only if the CRC validates.
+The Continuation block uses its own `time_value` and inherits `interval_code`, `interval_value`, time format, schema, and codec from its parent `R`. Its header is 16 B. Each block's `time_value` anchors its first reading, so timing drift does not accumulate across blocks. For `interval_code = 0`, each reading stores its own timestamp. At finalization, write `payload_length`, then compute and store `crc`; readers use the length only if the CRC validates.
 
-Approximate records per block, assuming each chest is entirely contained in 1 block:
+Raw fixed-interval readings per `C` block, assuming each value is entirely contained in 1 block and the header is 16 B:
 
-Continuation block header: 16 bytes.
-
-| Chest size | Records per block | Unused payload (B) |
+| Value width | Readings per block | Unused payload (B) |
 |---:|---:|---:|
+| 1 B | 4,078 | 0 |
+| 2 B | 2,039 | 0 |
 | 4 B | 1,019 | 2 |
 | 8 B | 509 | 6 |
-| 12 B | 339 | 10 |
-| 16 B | 254 | 14 |
-| 20 B | 203 | 18 |
-| 24 B | 169 | 22 |
 
-> Unused bytes are the remaining payload space after storing whole records. The counts assume records are packed consecutively with no alignment padding.
-## Payload
+> Unused bytes are the remaining payload space after storing whole readings. The counts assume readings are packed consecutively with no alignment padding. For `interval_code = 0`, add 4 B per reading for its timestamp.
 
-With codec `0`, each Record or Continuation block stores raw Chests consecutively from the start of its payload:
+## Payload Formats
+
+Before checking the CRC, readers reject a `payload_length` greater than `4,078` B. Only the first `payload_length` bytes of the payload are valid and covered by the CRC.
+
+### Raw Readings (`codec = 0x00`)
+
+With codec `0`, each `R` or `C` stores raw readings consecutively from the start of its payload:
 
 ```text
 Extent example (each row is one 4 KiB block):
-[R header] [Chest 0] [Chest 1] [Chest 2] ...
-[C header] [Chest 0] [Chest 1] [Chest 2] ...
-[C header] [Chest 0] [Chest 1] [Chest 2] ...
+[R header] [reading 0] [reading 1] [reading 2] ...
+[C header] [reading 0] [reading 1] [reading 2] ...
+[C header] [reading 0] [reading 1] [reading 2] ...
 ```
 
-The schema's `col_widths` determines each raw Chest's column sizes in bytes. At finalization, write the 2-byte `chest_count` in the header, then compute and store `crc` over the header and payload, excluding the CRC field. Readers use the validated count and schema to find the end of the raw Chests. Any remaining payload bytes are unused. A future compressed codec must define its own byte layout and how the count maps to decoded Chests.
+For `interval_code = 1`–`10`, each reading is one `value_width`-byte value. For `interval_code = 0`, each reading is a 4 B timestamp followed by one `value_width`-byte value. At finalization, write the 2 B `payload_length` in the header, then compute and store `crc` over the header and that many payload bytes, excluding the CRC field. The validated length must be a multiple of the reading size (`value_width`, or `4 + value_width` for code `0`); the quotient is the reading count. Remaining payload bytes are unused. Other codecs must define their own byte layouts and decoded reading counts.
+
+### Segmented Base and Offsets (`codec = 0x10`)
+
+This codec requires `value_width = 2` or `4`, signed values (`value_config` bit 0 = `1`), and `interval_code = 1`–`10`. Each decoded reading has the schema's `value_width`, unit, and scale. Both `R` and `C` retain their existing headers; each block starts its own sequence of segments in the payload:
+
+```text
+[block header] [base: value_width B][reading_count: 2 B][1 B offsets: reading_count − 1] ...
+```
+
+Each segment starts with a 2 B or 4 B base reading, followed by one signed 1 B offset for each later reading. Every offset is relative to that segment's base and ranges from −127 to +127; the `-128` code is reserved. For temperature stored in tenths of a degree Fahrenheit, a 2 B base of 70.0 °F permits readings from 57.3 °F to 82.7 °F in that segment. `reading_count` includes the base and must be at least `1`. Start a new segment when the next reading falls outside the offset range. A new `C` starts when another segment or offset does not fit in the current block; its first segment has a new base.
+
+The block header's `payload_length` marks the end of the last segment. Readers parse segments until they consume exactly that many bytes, rejecting a count that would overrun the used payload. The decoded reading count is the sum of the segment `reading_count` values. The block's `time_value` anchors its first reading; positions continue across segments within the block. The writer must know a segment's count before programming its 2 B count field, so it buffers the current segment and writes it once when the segment closes. The existing block CRC is finalized as usual.
 
 ## Total Storage Capacity
 
-The table assumes one raw 4-byte Chest every 1, 10, or 30 seconds. Counts include the capacity of 1 Record block and all Continuation blocks. Storage sizes use binary units.
+The table assumes one raw 4 B value per reading every 1, 10, or 30 seconds (`interval_code = 4`). Counts include the capacity of 1 `R` block and all `C` blocks. Storage sizes use binary units.
 
-| Storage size | Continuation<br>blocks | Continuation<br>header space | Records | Time to full<br>(1 sec) | Time to full<br>(10 secs) | Time to full<br>(30 secs) |
+| Storage size | Continuation<br>blocks | Continuation<br>header space | Readings | Time to full<br>(1 sec) | Time to full<br>(10 secs) | Time to full<br>(30 secs) |
 |---:|---:|---:|---:|---:|---:|---:|
 | 32 KiB | 5 | 0.08 KiB | 6,114 | ~1.7 hours | ~17.0 hours | ~2.1 days |
 | 128 KiB | 29 | 0.5 KiB | 30,570 | ~8.5 hours | ~3.5 days | ~10.6 days |
@@ -300,7 +284,7 @@ The table assumes one raw 4-byte Chest every 1, 10, or 30 seconds. Counts includ
 | 512 MiB | 131,069 | 2,048 KiB | 133.6 × 10⁶ | ~4.2 years | ~42.4 years | ~127.1 years |
 | 1 GiB | 262,141 | 4,096 KiB | 267.1 × 10⁶ | ~8.5 years | ~84.7 years | ~254.1 years |
 
-> Assumes 2 Superblocks and 1 Record block; all remaining 4 KiB blocks are Continuation blocks. With codec `0`, the Record block and each Continuation block hold 1,019 Chests. Multiple streams need additional Record blocks.
+> Assumes 2 Superblocks and 1 `R` block; all remaining 4 KiB blocks are `C` blocks. With codec `0`, each block holds 1,019 readings. Multiple datasets need additional `R` blocks.
 
 ## Recovery and Log Scanning
 

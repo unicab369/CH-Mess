@@ -13,20 +13,31 @@ Uniform quantization maps a configured value range to evenly spaced integer code
 | `0x02` | Raw | Delta | Off |
 | `0x03` | Uniform quantization | Delta | Off |
 | `0x0B` | Uniform quantization | Delta | On |
+| `0x10` | Segmented 2 B or 4 B base + signed 1 B offsets | Block base | Off |
 
-Only `0x00` has a defined payload format today. Compare candidate combinations on representative readings before defining the other formats. In particular, record the total bytes per block, decoding work, quantization error, and the effect of out-of-range values. A uniform range and bit width must be stored in the schema before quantized blocks can be written.
+`0x00` and `0x10` have defined payload formats; the other rows are candidates. Compare candidate combinations on representative readings before defining the other formats. In particular, record the total bytes per block, decoding work, quantization error, and the effect of out-of-range values. A uniform range and bit width must be stored in the schema before quantized blocks can be written.
+
+### Segmented Temperature Example
+
+For `codec = 0x10`, use a temperature schema with `value_width = 2`, signed values, and a scale of 0.1 °F per integer. The same `R` and `C` headers apply. Each block payload contains one or more segments; other schemas may use a 4 B base:
+
+```text
+[base: 2 B][reading_count: 2 B][signed 1 B offsets for later readings]
+```
+
+For example, a base of `700` represents 70.0 °F. Each later reading stores one signed 1 B offset from that base, from −127 to +127 tenths of a degree, so this segment can represent 57.3–82.7 °F. The `-128` code is reserved. Readings 70.0, 70.1, 70.2, and 70.1 °F store `base = 700`, `reading_count = 4`, and offsets `[+1, +2, +1]`. Start a new segment when a reading falls outside the range. The block header's `payload_length` marks the end of the segments; add their `reading_count` values to obtain the total reading count.
 
 Other lossless methods to compare include:
 
 | Candidate | Stored information | Best case |
 |---|---|---|
-| Shared upper bits | Common high bits once, then low bits per Chest | All codes stay within one aligned range. |
+| Shared upper bits | Common high bits once, then low bits per reading | All codes stay within one aligned range. |
 | Base + packed offsets | A base code once, then small differences from that base | Codes stay within a narrow range, even across a high-bit boundary. |
 | Delta encoding | First code, then differences between consecutive codes | Consecutive codes change very little. |
 
 For example, 8-bit codes `0101 0010`, `0101 0011`, and `0101 0100` use 24 bits raw. Storing the shared `0101` once and the low parts `0010`, `0011`, `0100` uses 16 bits before format overhead. A code that crosses the shared-bit boundary needs a new group or an escape rule. Base + packed offsets can avoid that boundary problem.
 
-These methods can preserve the input codes exactly. Mapping temperatures to fewer codes first is uniform quantization and introduces rounding error. Define each compressed payload layout, predictor seed, run format, Chest count, and decoding rules before writing blocks with that codec.
+These methods can preserve the input codes exactly. Mapping temperatures to fewer codes first is uniform quantization and introduces rounding error. Define each compressed payload layout, predictor seed, run format, decoded count rule, and decoding rules before writing blocks with that codec.
 
 ## Water Temperature Range
 
