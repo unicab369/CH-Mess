@@ -13,6 +13,7 @@ static uint8_t SPI_DC_PIN = SPI_PORT_PIN_NONE;
 
 /* SPI interface */
 static inline void SPI_INIT(uint8_t reset_pin, uint8_t dc_pin);
+static inline void SPI_RESET(uint8_t reset_pin, uint16_t delay_ms);
 static inline void SPI_START(void);
 static inline void SPI_STOP(void);
 static inline void SPI_SET_FRAME_SIZE(uint8_t bits);
@@ -55,14 +56,8 @@ static inline void SPI_INIT(uint8_t reset_pin, uint8_t dc_pin) {
 	              SPI_Direction_2Lines_FullDuplex;
 	SPI1->CTLR1 |= SPI_CTLR1_DFF; /* Default to 16-bit frames. */
 
-	if (reset_pin != SPI_PORT_PIN_NONE) {
+	if (reset_pin != SPI_PORT_PIN_NONE)
 		funPinMode(reset_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
-		funDigitalWrite(reset_pin, FUN_HIGH);
-		funDigitalWrite(reset_pin, FUN_LOW);
-		Delay_Ms(100);
-		funDigitalWrite(reset_pin, FUN_HIGH);
-		Delay_Ms(100);
-	}
 	if (dc_pin != SPI_PORT_PIN_NONE)
 		funPinMode(dc_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
 	SPI_START();
@@ -157,14 +152,8 @@ static inline void SPI_INIT(uint8_t reset_pin, uint8_t dc_pin) {
 	R8_SPI0_CTRL_CFG = RB_SPI_AUTO_IF;
 	R8_SPI0_CLOCK_DIV = 4;
 
-	if (reset_pin != SPI_PORT_PIN_NONE) {
+	if (reset_pin != SPI_PORT_PIN_NONE)
 		funPinMode(reset_pin, GPIO_CFGLR_OUT_2Mhz_PP);
-		funDigitalWrite(reset_pin, FUN_HIGH);
-		funDigitalWrite(reset_pin, FUN_LOW);
-		Delay_Ms(100);
-		funDigitalWrite(reset_pin, FUN_HIGH);
-		Delay_Ms(100);
-	}
 	if (dc_pin != SPI_PORT_PIN_NONE)
 		funPinMode(dc_pin, GPIO_CFGLR_OUT_2Mhz_PP);
 	SPI_START();
@@ -201,6 +190,15 @@ static inline uint16_t SPI_TRANSFER_16(uint16_t data) {
 #else
 #error "spi_port.h supports CH32V003 and CH582/CH583 targets"
 #endif
+
+static inline void SPI_RESET(uint8_t reset_pin, uint16_t delay_ms) {
+	if (reset_pin == SPI_PORT_PIN_NONE) return;
+	funDigitalWrite(reset_pin, FUN_HIGH);
+	funDigitalWrite(reset_pin, FUN_LOW);
+	Delay_Ms(delay_ms);
+	funDigitalWrite(reset_pin, FUN_HIGH);
+	Delay_Ms(delay_ms);
+}
 
 static inline void SPI_DC_LOW(void) {
 	if (SPI_DC_PIN != SPI_PORT_PIN_NONE) funDigitalWrite(SPI_DC_PIN, FUN_LOW);

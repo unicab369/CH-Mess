@@ -13,6 +13,7 @@ int main(void) {
 	funGpioInitAll();
 
 	SPI_INIT(TFT_RESET, TFT_DC);
+	SPI_RESET(TFT_RESET, 1);
 	st7735_init(160, 80, TFT_CS);
 
 	st7735_fill(ST_BLACK);
