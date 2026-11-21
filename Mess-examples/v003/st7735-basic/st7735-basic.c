@@ -1,7 +1,7 @@
 #include "ch32fun.h"
 
 /* This library's SPI backend uses SPI1: PC5=SCK and PC6=MOSI. */
-#include "../../../Mess-libs/spi/lib/lib_spi.h"
+#include "../../../Mess-libs/spi/spi_port.h"
 #include "../../../Mess-libs/spi/fun_st77352.h"
 
 #define TFT_CS    PA1

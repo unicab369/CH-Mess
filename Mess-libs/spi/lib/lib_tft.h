@@ -346,7 +346,7 @@ static void tft_draw_solid_poly2(
             edges[valid_edges].x_curr = x_start << 16;
             edges[valid_edges].x_step = ((int32_t)(p0->x - p1->x) << 16) / (p0->y - p1->y);
         }
-        
+
         edges[valid_edges].y_min = y_min;
         edges[valid_edges].y_max = y_max;
         valid_edges++;

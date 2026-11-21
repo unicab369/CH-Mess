@@ -3,6 +3,7 @@
 #include "ch32fun.h"
 #include <stdint.h>
 #include "lib/lib_tft.h"
+#include "spi_port.h"
 
 // ST7735 Datasheet
 // https://www.displayfuture.com/Display/datasheet/controller/ST7735.pdf

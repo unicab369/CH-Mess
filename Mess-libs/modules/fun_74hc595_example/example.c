@@ -14,7 +14,7 @@ int main() {
     // systick_init();			//! required for millis()
 
 	funGpioInitAll();
-	SPI_init(-1, -1);
+	SPI_init(SPI_PORT_PIN_NONE, SPI_PORT_PIN_NONE);
 
 	hc595_init(HC595_LATCH_PIN);
 	// hc595_setup_clkDataPins(HC595_CLK_PIN, HC595_DATA_PIN);

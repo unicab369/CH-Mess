@@ -1,7 +1,7 @@
 #include "ch32fun.h"
 #include <stdint.h>
 #include "lib/lib_tft.h"
-#include "lib/lib_spi.h"
+#include "spi_port.h"
 #include "epd_luts.h"
 
 #include "lib/font6x8.h"
@@ -15,10 +15,6 @@
 #define EPD_PARTIAL_UPDATE_DATA      0xFF
 
 static uint8_t EPD_DC_PIN, EPD_BUSY_PIN, EPD_RST_PIN;
-
-//! REQUIRED for SPI
-void SPI_DC_LOW()    { funDigitalWrite(EPD_DC_PIN, 0); }
-void SPI_DC_HIGH()   { funDigitalWrite(EPD_DC_PIN, 1); }
 
 void FN_EPD_WAIT_BUSY() {
     while(1) {
@@ -156,6 +152,7 @@ void fun_epd_setup(uint8_t dc_pin, uint8_t rst_pin, uint8_t busy_pin) {
     EPD_DC_PIN = dc_pin;
     EPD_BUSY_PIN = busy_pin;
     EPD_RST_PIN = rst_pin;
+    SPI_DC_PIN = dc_pin;
 
     funPinMode(rst_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
     funPinMode(dc_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
