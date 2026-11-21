@@ -119,8 +119,6 @@ typedef struct {
 	DWORD	dsect;		/* File current data sector */
 } FATFS;
 
-
-
 /* Directory object structure */
 
 typedef struct {
@@ -131,8 +129,6 @@ typedef struct {
 	DWORD	sect;		/* Current sector */
 } DIR;
 
-
-
 /* File status structure */
 
 typedef struct {
@@ -142,8 +138,6 @@ typedef struct {
 	BYTE	fattrib;	/* Attribute */
 	char	fname[13];	/* File name */
 } FILINFO;
-
-
 
 /* File function return code (FRESULT) */
 
@@ -156,7 +150,6 @@ typedef enum {
 	FR_NOT_ENABLED,		/* 5 */
 	FR_NO_FILESYSTEM	/* 6 */
 } FRESULT;
-
 
 
 // /*--------------------------------------------------------------*/
@@ -205,7 +198,6 @@ typedef enum {
 #endif
 
 
-
 /*----------------------------------------------------------------------------/
 /  Petit FatFs - FAT file system module  R0.03a
 /-----------------------------------------------------------------------------/
@@ -247,7 +239,6 @@ typedef enum {
 #include "diskio.h"		/* Declarations of low level disk I/O functions */
 
 
-
 /*--------------------------------------------------------------------------
 Module Private Definitions
 ---------------------------------------------------------------------------*/
@@ -271,8 +262,6 @@ Module Private Definitions
 #endif
 
 #define ABORT(err)	{fs->flag = 0; return err;}
-
-
 
 /*--------------------------------------------------------*/
 /* DBCS code ranges and SBCS extend char conversion table */
@@ -403,7 +392,7 @@ Module Private Definitions
 				0xB0,0xB1,0xB2,0xB3,0xB4,0xB5,0xB6,0xB7,0xB8,0xB9,0xBA,0xBB,0xBC,0xBD,0xBE,0xBF, \
 				0xC0,0xC1,0xC2,0xC3,0xC4,0xC5,0xC7,0xC7,0xC8,0xC9,0xCA,0xCB,0xCC,0xCD,0xCE,0xCF, \
 				0xD0,0xD1,0xD2,0xD3,0xD4,0x49,0xD6,0xD7,0xD8,0xD9,0xDA,0xDB,0xDC,0xDD,0xDE,0xDF, \
-				0xE0,0xE1,0xE2,0xE3,0xE5,0xE5,0xE6,0xE7,0xE8,0xE9,0xEA,0xEB,0xDE,0xED,0xEE,0xEF, \
+				0xE0,0xE1,0xE2,0xE3,0xE5,0xE5,0xE6,0xE7,0xE8,0xE9,0xEA,0xEB,0xDE,0xED,0xEE,0xEF} \
 
 #elif PF_CODE_PAGE == 860	/* Portuguese */
 #define _EXCVT {0x80,0x9A,0x90,0x8F,0x8E,0x91,0x86,0x80,0x89,0x89,0x92,0x8B,0x8C,0x98,0x8E,0x8F, \
@@ -571,8 +560,6 @@ Module Private Definitions
 #define	DIR_FileSize		28
 
 
-
-
 /*--------------------------------------------------------------------------
 
    Private Functions
@@ -590,7 +577,6 @@ static FATFS *FatFs;	/* Pointer to the file system object (logical drive) */
 static WORD ld_word (const BYTE* ptr)	/*	 Load a 2-byte little-endian word */
 {
 	WORD rv;
-
 	rv = ptr[1];
 	rv = rv << 8 | ptr[0];
 	return rv;
@@ -599,15 +585,12 @@ static WORD ld_word (const BYTE* ptr)	/*	 Load a 2-byte little-endian word */
 static DWORD ld_dword (const BYTE* ptr)	/* Load a 4-byte little-endian word */
 {
 	DWORD rv;
-
 	rv = ptr[3];
 	rv = rv << 8 | ptr[2];
 	rv = rv << 8 | ptr[1];
 	rv = rv << 8 | ptr[0];
 	return rv;
 }
-
-
 
 /*-----------------------------------------------------------------------*/
 /* String functions                                                      */
@@ -627,16 +610,13 @@ static int mem_cmp (const void* dst, const void* src, int cnt) {
 	return r;
 }
 
-
-
 /*-----------------------------------------------------------------------*/
 /* FAT access - Read value of a FAT entry                                */
 /*-----------------------------------------------------------------------*/
 
 static CLUST get_fat (	/* 1:IO error, Else:Cluster status */
 	CLUST clst	/* Cluster# to get the link information */
-)
-{
+) {
 	BYTE buf[4];
 	FATFS *fs = FatFs;
 #if PF_FS_FAT12
@@ -675,30 +655,23 @@ static CLUST get_fat (	/* 1:IO error, Else:Cluster status */
 	return 1;	/* An error occured at the disk I/O layer */
 }
 
-
-
-
 /*-----------------------------------------------------------------------*/
 /* Get sector# from cluster# / Get cluster field from directory entry    */
 /*-----------------------------------------------------------------------*/
 
 static DWORD clust2sect (	/* !=0: Sector number, 0: Failed - invalid cluster# */
 	CLUST clst		/* Cluster# to be converted */
-)
-{
+) {
 	FATFS *fs = FatFs;
-
 
 	clst -= 2;
 	if (clst >= (fs->n_fatent - 2)) return 0;		/* Invalid cluster# */
 	return (DWORD)clst * fs->csize + fs->database;
 }
 
-
 static CLUST get_clust (
 	BYTE* dir		/* Pointer to directory entry */
-)
-{
+) {
 	FATFS *fs = FatFs;
 	CLUST clst = 0;
 
@@ -719,11 +692,9 @@ static CLUST get_clust (
 
 static FRESULT dir_rewind (
 	DIR *dj			/* Pointer to directory object */
-)
-{
+) {
 	CLUST clst;
 	FATFS *fs = FatFs;
-
 
 	dj->index = 0;
 	clst = dj->sclust;
@@ -739,21 +710,16 @@ static FRESULT dir_rewind (
 	return FR_OK;	/* Seek succeeded */
 }
 
-
-
-
 /*-----------------------------------------------------------------------*/
 /* Directory handling - Move directory index next                        */
 /*-----------------------------------------------------------------------*/
 
 static FRESULT dir_next (	/* FR_OK:Succeeded, FR_NO_FILE:End of table */
 	DIR *dj			/* Pointer to directory object */
-)
-{
+) {
 	CLUST clst;
 	WORD i;
 	FATFS *fs = FatFs;
-
 
 	i = dj->index + 1;
 	if (!i || !dj->sect) return FR_NO_FILE;	/* Report EOT when index has reached 65535 */
@@ -780,9 +746,6 @@ static FRESULT dir_next (	/* FR_OK:Succeeded, FR_NO_FILE:End of table */
 	return FR_OK;
 }
 
-
-
-
 /*-----------------------------------------------------------------------*/
 /* Directory handling - Find an object in the directory                  */
 /*-----------------------------------------------------------------------*/
@@ -790,11 +753,9 @@ static FRESULT dir_next (	/* FR_OK:Succeeded, FR_NO_FILE:End of table */
 static FRESULT dir_find (
 	DIR *dj,		/* Pointer to the directory object linked to the file name */
 	BYTE *dir		/* 32-byte working buffer */
-)
-{
+) {
 	FRESULT res;
 	BYTE c;
-
 
 	res = dir_rewind(dj);			/* Rewind directory object */
 	if (res != FR_OK) return res;
@@ -812,9 +773,6 @@ static FRESULT dir_find (
 	return res;
 }
 
-
-
-
 /*-----------------------------------------------------------------------*/
 /* Read an object from the directory                                     */
 /*-----------------------------------------------------------------------*/
@@ -822,11 +780,9 @@ static FRESULT dir_find (
 static FRESULT dir_read (
 	DIR *dj,		/* Pointer to the directory object to store read object name */
 	BYTE *dir		/* 32-byte working buffer */
-)
-{
+) {
 	FRESULT res;
 	BYTE a, c;
-
 
 	res = FR_NO_FILE;
 	while (dj->sect) {
@@ -848,7 +804,6 @@ static FRESULT dir_read (
 #endif
 
 
-
 /*-----------------------------------------------------------------------*/
 /* Pick a segment and create the object name in directory form           */
 /*-----------------------------------------------------------------------*/
@@ -857,8 +812,7 @@ static FRESULT dir_read (
 static FRESULT create_name (
 	DIR *dj,			/* Pointer to the directory object */
 	const char **path	/* Pointer to pointer to the segment in the path string */
-)
-{
+) {
 	BYTE c, d, ni, si, i, *sfn;
 	const char *p;
 #if PF_USE_LCC && defined(_EXCVT)
@@ -897,9 +851,6 @@ static FRESULT create_name (
 	return FR_OK;
 }
 
-
-
-
 /*-----------------------------------------------------------------------*/
 /* Get file information from directory entry                             */
 /*-----------------------------------------------------------------------*/
@@ -908,11 +859,9 @@ static void get_fileinfo (		/* No return code */
 	DIR *dj,			/* Pointer to the directory object */
 	BYTE *dir,			/* 32-byte working buffer */
 	FILINFO *fno	 	/* Pointer to store the file information */
-)
-{
+) {
 	BYTE i, c;
 	char *p;
-
 
 	p = fno->fname;
 	if (dj->sect) {
@@ -939,8 +888,6 @@ static void get_fileinfo (		/* No return code */
 }
 #endif /* PF_USE_DIR */
 
-
-
 /*-----------------------------------------------------------------------*/
 /* Follow a file path                                                    */
 /*-----------------------------------------------------------------------*/
@@ -949,11 +896,8 @@ static FRESULT follow_path (	/* FR_OK(0): successful, !=0: error code */
 	DIR *dj,			/* Directory object to return last directory and found object */
 	BYTE *dir,			/* 32-byte working buffer */
 	const char *path	/* Full-path string to find a file or directory */
-)
-{
+) {
 	FRESULT res;
-
-
 	while (*path == ' ') path++;		/* Strip leading spaces */
 	if (*path == '/') path++;			/* Strip heading separator if exist */
 	dj->sclust = 0;						/* Set start directory (always root dir) */
@@ -979,9 +923,6 @@ static FRESULT follow_path (	/* FR_OK(0): successful, !=0: error code */
 	return res;
 }
 
-
-
-
 /*-----------------------------------------------------------------------*/
 /* Check a sector if it is an FAT boot record                            */
 /*-----------------------------------------------------------------------*/
@@ -989,9 +930,8 @@ static FRESULT follow_path (	/* FR_OK(0): successful, !=0: error code */
 static BYTE check_fs (	/* 0:The FAT boot record, 1:Valid boot record but not an FAT, 2:Not a boot record, 3:Error */
 	BYTE *buf,	/* Working buffer */
 	DWORD sect	/* Sector# (lba) to check if it is an FAT boot record or not */
-)
-{
-	BYTE retries = 3; 
+) {
+	BYTE retries = 3;
 
 	for (BYTE i=1; i<=retries; i++) {
 		if (disk_readp(buf, sect, 510, 2)) {	/* Read the boot record */
@@ -999,7 +939,7 @@ static BYTE check_fs (	/* 0:The FAT boot record, 1:Valid boot record but not an 
 		}
 
 		WORD sig = ld_dword(buf);
-		
+
 		if (sig == 0xAA55 || sig == 0xBA55) {
 			break;
 		} else {			/* Check record signature */
@@ -1018,9 +958,6 @@ static BYTE check_fs (	/* 0:The FAT boot record, 1:Valid boot record but not an 
 	return 1;
 }
 
-
-
-
 /*--------------------------------------------------------------------------
 Public Functions
 --------------------------------------------------------------------------*/
@@ -1032,8 +969,7 @@ Public Functions
 
 FRESULT pf_mount (
 	FATFS *fs		/* Pointer to new file system object */
-)
-{
+) {
 	BYTE fmt, buf[36];
 	DWORD bsect, fsize, tsect, mclst;
 
@@ -1098,17 +1034,13 @@ FRESULT pf_mount (
 	return FR_OK;
 }
 
-
-
-
 /*-----------------------------------------------------------------------*/
 /* Open or Create a File                                                 */
 /*-----------------------------------------------------------------------*/
 
 FRESULT pf_open (
 	const char *path	/* Pointer to the file name */
-)
-{
+) {
 	FRESULT res;
 	DIR dj;
 	BYTE sp[12], dir[32];
@@ -1130,9 +1062,6 @@ FRESULT pf_open (
 	return FR_OK;
 }
 
-
-
-
 /*-----------------------------------------------------------------------*/
 /* Read File                                                             */
 /*-----------------------------------------------------------------------*/
@@ -1142,15 +1071,13 @@ FRESULT pf_read (
 	void* buff,		/* Pointer to the read buffer (NULL:Forward data to the stream)*/
 	UINT btr,		/* Number of bytes to read */
 	UINT* br		/* Pointer to number of bytes read */
-)
-{
+) {
 	DRESULT dr;
 	CLUST clst;
 	DWORD sect, remain;
 	UINT rcnt;
 	BYTE cs, *rbuff = buff;
 	FATFS *fs = FatFs;
-
 
 	*br = 0;
 	if (!fs) return FR_NOT_ENABLED;		/* Check file system */
@@ -1188,8 +1115,6 @@ FRESULT pf_read (
 }
 #endif
 
-
-
 /*-----------------------------------------------------------------------*/
 /* Write File                                                            */
 /*-----------------------------------------------------------------------*/
@@ -1199,8 +1124,7 @@ FRESULT pf_write (
 	const void* buff,	/* Pointer to the data to be written */
 	UINT btw,			/* Number of bytes to write (0:Finalize the current write operation) */
 	UINT* bw			/* Pointer to number of bytes written */
-)
-{
+) {
 	CLUST clst;
 	DWORD sect, remain;
 	const BYTE *p = buff;
@@ -1258,8 +1182,6 @@ FRESULT pf_write (
 }
 #endif
 
-
-
 /*-----------------------------------------------------------------------*/
 /* Seek File R/W Pointer                                                 */
 /*-----------------------------------------------------------------------*/
@@ -1267,12 +1189,10 @@ FRESULT pf_write (
 
 FRESULT pf_lseek (
 	DWORD ofs		/* File pointer from top of file */
-)
-{
+) {
 	CLUST clst;
 	DWORD bcs, sect, ifptr;
 	FATFS *fs = FatFs;
-
 
 	if (!fs) return FR_NOT_ENABLED;		/* Check file system */
 	if (!(fs->flag & FA_OPENED)) return FR_NOT_OPENED;	/* Check if opened */
@@ -1308,8 +1228,6 @@ FRESULT pf_lseek (
 }
 #endif
 
-
-
 /*-----------------------------------------------------------------------*/
 /* Create a Directroy Object                                             */
 /*-----------------------------------------------------------------------*/
@@ -1318,12 +1236,10 @@ FRESULT pf_lseek (
 FRESULT pf_opendir (
 	DIR *dj,			/* Pointer to directory object to create */
 	const char *path	/* Pointer to the directory path */
-)
-{
+) {
 	FRESULT res;
 	BYTE sp[12], dir[32];
 	FATFS *fs = FatFs;
-
 
 	if (!fs) {				/* Check file system */
 		res = FR_NOT_ENABLED;
@@ -1347,9 +1263,6 @@ FRESULT pf_opendir (
 	return res;
 }
 
-
-
-
 /*-----------------------------------------------------------------------*/
 /* Read Directory Entry in Sequense                                      */
 /*-----------------------------------------------------------------------*/
@@ -1357,12 +1270,10 @@ FRESULT pf_opendir (
 FRESULT pf_readdir (
 	DIR *dj,			/* Pointer to the open directory object */
 	FILINFO *fno		/* Pointer to file information to return */
-)
-{
+) {
 	FRESULT res;
 	BYTE sp[12], dir[32];
 	FATFS *fs = FatFs;
-
 
 	if (!fs) {				/* Check file system */
 		res = FR_NOT_ENABLED;

@@ -190,65 +190,50 @@ static inline void SPI_wait_transmit_finished()
 /* Transmit a byte to the MMC                                            */
 /*-----------------------------------------------------------------------*/
 
-static
-void xmit_mmc (
+static void xmit_mmc (
 	BYTE d			/* Data to be sent */
-)
-{
+) {
 	SPI_transfer_8(d);
 }
-
 
 /*-----------------------------------------------------------------------*/
 /* Receive a byte from the MMC                                           */
 /*-----------------------------------------------------------------------*/
 
-static
-BYTE rcvr_mmc (void)
-{
+static BYTE rcvr_mmc (void) {
 	BYTE r = SPI_transfer_8(0xFF);
-
 	return r;
 }
-
 
 /*-----------------------------------------------------------------------*/
 /* Skip bytes on the MMC                                                 */
 /*-----------------------------------------------------------------------*/
 
-static
-void skip_mmc (
+static void skip_mmc (
 	UINT n		/* Number of bytes to skip */
-)
-{
+) {
 	do {
 		SPI_transfer_8(0xFF);
-	} while (--n);	
+	} while (--n);
 }
-
 
 /*-----------------------------------------------------------------------*/
 /* Deselect the card and release SPI bus                                 */
 /*-----------------------------------------------------------------------*/
 
-static
-void release_spi (void)
-{
+static void release_spi (void) {
 	INTF_MMC_CS_HIGH();
 	rcvr_mmc();
 }
-
 
 /*-----------------------------------------------------------------------*/
 /* Send a command packet to MMC                                          */
 /*-----------------------------------------------------------------------*/
 
-static
-BYTE send_cmd (
+static BYTE send_cmd (
 	BYTE cmd,		/* Command byte */
 	DWORD arg		/* Argument */
-)
-{
+) {
 	BYTE n, res;
 
 	if (cmd & 0x80) {	/* ACMD<n> is the command sequense of CMD55-CMD<n> */
@@ -291,13 +276,11 @@ Public Functions
 /* Initialize Disk Drive                                                 */
 /*-----------------------------------------------------------------------*/
 
-DSTATUS disk_initialize (void)
-{
+DSTATUS disk_initialize (void) {
 	BYTE n, cmd, ty, buf[4];
 	UINT tmr;
 
 	SPI_set_prescaler(7);
-
 	INTF_MMC_CS_HIGH();
 	skip_mmc(10);			/* Dummy clocks */
 
@@ -346,8 +329,7 @@ DRESULT disk_readp (
 	DWORD sector,	/* Sector number (LBA) */
 	UINT offset,	/* Byte offset to read from (0..511) */
 	UINT count		/* Number of bytes to read (ofs + cnt mus be <= 512) */
-)
-{
+) {
 	DRESULT res;
 	BYTE d;
 	UINT bc, tmr;
@@ -402,13 +384,10 @@ DRESULT disk_readp (
 DRESULT disk_writep (
 	const BYTE *buff,	/* Pointer to the bytes to be written (NULL:Initiate/Finalize sector write) */
 	DWORD sc			/* Number of bytes to send, Sector number (LBA) or zero */
-)
-{
+) {
 	DRESULT res;
 	UINT bc, tmr;
 	static UINT wc;
-
-
 	res = RES_ERROR;
 
 	if (buff) {		/* Send data bytes */
