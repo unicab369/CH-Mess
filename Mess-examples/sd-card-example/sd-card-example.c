@@ -4,8 +4,8 @@
 
 #include "ch32fun.h"
 
-#include "../../Mess-libs/sd_card/mmc/sd_spi_port.h"
-#include "../../Mess-libs/sd_card/mmc/mmcbbp.h"
+#include "../../Mess-libs/spi/sd_card/mmc/sd_spi_port.h"
+#include "../../Mess-libs/spi/sd_card/mmc/mmcbbp.h"
 
 #define DEMO_FILE "HELLO.TXT"
 #define FORMAT_PARTITION_START 2048UL
