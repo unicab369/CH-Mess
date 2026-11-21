@@ -22,7 +22,7 @@ Uniform quantization maps a configured value range to evenly spaced integer code
 For `codec = 0x10`, use a temperature schema with `value_width = 2`, signed values, and a scale of 0.1 °F per integer. The same `R` and `C` headers apply. Each block payload contains one or more segments; other schemas may use a 4 B base:
 
 ```text
-[base: 2 B][reading_count: 2 B][signed 1 B offsets for later readings]
+[reading_count: 2 B][base: 2 B][signed 1 B offsets for later readings]
 ```
 
 For example, a base of `700` represents 70.0 °F. Each later reading stores one signed 1 B offset from that base, from −127 to +127 tenths of a degree, so this segment can represent 57.3–82.7 °F. The `-128` code is reserved. Readings 70.0, 70.1, 70.2, and 70.1 °F store `base = 700`, `reading_count = 4`, and offsets `[+1, +2, +1]`. Start a new segment when a reading falls outside the range. The block header's `payload_length` marks the end of the segments; add their `reading_count` values to obtain the total reading count.

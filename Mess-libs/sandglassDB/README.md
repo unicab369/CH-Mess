@@ -260,13 +260,15 @@ For `interval_code = 1`–`10`, each reading is one `value_width`-byte value. Fo
 
 ### Segmented Base and Offsets (`codec = 0x10`)
 
-This codec requires `value_width = 2` or `4`, signed values (`value_config` bit 0 = `1`), and `interval_code = 1`–`10`. Each decoded reading has the schema's `value_width`, unit, and scale. Both `R` and `C` retain their existing headers; each block starts its own sequence of segments in the payload:
+This codec requires `value_width = 2` or `4`, signed values (`value_config` bit 0 = `1`), and `interval_code = 1`–`10`. Each decoded reading has the schema's `value_width`, unit, and scale. Both `R` and `C` retain their existing headers. Each block stores one or more segments consecutively in its payload, with fields in this order:
 
-```text
-[block header] [base: value_width B][reading_count: 2 B][1 B offsets: reading_count − 1] ...
-```
+| Part | Field | Size | Purpose |
+|---|---|---:|---|
+| Property | **reading_count** | 2 B | Number of readings in the segment, including `base_value`; at least `1`. |
+| Property | **base_value** | 2 B or 4 B | First reading in the segment; `value_width` selects its size, and all offsets are relative to it. |
+| Payload | **offsets** | `reading_count − 1` B | One signed 1 B offset per later reading; each is added to `base_value`. |
 
-Each segment starts with a 2 B or 4 B base reading, followed by one signed 1 B offset for each later reading. Every offset is relative to that segment's base and ranges from −127 to +127; the `-128` code is reserved. For temperature stored in tenths of a degree Fahrenheit, a 2 B base of 70.0 °F permits readings from 57.3 °F to 82.7 °F in that segment. `reading_count` includes the base and must be at least `1`. Start a new segment when the next reading falls outside the offset range. A new `C` starts when another segment or offset does not fit in the current block; its first segment has a new base.
+Offsets range from −127 to +127; the `-128` code is reserved. For temperature stored in tenths of a degree Fahrenheit, a 2 B base of 70.0 °F permits readings from 57.3 °F to 82.7 °F in that segment. Start a new segment when the next reading falls outside the offset range. A new `C` starts when another segment or offset does not fit in the current block; its first segment has a new base.
 
 The block header's `payload_length` marks the end of the last segment. Readers parse segments until they consume exactly that many bytes, rejecting a count that would overrun the used payload. The decoded reading count is the sum of the segment `reading_count` values. The block's `time_value` anchors its first reading; positions continue across segments within the block. The writer must know a segment's count before programming its 2 B count field, so it buffers the current segment and writes it once when the segment closes. The existing block CRC is finalized as usual.
 
