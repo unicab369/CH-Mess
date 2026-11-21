@@ -2,6 +2,9 @@
 
 uint8_t SPI_DC_PIN = -1;
 
+void SPI_DC_LOW(void);
+void SPI_DC_HIGH(void);
+
 static void SPI_init(uint8_t rst_pin, uint8_t dc_pin) {
     // reset control register
 	SPI1->CTLR1 = 0;
@@ -65,7 +68,7 @@ static void SPI_DMA_init(DMA_Channel_TypeDef* DMA_Channel) {
 }
 
 static void SPI_send_DMA(const uint8_t* buffer, uint16_t len) {
-    FN_SPI_DC_HIGH();
+    SPI_DC_HIGH();
 
     DMA1_Channel3->CNTR  = len;
     DMA1_Channel3->MADDR = (uint32_t)buffer;
@@ -112,31 +115,32 @@ static inline void SPI_wait_not_busy() {
 }
 
 
+
 //! INTERFACES
-void FN_SPI_DC_LOW() {
+void SPI_DC_LOW() {
     if (SPI_DC_PIN == -1) return;
     funDigitalWrite(SPI_DC_PIN, 0);
 }
 
-void FN_SPI_DC_HIGH() {
+void SPI_DC_HIGH() {
     if (SPI_DC_PIN == -1) return;
     funDigitalWrite(SPI_DC_PIN, 1);
 }
 
 static void SPI_cmd_8(uint8_t cmd) {
-    FN_SPI_DC_LOW();
+    SPI_DC_LOW();
     SPI_write_8(cmd);
     SPI_wait_TX_complete();
 }
 
 static void SPI_cmd_data_8(uint8_t data) {
-    FN_SPI_DC_HIGH();
+    SPI_DC_HIGH();
     SPI_write_8(data);
     SPI_wait_TX_complete();
 }
 
 static void SPI_cmd_data_16(uint16_t data) {
-    FN_SPI_DC_HIGH();
+    SPI_DC_HIGH();
 
     SPI_write_8(data >> 8);
     SPI_wait_TX_complete();

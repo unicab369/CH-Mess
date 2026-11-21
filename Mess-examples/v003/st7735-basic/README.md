@@ -10,10 +10,11 @@ print `CH32V003`.
 | --- | --- |
 | SCL / SCK | PC5 |
 | SDA / MOSI | PC6 |
-| CS | PC4 |
-| DC / A0 | PC0 |
-| RES / RESET | PC1 |
+| CS | PA1 |
+| DC / A0 | PD4 |
+| RES / RESET | PA2 |
 | MISO / SDO | Not used |
+| LED / BL | 3.3 V (or board's backlight supply) |
 | VCC | 3.3 V |
 | GND | GND |
 

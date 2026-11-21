@@ -9,13 +9,13 @@
 //# INTERFACES
 //###########################################
 
-void INT_TFT_CS_HIGH();
-void INT_TFT_CS_LOW();
+void TFT_CS_HIGH();
+void TFT_CS_LOW();
 
-void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
-void INTF_TFT_SEND_BUFF8(const uint8_t* buffer, uint16_t len);
-void INTF_TFT_SEND_BUFF16(const uint16_t* buffer, uint16_t len);
-void INTF_TFT_SEND_PIXEL(uint16_t color);
+void TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
+void TFT_SEND_BUFF8(const uint8_t* buffer, uint16_t len);
+void TFT_SEND_BUFF16(const uint16_t* buffer, uint16_t len);
+void TFT_SEND_PIXEL(uint16_t color);
 
 
 //###########################################
@@ -29,7 +29,7 @@ void tft_print(const char* str, uint8_t x, uint8_t y, uint16_t color, uint16_t b
     uint8_t font_width = 6, font_height = 8;
     uint16_t current_x = x, current_y = y;
 
-    INT_TFT_CS_LOW();
+    TFT_CS_LOW();
 
     while (*str) {
         char c = *str++;
@@ -44,15 +44,15 @@ void tft_print(const char* str, uint8_t x, uint8_t y, uint16_t color, uint16_t b
             }
         }
 
-        INTF_TFT_SET_WINDOW(
+        TFT_SET_WINDOW(
             current_x, current_y,
             current_x + font_width - 1, current_y + font_height - 1
         );
-        INTF_TFT_SEND_BUFF16(_tft_frame, len);
+        TFT_SEND_BUFF16(_tft_frame, len);
         current_x += font_width;
     }
 
-    INT_TFT_CS_HIGH();
+    TFT_CS_HIGH();
 }
 
 //# draw filled_rect
@@ -60,16 +60,16 @@ void tft_fill_rect(
     uint16_t x, uint16_t y,
     uint16_t width, uint16_t height, uint16_t color
 ) {
-    INT_TFT_CS_LOW();
-    INTF_TFT_SET_WINDOW(x, y, x + width - 1, y + height - 1);
+    TFT_CS_LOW();
+    TFT_SET_WINDOW(x, y, x + width - 1, y + height - 1);
 
     for (uint16_t i = 0; i < width; i++) _tft_frame[i] = color;
 
     while(height-- > 0) {
-        INTF_TFT_SEND_BUFF16(_tft_frame, width);
+        TFT_SEND_BUFF16(_tft_frame, width);
     }
-    
-    INT_TFT_CS_HIGH();
+
+    TFT_CS_HIGH();
 }
 
 
@@ -79,8 +79,8 @@ static void _render_vertical_line(
 ) {
     for (int16_t i = 0; i < len; i++) _tft_frame[i] = color;
 
-    INTF_TFT_SET_WINDOW(x, y, x, y + len - 1);
-    INTF_TFT_SEND_BUFF16(_tft_frame, len);
+    TFT_SET_WINDOW(x, y, x, y + len - 1);
+    TFT_SEND_BUFF16(_tft_frame, len);
 }
 
 
@@ -90,21 +90,21 @@ static void _render_horizontal_line(
 ) {
     for (int16_t i = 0; i < len; i++) _tft_frame[i] = color;
 
-    INTF_TFT_SET_WINDOW(x, y, x + len - 1, y);
-    INTF_TFT_SEND_BUFF16(_tft_frame, len);
+    TFT_SET_WINDOW(x, y, x + len - 1, y);
+    TFT_SEND_BUFF16(_tft_frame, len);
 }
 
 // render pixel - draw with CS controls
 void _render_pixel(uint16_t x, uint16_t y, uint16_t color) {
-    INTF_TFT_SET_WINDOW(x, y, x, y);
-    INTF_TFT_SEND_PIXEL(color);
+    TFT_SET_WINDOW(x, y, x, y);
+    TFT_SEND_PIXEL(color);
 }
 
 //# draw pixel
 void tft_draw_pixel(uint16_t x, uint16_t y, uint16_t color) {
-    INT_TFT_CS_LOW();
+    TFT_CS_LOW();
     _render_pixel(x, y, color);
-    INT_TFT_CS_HIGH();
+    TFT_CS_HIGH();
 }
 
 //###########################################
@@ -156,7 +156,7 @@ static void _render_line(
     int16_t x0, int16_t y0, int16_t x1, int16_t y1,
     uint16_t color, uint8_t width
 ) {
-    INT_TFT_CS_LOW();
+    TFT_CS_LOW();
     if (x0 == x1) {
         if (y0 > y1) _swap_int16(y0, y1);
         _render_vertical_line(x0, y0, y1 - y0 + 1, color);
@@ -168,7 +168,7 @@ static void _render_line(
     else {
         _render_diagonal_line(x0, y0, x1, y1, color, width);
     }
-    INT_TFT_CS_HIGH();
+    TFT_CS_HIGH();
 }
 
 //# draw line
@@ -176,9 +176,9 @@ void tft_draw_line(
     int16_t x0, int16_t y0, int16_t x1, int16_t y1,
     uint16_t color, uint8_t width
 ) {
-    INT_TFT_CS_LOW();
+    TFT_CS_LOW();
     _render_line(x0, y0, x1, y1, color, width);
-    INT_TFT_CS_HIGH();
+    TFT_CS_HIGH();
 }
 
 
@@ -187,12 +187,12 @@ void tft_draw_rect(
     uint16_t x, uint16_t y,
     uint16_t width, uint16_t height, uint16_t color
 ) {
-    INT_TFT_CS_LOW();
+    TFT_CS_LOW();
     _render_horizontal_line(x, y, width, color);
     _render_horizontal_line(x, y + height - 1, width, color);
     _render_vertical_line(x, y, height, color);
     _render_vertical_line(x + width - 1, y, height, color);
-    INT_TFT_CS_HIGH();
+    TFT_CS_HIGH();
 }
 
 
@@ -403,7 +403,7 @@ static void tft_draw_circle(
     int16_t y = radius;
     int16_t err = 1 - radius; // Initial error term
 
-    INT_TFT_CS_LOW();
+    TFT_CS_LOW();
 
     while (x <= y) {
         // Draw symmetric points in all octants
@@ -425,7 +425,7 @@ static void tft_draw_circle(
         x++;
     }
 
-    INT_TFT_CS_HIGH();
+    TFT_CS_HIGH();
 }
 
 
@@ -437,7 +437,7 @@ static void tft_draw_filled_circle(
     int16_t y = 0;
     int16_t err = 0;
 
-    INT_TFT_CS_LOW();
+    TFT_CS_LOW();
 
     //# optimize for radius <= 4
     if (radius <= 4) {
@@ -467,7 +467,7 @@ static void tft_draw_filled_circle(
         }
     }
 
-    INT_TFT_CS_HIGH();
+    TFT_CS_HIGH();
 }
 
 //# draw ring

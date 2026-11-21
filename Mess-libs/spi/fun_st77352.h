@@ -31,13 +31,13 @@ static uint16_t st7735_colors[] = {
 uint8_t ST7735_CS_PIN = -1;
 
 // Disable
-void INT_TFT_CS_HIGH() {
+void TFT_CS_HIGH() {
     if (ST7735_CS_PIN == -1) return;
     funDigitalWrite(ST7735_CS_PIN, 1);
 }
 
 // Enable
-void INT_TFT_CS_LOW() {
+void TFT_CS_LOW() {
     if (ST7735_CS_PIN == -1) return;
     funDigitalWrite(ST7735_CS_PIN, 0);
 }
@@ -49,7 +49,7 @@ void INT_TFT_CS_LOW() {
 uint8_t ST7735_XOFFSET = 0;
 uint8_t ST7735_YOFFSET = 0;
 
-void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+void TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
     SPI_cmd_8(ST7735_CASET);
     SPI_cmd_data_16(x0 + ST7735_XOFFSET);
     SPI_cmd_data_16(x1 + ST7735_XOFFSET);
@@ -59,15 +59,15 @@ void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
     SPI_cmd_8(ST7735_RAMWR);
 }
 
-void INTF_TFT_SEND_BUFF8(const uint8_t* buffer, uint16_t len) {
+void TFT_SEND_BUFF8(const uint8_t* buffer, uint16_t len) {
     for (int i = 0; i < len; i++) SPI_cmd_data_8(buffer[i]);
 }
 
-void INTF_TFT_SEND_BUFF16(const uint16_t* buffer, uint16_t len) {
+void TFT_SEND_BUFF16(const uint16_t* buffer, uint16_t len) {
     for (int i = 0; i < len; i++) SPI_cmd_data_16(buffer[i]);
 }
 
-void INTF_TFT_SEND_PIXEL(uint16_t color) {
+void TFT_SEND_PIXEL(uint16_t color) {
     SPI_cmd_data_16(color);
 }
 
@@ -114,7 +114,7 @@ void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
         funDigitalWrite(cs_pin, 1);
     }
 
-    INT_TFT_CS_LOW();
+    TFT_CS_LOW();
 
     //# Software reset
     SPI_cmd_8(ST7735_SWRESET);
@@ -144,14 +144,14 @@ void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
     SPI_cmd_8(ST7735_MADCTL);
     uint8_t ctrValue = (MADCTL_MY & 0xFF) | (MADCTL_MV & 0xFF);
     SPI_cmd_data_8(ctrValue);
-    
+
     //# Gamma+ Adjustments Control (magic numbers)
     uint8_t gamma_pos[] = {
         0x09, 0x16, 0x09, 0x20, 0x21, 0x1B, 0x13, 0x19,
         0x17, 0x15, 0x1E, 0x2B, 0x04, 0x05, 0x02, 0x0E
     };
     SPI_cmd_8(ST7735_GAMCTRP);
-    INTF_TFT_SEND_BUFF8(gamma_pos, 16);
+    TFT_SEND_BUFF8(gamma_pos, 16);
 
     //# Gamma- Adjustments Control (magic numbers)
     uint8_t gamma_neg[] = {
@@ -159,21 +159,21 @@ void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
         0x1B, 0x1A, 0x24, 0x2B, 0x06, 0x06, 0x02, 0x0F
     };
     SPI_cmd_8(ST7735_GAMCTRN);
-    INTF_TFT_SEND_BUFF8(gamma_neg, 16);
+    TFT_SEND_BUFF8(gamma_neg, 16);
     // Delay_Ms(10);
 
     //# Display On
     SPI_cmd_8(ST7735_DISPON);
     // Delay_Ms(10);
 
-    INT_TFT_CS_HIGH();
+    TFT_CS_HIGH();
 }
 
 
 void fun_st7735_test() {
     fun_st7735_fill_all(ST_PURPLE);
     tft_print("Hello World 222", 0, 0, ST_WHITE, ST_PURPLE);
-    
+
     static uint8_t color_idx = 0;
     uint16_t color = st7735_colors[color_idx++ % (sizeof(st7735_colors)/sizeof(uint16_t))];
 

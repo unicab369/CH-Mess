@@ -4,9 +4,9 @@
 #include "../../../Mess-libs/spi/lib/lib_spi.h"
 #include "../../../Mess-libs/spi/fun_st77352.h"
 
-#define TFT_CS   PC4
-#define TFT_DC   PC0
-#define TFT_RESET PC1
+#define TFT_CS    PA1
+#define TFT_DC    PD4
+#define TFT_RESET PA2
 
 int main(void) {
 	SystemInit();

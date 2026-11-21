@@ -17,8 +17,8 @@
 static uint8_t EPD_DC_PIN, EPD_BUSY_PIN, EPD_RST_PIN;
 
 //! REQUIRED for SPI
-void FN_SPI_DC_LOW()    { funDigitalWrite(EPD_DC_PIN, 0); }
-void FN_SPI_DC_HIGH()   { funDigitalWrite(EPD_DC_PIN, 1); }
+void SPI_DC_LOW()    { funDigitalWrite(EPD_DC_PIN, 0); }
+void SPI_DC_HIGH()   { funDigitalWrite(EPD_DC_PIN, 1); }
 
 void FN_EPD_WAIT_BUSY() {
     while(1) {
