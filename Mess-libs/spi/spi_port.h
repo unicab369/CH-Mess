@@ -19,8 +19,10 @@ static inline uint8_t SPI_IS_RX_EMPTY(void);
 static inline void SPI_WAIT_NOT_BUSY(void);
 static inline uint8_t SPI_READ_8(void);
 static inline uint16_t SPI_READ_16(void);
-static inline uint8_t SPI_WRITE_8(uint8_t data);
-static inline uint16_t SPI_WRITE_16(uint16_t data);
+static inline void SPI_WRITE_8(uint8_t data);
+static inline void SPI_WRITE_16(uint16_t data);
+static inline uint8_t SPI_TRANSFER_8(uint8_t data);
+static inline uint16_t SPI_TRANSFER_16(uint16_t data);
 static inline void SPI_DC_LOW(void);
 static inline void SPI_DC_HIGH(void);
 static inline void SPI_CMD_8(uint8_t cmd);
@@ -72,20 +74,38 @@ static inline void SPI_WAIT_NOT_BUSY(void) { while (SPI1->STATR & SPI_STATR_BSY)
 static inline uint8_t SPI_READ_8(void) { return (uint8_t)SPI1->DATAR; }
 static inline uint16_t SPI_READ_16(void) { return (uint16_t)SPI1->DATAR; }
 
-static inline uint8_t SPI_WRITE_8(uint8_t data) {
+static inline void SPI_WRITE_8(uint8_t data) {
 	SPI1->DATAR = data;
-	SPI_WAIT_TX_COMPLETE();
+	SPI_WAIT_RX_AVAILABLE();
+	(void)SPI1->DATAR;
+}
+
+static inline uint8_t SPI_TRANSFER_8(uint8_t data) {
+	SPI1->DATAR = data;
 	SPI_WAIT_RX_AVAILABLE();
 	return (uint8_t)SPI1->DATAR;
 }
 
-static inline uint16_t SPI_WRITE_16(uint16_t data) {
+static inline void SPI_WRITE_16(uint16_t data) {
 	SPI_WAIT_NOT_BUSY();
 	SPI_STOP();
 	SPI1->CTLR1 |= SPI_CTLR1_DFF;
 	SPI_START();
 	SPI1->DATAR = data;
-	SPI_WAIT_TX_COMPLETE();
+	SPI_WAIT_RX_AVAILABLE();
+	(void)SPI1->DATAR;
+	SPI_WAIT_NOT_BUSY();
+	SPI_STOP();
+	SPI1->CTLR1 &= ~SPI_CTLR1_DFF;
+	SPI_START();
+}
+
+static inline uint16_t SPI_TRANSFER_16(uint16_t data) {
+	SPI_WAIT_NOT_BUSY();
+	SPI_STOP();
+	SPI1->CTLR1 |= SPI_CTLR1_DFF;
+	SPI_START();
+	SPI1->DATAR = data;
 	SPI_WAIT_RX_AVAILABLE();
 	uint16_t received = (uint16_t)SPI1->DATAR;
 	SPI_WAIT_NOT_BUSY();
@@ -151,15 +171,23 @@ static inline void SPI_WAIT_NOT_BUSY(void) { while (!(R8_SPI0_INT_FLAG & RB_SPI_
 static inline uint8_t SPI_READ_8(void) { return R8_SPI0_BUFFER; }
 static inline uint16_t SPI_READ_16(void) { return R8_SPI0_BUFFER; }
 
-static inline uint8_t SPI_WRITE_8(uint8_t data) {
+static inline void SPI_WRITE_8(uint8_t data) {
 	R8_SPI0_BUFFER = data;
-	SPI_WAIT_TX_COMPLETE();
+	SPI_WAIT_RX_AVAILABLE();
+	(void)R8_SPI0_BUFFER;
+}
+static inline uint8_t SPI_TRANSFER_8(uint8_t data) {
+	R8_SPI0_BUFFER = data;
 	SPI_WAIT_RX_AVAILABLE();
 	return R8_SPI0_BUFFER;
 }
-static inline uint16_t SPI_WRITE_16(uint16_t data) {
-	return (uint16_t)SPI_WRITE_8((uint8_t)(data >> 8)) << 8 |
-	       SPI_WRITE_8((uint8_t)data);
+static inline void SPI_WRITE_16(uint16_t data) {
+	SPI_WRITE_8((uint8_t)(data >> 8));
+	SPI_WRITE_8((uint8_t)data);
+}
+static inline uint16_t SPI_TRANSFER_16(uint16_t data) {
+	return (uint16_t)SPI_TRANSFER_8((uint8_t)(data >> 8)) << 8 |
+	       			SPI_TRANSFER_8((uint8_t)data);
 }
 #else
 #error "spi_port.h supports CH32V003 and CH582/CH583 targets"

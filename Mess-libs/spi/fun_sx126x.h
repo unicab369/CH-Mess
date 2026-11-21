@@ -52,7 +52,7 @@ void sx126x_read_CMD(u8 opCode, u8* data, u8 len) {
 	SPI_WRITE_8(opCode);
 
 	for (int i=0; i<len; i++) {
-		data[i] = SPI_WRITE_8(data[i]);
+		data[i] = SPI_TRANSFER_8(data[i]);
 	}
 	if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
 }
@@ -82,7 +82,7 @@ void sx126x_read_REG(u16 addr, u8 *data, u8 len) {
 
 	// read data
 	for (int i=0; i<len; i++) {
-		data[i] = SPI_WRITE_8(data[i]);
+		data[i] = SPI_TRANSFER_8(data[i]);
 	}
 
 	if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
@@ -109,7 +109,7 @@ void sx126x_read_BUFF(u8 offset, u8 *data, u8 len) {
 
 	// read data
 	for (int i=0; i<len; i++) {
-		data[i] = SPI_WRITE_8(data[i]);
+		data[i] = SPI_TRANSFER_8(data[i]);
 	}
 
 	if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);	
