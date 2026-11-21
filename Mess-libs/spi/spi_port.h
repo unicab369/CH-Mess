@@ -106,8 +106,6 @@ static inline uint8_t SPI_TRANSFER_8(uint8_t data) {
 }
 
 static inline void SPI_WRITE_16(uint16_t data) {
-	SPI_SET_FRAME_SIZE(SPI_FRAME_16BIT);
-	SPI_WAIT_NOT_BUSY();
 	SPI1->DATAR = data;
 	SPI_WAIT_RX_AVAILABLE();
 	(void)SPI_READ_16();
@@ -115,8 +113,6 @@ static inline void SPI_WRITE_16(uint16_t data) {
 }
 
 static inline uint16_t SPI_TRANSFER_16(uint16_t data) {
-	SPI_SET_FRAME_SIZE(SPI_FRAME_16BIT);
-	SPI_WAIT_NOT_BUSY();
 	SPI1->DATAR = data;
 	SPI_WAIT_RX_AVAILABLE();
 	uint16_t received = SPI_READ_16();

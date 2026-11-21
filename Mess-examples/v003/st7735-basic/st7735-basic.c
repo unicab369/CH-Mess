@@ -13,9 +13,9 @@ int main(void) {
 	funGpioInitAll();
 
 	SPI_INIT(TFT_RESET, TFT_DC);
-	fun_st7335_init(160, 80, TFT_CS);
+	st7735_init(160, 80, TFT_CS);
 
-	fun_st7735_fill_all(ST_BLACK);
+	st7735_fill(ST_BLACK);
 	tft_fill_rect(0, 0, 40, 80, ST_RED);
 	tft_fill_rect(40, 0, 40, 80, ST_GREEN);
 	tft_fill_rect(80, 0, 40, 80, ST_BLUE);

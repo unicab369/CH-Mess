@@ -95,11 +95,11 @@ void TFT_SEND_PIXEL(uint16_t color) {
 uint8_t ST7735_WIDTH = 160;
 uint8_t ST7735_HEIGHT = 80;
 
-void fun_st7735_fill_all(uint16_t color) {
+void st7735_fill(uint16_t color) {
     tft_fill_rect(0, 0, ST7735_WIDTH, ST7735_HEIGHT, color);
 }
 
-void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
+void st7735_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
     ST7735_WIDTH = width;
     ST7735_HEIGHT = height;
 
@@ -171,8 +171,8 @@ void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
 }
 
 
-void fun_st7735_test() {
-    fun_st7735_fill_all(ST_PURPLE);
+void st7735_test() {
+    st7735_fill(ST_PURPLE);
     tft_print("Hello World 222", 0, 0, ST_WHITE, ST_PURPLE);
 
     static uint8_t color_idx = 0;
