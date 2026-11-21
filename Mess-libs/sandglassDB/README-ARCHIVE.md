@@ -64,15 +64,34 @@ For a temperature range of −40.0 to 120.0 °F, multiply by 10 to express value
 
 For the offset options, a Record block stores an average temperature and each reading stores a difference from it. The other options encode the full temperature range directly. The rounding error assumes decoding to the nearest level.
 
-| Bits per reading | Encoded range | Decoded levels | Maximum rounding error (°F / °C) | Readings per 32-bit word | Unused bits per word |
+| Bits per reading | Decoded levels | Encoded range | Maximum rounding error (°F) | Readings per 32-bit word | Unused bits per word |
 |---:|---|---:|---:|---:|---:|
-| 6 | −20 to +20 °F from block average | 64 | 0.317 °F / 0.176 °C | 5 | 2 |
-| 7 | −20 to +20 °F from block average | 128 | 0.157 °F / 0.087 °C | 4 | 4 |
-| 8 | −20 to +20 °F from block average | 256 | 0.078 °F / 0.044 °C | 4 | 0 |
-| 8 | −40 to 120 °F | 256 | 0.314 °F / 0.174 °C | 4 | 0 |
-| 10 | −40 to 120 °F | 1,024 | 0.078 °F / 0.043 °C | 3 | 2 |
+| 6 | 64 | −20 to +20 °F from block average | 0.317 °F | 5 | 2 |
+| 7 | 128 | −20 to +20 °F from block average | 0.157 °F | 4 | 4 |
+| 8 | 256 | −20 to +20 °F from block average | 0.078 °F | 4 | 0 |
+| 8 | 256 | −40 to 120 °F | 0.314 °F | 4 | 0 |
+| 10 | 1,024 | −40 to 120 °F | 0.078 °F | 3 | 2 |
 
 The final block average is unknown while readings are being appended. This method requires buffering the readings until finalization or using a reference temperature chosen before writing. Continuation blocks would also need a defined reference if they use the same encoding.
+
+### Powers of Two
+
+| `n` | `2ⁿ` | Signed range (two's complement) |
+|---:|---:|---:|
+| 4 | 16 | −8 to +7 |
+| 5 | 32 | −16 to +15 |
+| 6 | 64 | −32 to +31 |
+| 7 | 128 | −64 to +63 |
+| 8 | 256 | −128 to +127 |
+| 9 | 512 | −256 to +255 |
+| 10 | 1,024 | −512 to +511 |
+| 11 | 2,048 | −1,024 to +1,023 |
+| 12 | 4,096 | −2,048 to +2,047 |
+| 13 | 8,192 | −4,096 to +4,095 |
+| 14 | 16,384 | −8,192 to +8,191 |
+| 15 | 32,768 | −16,384 to +16,383 |
+| 16 | 65,536 | −32,768 to +32,767 |
+| 24 | 16,777,216 | −8,388,608 to +8,388,607 |
 
 ## Time Range by Interval
 
