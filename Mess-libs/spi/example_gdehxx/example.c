@@ -22,7 +22,7 @@ int main() {
     funGpioInitAll();
     Delay_Ms(100);
 
-    SPI_INIT(SPI_PORT_PIN_NONE, SPI_PORT_PIN_NONE);
+    SPI_INIT();
     fun_epd_setup(PC3, PC0, PC7);
 
     uint32_t now;
@@ -39,7 +39,7 @@ int main() {
     timeRef = millis();
     fun_epd_fill(0xFF, 0, EPD_HEIGHT-1);
     getTimeDiff(timeRef);
-    
+
     // fun_gdehxx_setWindow(0x00, 100, GDEHXX_WIDTH-1, 0x00);
     // fun_epd_setCursor(0, 0);
     // timeRef = millis();

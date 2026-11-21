@@ -12,10 +12,12 @@
 static uint8_t SPI_DC_PIN = SPI_PORT_PIN_NONE;
 
 /* SPI interface */
-static inline void SPI_INIT(uint8_t reset_pin, uint8_t dc_pin);
+static inline void SPI_INIT(void);
+static inline void SPI_CONFIGURE_PINS(uint8_t reset_pin, uint8_t dc_pin);
 static inline void SPI_RESET(uint8_t reset_pin, uint16_t delay_ms);
 static inline void SPI_START(void);
 static inline void SPI_STOP(void);
+static inline void SPI_SET_PRESCALER(uint8_t prescaler);
 static inline void SPI_SET_FRAME_SIZE(uint8_t bits);
 static inline void SPI_WAIT_TX_COMPLETE(void);
 static inline void SPI_WAIT_RX_AVAILABLE(void);
@@ -41,8 +43,7 @@ static inline void SPI_SEND_DMA(const uint8_t *buffer, uint16_t len);
 
 #if defined(CH32V003)
 
-static inline void SPI_INIT(uint8_t reset_pin, uint8_t dc_pin) {
-	SPI_DC_PIN = dc_pin;
+static inline void SPI_INIT(void) {
 	RCC->APB2PCENR |= RCC_APB2Periph_GPIOC | RCC_APB2Periph_SPI1;
 	SPI1->CTLR1 = 0;
 
@@ -56,15 +57,26 @@ static inline void SPI_INIT(uint8_t reset_pin, uint8_t dc_pin) {
 	              SPI_Direction_2Lines_FullDuplex;
 	SPI1->CTLR1 |= SPI_CTLR1_DFF; /* Default to 16-bit frames. */
 
+	SPI_START();
+}
+
+static inline void SPI_CONFIGURE_PINS(uint8_t reset_pin, uint8_t dc_pin) {
+	SPI_DC_PIN = dc_pin;
 	if (reset_pin != SPI_PORT_PIN_NONE)
 		funPinMode(reset_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
 	if (dc_pin != SPI_PORT_PIN_NONE)
 		funPinMode(dc_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
-	SPI_START();
 }
 
 static inline void SPI_START(void) { SPI1->CTLR1 |= SPI_CTLR1_SPE; }
 static inline void SPI_STOP(void) { SPI1->CTLR1 &= ~SPI_CTLR1_SPE; }
+static inline void SPI_SET_PRESCALER(uint8_t prescaler) {
+	SPI_WAIT_NOT_BUSY();
+	SPI_STOP();
+	SPI1->CTLR1 &= ~SPI_CTLR1_BR;
+	SPI1->CTLR1 |= SPI_CTLR1_BR & ((uint32_t)prescaler << 3);
+	SPI_START();
+}
 
 static inline void SPI_WAIT_TX_COMPLETE(void) { while (!(SPI1->STATR & SPI_STATR_TXE)) { } }
 static inline uint8_t SPI_IS_RX_EMPTY(void) { return !(SPI1->STATR & SPI_STATR_RXNE); }
@@ -84,19 +96,21 @@ static inline void SPI_SET_FRAME_SIZE(uint8_t bits) {
 }
 
 static inline void SPI_WRITE_8(uint8_t data) {
-	SPI_SET_FRAME_SIZE(SPI_FRAME_8BIT);
+	uint8_t restore_16bit = (SPI1->CTLR1 & SPI_CTLR1_DFF) != 0;
+	if (restore_16bit) SPI_SET_FRAME_SIZE(SPI_FRAME_8BIT);
 	SPI1->DATAR = data;
 	SPI_WAIT_RX_AVAILABLE();
 	(void)SPI_READ_8();
-	SPI_SET_FRAME_SIZE(SPI_FRAME_16BIT);
+	if (restore_16bit) SPI_SET_FRAME_SIZE(SPI_FRAME_16BIT);
 }
 
 static inline uint8_t SPI_TRANSFER_8(uint8_t data) {
-	SPI_SET_FRAME_SIZE(SPI_FRAME_8BIT);
+	uint8_t restore_16bit = (SPI1->CTLR1 & SPI_CTLR1_DFF) != 0;
+	if (restore_16bit) SPI_SET_FRAME_SIZE(SPI_FRAME_8BIT);
 	SPI1->DATAR = data;
 	SPI_WAIT_RX_AVAILABLE();
 	uint8_t received = SPI_READ_8();
-	SPI_SET_FRAME_SIZE(SPI_FRAME_16BIT);
+	if (restore_16bit) SPI_SET_FRAME_SIZE(SPI_FRAME_16BIT);
 	return received;
 }
 
@@ -140,27 +154,34 @@ static inline void SPI_SEND_DMA(const uint8_t *buffer, uint16_t len) {
 
 #elif defined(CH582_CH583)
 
-static inline void SPI_INIT(uint8_t reset_pin, uint8_t dc_pin) {
-	SPI_DC_PIN = dc_pin;
+static inline void SPI_INIT(void) {
 	funGpioInitAll();
 	R16_PIN_ALTERNATE &= (uint16_t)~RB_PIN_SPI0;
 
-	/* SPI0 pins: PA13=SCK, PA14=MOSI. MISO is not configured for this TX-only port. */
+	/* SPI0 pins: PA13=SCK, PA14=MOSI, PA15=MISO. */
 	funPinMode(PA14, GPIO_CFGLR_OUT_2Mhz_PP); /* PA14 MOSI */
 	funPinMode(PA13, GPIO_CFGLR_OUT_2Mhz_PP); /* PA13 SCK */
+	funPinMode(PA15, GPIO_CFGLR_IN_PUPD); /* PA15 MISO */
 	R8_SPI0_CTRL_MOD = RB_SPI_ALL_CLEAR;
 	R8_SPI0_CTRL_CFG = RB_SPI_AUTO_IF;
 	R8_SPI0_CLOCK_DIV = 4;
 
+	SPI_START();
+}
+
+static inline void SPI_CONFIGURE_PINS(uint8_t reset_pin, uint8_t dc_pin) {
+	SPI_DC_PIN = dc_pin;
 	if (reset_pin != SPI_PORT_PIN_NONE)
 		funPinMode(reset_pin, GPIO_CFGLR_OUT_2Mhz_PP);
 	if (dc_pin != SPI_PORT_PIN_NONE)
 		funPinMode(dc_pin, GPIO_CFGLR_OUT_2Mhz_PP);
-	SPI_START();
 }
 
 static inline void SPI_START(void) { R8_SPI0_CTRL_MOD = RB_SPI_SCK_OE | RB_SPI_MOSI_OE; }
 static inline void SPI_STOP(void) { R8_SPI0_CTRL_MOD = 0; }
+static inline void SPI_SET_PRESCALER(uint8_t prescaler) {
+	R8_SPI0_CLOCK_DIV = prescaler >= 7 ? 255 : 4;
+}
 static inline void SPI_SET_FRAME_SIZE(uint8_t bits) { (void)bits; }
 static inline void SPI_WAIT_TX_COMPLETE(void) { while (!(R8_SPI0_INT_FLAG & RB_SPI_FREE)) { } }
 static inline uint8_t SPI_IS_RX_EMPTY(void) { return !(R8_SPI0_INT_FLAG & RB_SPI_IF_BYTE_END); }

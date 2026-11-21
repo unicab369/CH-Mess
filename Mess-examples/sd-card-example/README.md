@@ -1,6 +1,6 @@
 # CH582 SD card example
 
-This example uses the `sd_card` library's SPI-mode SD driver and Petit FatFs
+This example uses `Mess-libs/spi/sd_card` over the shared SPI port and Petit FatFs
 to format a 256 MiB FAT16 partition, mount it, write `HELLO.TXT`, then open
 and print it. **Formatting runs on every reset and erases existing card data.**
 Cards must have at least 257 MiB of capacity; any additional capacity is left

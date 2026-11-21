@@ -4,7 +4,11 @@
 
 #include "ch32fun.h"
 
-#include "../../Mess-libs/spi/sd_card/mmc/sd_spi_port.h"
+#define SD_CARD_CS_PIN PA5
+#define SPI_CS_HIGH() funDigitalWrite(SD_CARD_CS_PIN, FUN_HIGH)
+#define SPI_CS_LOW()  funDigitalWrite(SD_CARD_CS_PIN, FUN_LOW)
+
+#include "../../Mess-libs/spi/spi_port.h"
 #include "../../Mess-libs/spi/sd_card/mmc/mmcbbp.h"
 
 #define DEMO_FILE "HELLO.TXT"
@@ -175,6 +179,9 @@ static void run_sd_card_demo(void) {
 	FRESULT result;
 
 	SPI_INIT();
+	SPI_SET_FRAME_SIZE(SPI_FRAME_8BIT);
+	funPinMode(SD_CARD_CS_PIN, GPIO_CFGLR_OUT_2Mhz_PP);
+	SPI_CS_HIGH();
 	Delay_Ms(10); /* Allow the card to finish power-up before its first command. */
 	uint8_t cmd0_response = probe_idle_command();
 	printf("CMD0 probe response: 0x%02X\n", cmd0_response);

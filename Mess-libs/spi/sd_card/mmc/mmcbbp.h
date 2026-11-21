@@ -14,6 +14,10 @@
 
 #include "ch32fun.h"
 
+#ifndef MESS_SPI_PORT_H
+#error "Include spi_port.h before mmcbbp.h"
+#endif
+
 #include "pff.h"
 #include "diskio.h"
 
@@ -59,15 +63,9 @@ BYTE CardType;			/* b0:MMC, b1:SDv1, b2:SDv2, b3:Block addressing */
 //! SPI STUFF
 
 // ######## internal function declarations
-/* SPI port interface; implemented by the selected MCU port. */
-void SPI_SET_PRESCALER(uint8_t prescaler);
-void SPI_INIT(void);
-void SPI_END(void);
-uint8_t SPI_READ_8(void);
-void SPI_WRITE_8(uint8_t data);
-uint8_t SPI_TRANSFER_8(uint8_t data);
-void SPI_POWEROFF(void);
-void SPI_POWERON(void);
+/* SPI methods are declared and implemented by spi_port.h. */
+static inline void SPI_SET_PRESCALER(uint8_t prescaler);
+static inline uint8_t SPI_TRANSFER_8(uint8_t data);
 
 // void SPI_begin_8()
 // {

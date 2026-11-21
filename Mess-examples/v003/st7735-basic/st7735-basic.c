@@ -12,7 +12,8 @@ int main(void) {
 	SystemInit();
 	funGpioInitAll();
 
-	SPI_INIT(TFT_RESET, TFT_DC);
+	SPI_INIT();
+	SPI_CONFIGURE_PINS(TFT_RESET, TFT_DC);
 	SPI_RESET(TFT_RESET, 1);
 	st7735_init(160, 80, TFT_CS);
 

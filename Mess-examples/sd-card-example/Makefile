@@ -9,7 +9,7 @@ $(TARGET).elf: sd-card-example.c \
 	../../Mess-libs/spi/sd_card/mmc/mmcbbp.h \
 	../../Mess-libs/spi/sd_card/mmc/pff.h \
 	../../Mess-libs/spi/sd_card/mmc/diskio.h \
-	../../Mess-libs/spi/sd_card/mmc/sd_spi_port.h
+	../../Mess-libs/spi/spi_port.h
 
 all: $(TARGET).elf
 

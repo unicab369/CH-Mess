@@ -7,7 +7,7 @@
 #define SPI_CS_HIGH() funDigitalWrite(SD_CARD_CS_PIN, FUN_HIGH)
 #define SPI_CS_LOW()  funDigitalWrite(SD_CARD_CS_PIN, FUN_LOW)
 
-#include "../../../Mess-libs/spi/sd_card/mmc/sd_spi_port.h"
+#include "../../../Mess-libs/spi/spi_port.h"
 #include "../../../Mess-libs/spi/sd_card/mmc/mmcbbp.h"
 
 static FATFS filesystem;
@@ -25,6 +25,7 @@ int main(void) {
 
 	printf("Initializing SD card...\n");
 	SPI_INIT();
+	SPI_SET_FRAME_SIZE(SPI_FRAME_8BIT);
 	Delay_Ms(10);
 	status = disk_initialize();
 	if (status & STA_NOINIT) {
