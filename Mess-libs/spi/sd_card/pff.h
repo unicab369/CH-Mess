@@ -151,7 +151,13 @@ typedef enum {
 	FR_NOT_ENABLED,		/* 5 */
 	FR_NO_FILESYSTEM,	/* 6 */
 	FR_EXIST,			/* 7: File already exists */
-	FR_DENIED			/* 8: Operation not supported or no space */
+	FR_DENIED,			/* 8: Operation not supported or no space */
+	ERR_CREATE_ROOT,		/* 9: Root directory is invalid */
+	ERR_CREATE_DIR_READ,	/* 10: Directory sector read failed */
+	ERR_CREATE_DIR_CHAIN,	/* 11: Directory cluster chain read failed */
+	ERR_CREATE_FAT_READ,	/* 12: FAT sector read failed */
+	ERR_CREATE_FAT_WRITE,	/* 13: FAT sector write failed */
+	ERR_CREATE_DIR_WRITE	/* 14: Directory sector write failed */
 } FRESULT;
 
 
@@ -984,17 +990,7 @@ static BYTE check_fs (	/* 0:The FAT boot record, 1:Valid boot record but not an 
 	return 1;
 }
 
-/* Added helper: write one complete sector through the disk interface. */
-static FRESULT pff_write_sector (DWORD sector, const BYTE *data) {
-	if (disk_writep(0, sector) != RES_OK) return FR_DISK_ERR;
-	if (disk_writep(data, 512) != RES_OK) {
-		(void)disk_writep(0, 0);
-		return FR_DISK_ERR;
-	}
-	return disk_writep(0, 0) == RES_OK ? FR_OK : FR_DISK_ERR;
-}
-
-/* Added helper: update one FAT16/FAT32 entry in every FAT copy. */
+// Added helper: update one FAT16/FAT32 entry in every FAT copy.
 static FRESULT pff_set_fat (CLUST cluster, CLUST value) {
 	FATFS *fs = FatFs;
 	BYTE sector_data[512];
@@ -1002,6 +998,7 @@ static FRESULT pff_set_fat (CLUST cluster, CLUST value) {
 	DWORD sector;
 	UINT width;
 
+	// Find the FAT sector and byte offset for this cluster entry.
 	if (fs->fs_type == FS_FAT16) {
 		width = 2;
 		sector = cluster / 256;
@@ -1014,13 +1011,14 @@ static FRESULT pff_set_fat (CLUST cluster, CLUST value) {
 		return FR_DENIED;
 	}
 
+	// Keep every FAT copy synchronized.
 	for (BYTE copy = 0; copy < fs->nfats; ++copy) {
 		DWORD fat_sector = fs->fatbase + (DWORD)copy * fs->fatsize + sector;
-		if (disk_readp(sector_data, fat_sector, 0, sizeof(sector_data)) != RES_OK) {
-			printf("pf_create: FAT sector read failed at %lu\n", (unsigned long)fat_sector);
-			return FR_DISK_ERR;
-		}
+		// Read-modify-write the sector so neighboring entries stay unchanged.
+		if (disk_readp(sector_data, fat_sector, 0, sizeof(sector_data)) != RES_OK)
+			return ERR_CREATE_FAT_READ;
 
+		// Store the cluster link; preserve FAT32's reserved upper four bits.
 		if (width == 2) {
 			sector_data[offset] = (BYTE)value;
 			sector_data[offset + 1] = (BYTE)(value >> 8);
@@ -1032,7 +1030,16 @@ static FRESULT pff_set_fat (CLUST cluster, CLUST value) {
 			sector_data[offset + 2] = (BYTE)(new_value >> 16);
 			sector_data[offset + 3] = (BYTE)(new_value >> 24);
 		}
-		if (pff_write_sector(fat_sector, sector_data) != FR_OK) return FR_DISK_ERR;
+		// Write the updated FAT sector to the card.
+		if (disk_writep(0, fat_sector) != RES_OK)
+			return ERR_CREATE_FAT_WRITE;
+
+		if (disk_writep(sector_data, sizeof(sector_data)) != RES_OK) {
+			(void)disk_writep(0, 0);
+			return ERR_CREATE_FAT_WRITE;
+		}
+		if (disk_writep(0, 0) != RES_OK)
+			return ERR_CREATE_FAT_WRITE;
 	}
 	return FR_OK;
 }
@@ -1040,23 +1047,34 @@ static FRESULT pff_set_fat (CLUST cluster, CLUST value) {
 /* Added helper: allocate a cluster chain and return its first cluster. */
 static FRESULT pff_allocate_chain (DWORD size, CLUST *first_cluster) {
 	FATFS *fs = FatFs;
+	// Convert the file size into the number of clusters it needs.
 	DWORD cluster_bytes = (DWORD)fs->csize * 512;
 	DWORD needed = (size + cluster_bytes - 1) / cluster_bytes;
 	CLUST first = 0, previous = 0;
+	FRESULT result;
 
+	// No clusters are needed for an empty file.
 	*first_cluster = 0;
 	if (!needed) return FR_OK;
 	if (fs->fs_type != FS_FAT16 && fs->fs_type != FS_FAT32) return FR_DENIED;
 
+	// Search the FAT for free clusters until the file has enough space.
 	for (CLUST candidate = 2; candidate < fs->n_fatent && needed; ++candidate) {
+		// A zero FAT entry means this cluster is free.
 		if (get_fat(candidate) != 0) continue;
 		if (!first) first = candidate;
-		if (previous && pff_set_fat(previous, candidate) != FR_OK) return FR_DISK_ERR;
+		// Link the previously allocated cluster to this one.
+		if (previous) {
+			result = pff_set_fat(previous, candidate);
+			if (result != FR_OK) return result;
+		}
 		previous = candidate;
-		if (pff_set_fat(candidate, fs->fs_type == FS_FAT16 ? 0xFFFF : 0x0FFFFFFF) != FR_OK)
-			return FR_DISK_ERR;
+		// Mark this cluster as the current end of the chain.
+		result = pff_set_fat(candidate, fs->fs_type == FS_FAT16 ? 0xFFFF : 0x0FFFFFFF);
+		if (result != FR_OK) return result;
 		--needed;
 	}
+	// If space ran out, report failure; otherwise return the chain's first cluster.
 	if (needed) return FR_DENIED;
 	*first_cluster = first;
 	return FR_OK;
@@ -1144,8 +1162,8 @@ FRESULT pf_mount (
 /* Open or Create a File                                                 */
 /*-----------------------------------------------------------------------*/
 
-/* Added public method: create a root-directory 8.3 file with a fixed size and leave it open.
-   Petit FatFs writes only within the size recorded in the directory entry. */
+// Added public method: create a root-directory 8.3 file with a fixed size and leave it open.
+// Petit FatFs writes only within the size recorded in the directory entry.
 FRESULT pf_create (const char *path, DWORD size) {
 	FATFS *fs = FatFs;
 	DIR dj;
@@ -1156,27 +1174,25 @@ FRESULT pf_create (const char *path, DWORD size) {
 	CLUST first_cluster;
 	FRESULT result;
 
+	// A mounted filesystem is required before creating a file.
 	if (!fs) return FR_NOT_ENABLED;
+	// This implementation creates files only in the root, not in subdirectories.
 	while (*p == '/') ++p;
 	for (const char *q = p; *q; ++q) if (*q == '/') return FR_DENIED;
 	if (!*p) return FR_DENIED;
 
+	// Convert the requested name to FAT's 8.3 format and start at the root directory.
 	dj.fn = name;
 	result = create_name(&dj, &p);
 	if (result != FR_OK || !name[11] || *p > ' ') return FR_DENIED;
-	dj.sclust = 0; /* Root directory, as used by follow_path(). */
-	result = dir_rewind(&dj); /* Creation is limited to the volume root. */
-	if (result != FR_OK) {
-		printf("pf_create: root directory setup failed (cluster %lu, limit %lu, type %u)\n",
-		       (unsigned long)fs->dirbase, (unsigned long)fs->n_fatent, (unsigned)fs->fs_type);
-		return result;
-	}
+	dj.sclust = 0; // Root directory, as used by follow_path().
+	result = dir_rewind(&dj);
+	if (result != FR_OK) return ERR_CREATE_ROOT;
 
+	// Scan entries, remembering a free slot and checking that the name is unused.
 	for (;;) {
-		if (disk_readp(dir, dj.sect, (dj.index % 16) * 32, sizeof(dir)) != RES_OK) {
-			printf("pf_create: directory read failed at sector %lu\n", (unsigned long)dj.sect);
-			return FR_DISK_ERR;
-		}
+		if (disk_readp(dir, dj.sect, (dj.index % 16) * 32, sizeof(dir)) != RES_OK)
+			return ERR_CREATE_DIR_READ;
 
 		if (dir[0] == 0 || dir[0] == 0xE5) {
 			if (!free_sector) {
@@ -1189,24 +1205,21 @@ FRESULT pf_create (const char *path, DWORD size) {
 		}
 		result = dir_next(&dj);
 		if (result != FR_OK) {
-			if (result == FR_DISK_ERR)
-				printf("pf_create: directory chain read failed at index %u\n", (unsigned)dj.index);
+			if (result == FR_DISK_ERR) return ERR_CREATE_DIR_CHAIN;
 			break;
 		}
 	}
 	if (!free_sector) return FR_DENIED;
 
+	// Reserve enough free clusters for the requested file size.
 	result = pff_allocate_chain(size, &first_cluster);
-	if (result != FR_OK) {
-		printf("pf_create: cluster allocation failed (result %u)\n", (unsigned)result);
-		return result;
-	}
+	if (result != FR_OK) return result;
 
-	if (disk_readp(sector_data, free_sector, 0, sizeof(sector_data)) != RES_OK) {
-		printf("pf_create: directory sector read failed at %lu\n", (unsigned long)free_sector);
-		return FR_DISK_ERR;
-	}
+	// Read the directory sector so this entry can be changed without altering its neighbors.
+	if (disk_readp(sector_data, free_sector, 0, sizeof(sector_data)) != RES_OK)
+		return ERR_CREATE_DIR_READ;
 	mem_set(&sector_data[free_offset], 0, 32);
+	// Fill in the filename, file attribute, first cluster, and fixed file size.
 	for (BYTE i = 0; i < 11; ++i) sector_data[free_offset + i] = name[i];
 	sector_data[free_offset + DIR_Attr] = AM_ARC;
 
@@ -1220,12 +1233,18 @@ FRESULT pf_create (const char *path, DWORD size) {
 	sector_data[free_offset + DIR_FileSize + 1] = (BYTE)(size >> 8);
 	sector_data[free_offset + DIR_FileSize + 2] = (BYTE)(size >> 16);
 	sector_data[free_offset + DIR_FileSize + 3] = (BYTE)(size >> 24);
-	result = pff_write_sector(free_sector, sector_data);
-	if (result != FR_OK) {
-		printf("pf_create: directory sector write failed at %lu\n", (unsigned long)free_sector);
-		return result;
-	}
 
+	// Commit the updated directory sector to the card.
+	if (disk_writep(0, free_sector) != RES_OK)
+		return ERR_CREATE_DIR_WRITE;
+	if (disk_writep(sector_data, sizeof(sector_data)) != RES_OK) {
+		(void)disk_writep(0, 0);
+		return ERR_CREATE_DIR_WRITE;
+	}
+	if (disk_writep(0, 0) != RES_OK)
+		return ERR_CREATE_DIR_WRITE;
+
+	// Set the in-memory file state so the caller can write immediately.
 	fs->org_clust = first_cluster;
 	fs->curr_clust = 0;
 	fs->fsize = size;

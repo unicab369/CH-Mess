@@ -65,7 +65,7 @@ int main(void) {
 		printf("Created %s\n", SD_TEST_FILE);
 	}
 	if (fs_result != FR_OK) {
-		printf("Create/open failed (Petit FatFs result %u)\n", (unsigned)fs_result);
+		printf("Create/open error %u\n", (unsigned)fs_result);
 		while (1) { }
 	}
 	fs_result = pf_write(message, sizeof(message) - 1, &bytes_written);
