@@ -22,12 +22,12 @@
 #define	FORWARD(d)		/* Data in-time processing function (depends on the project) */
 
 
-#ifndef INTF_MMC_CS_HIGH
-	void INTF_MMC_CS_HIGH() { }
+/* Chip-select interface; define these board macros before including this file. */
+#ifndef SPI_CS_HIGH
+#error "Define SPI_CS_HIGH() before including mmcbbp.h"
 #endif
-
-#ifndef INTF_MMC_CS_LOW
-	void INTF_MMC_CS_LOW() { }
+#ifndef SPI_CS_LOW
+#error "Define SPI_CS_LOW() before including mmcbbp.h"
 #endif
 
 /*--------------------------------------------------------------------------
@@ -58,131 +58,22 @@ BYTE CardType;			/* b0:MMC, b1:SDv1, b2:SDv2, b3:Block addressing */
 
 //! SPI STUFF
 
-static inline uint8_t SPI_read_8();
-static inline void SPI_write_8(uint8_t data);
-
-// SPI peripheral power enable / disable (default off, init() automatically enables)
-// send SPI peripheral to sleep
-static inline void SPI_poweroff();
-
-
 // ######## internal function declarations
-static inline void SPI_wait_TX_complete();
-static inline uint8_t SPI_is_RX_empty();
-static inline void SPI_wait_RX_available();
-
-void SPI_set_prescaler(uint8_t presc)
-{
-    SPI1->CTLR1 &= ~SPI_CTLR1_BR;
-    SPI1->CTLR1 |= SPI_CTLR1_BR & (presc << 3);
-}
-
-void SPI_init2() {
-	RCC->APB2PCENR |= RCC_APB2Periph_GPIOC | RCC_APB2Periph_SPI1;
-
-    // reset control register
-    SPI1->CTLR1 = 0;
-
-    SPI_set_prescaler(0);
-
-    SPI1->CTLR1 |= (SPI_CPOL_Low | SPI_CPHA_1Edge);
-
-    SPI1->CTLR1 |= SPI_NSS_Soft; // SSM NSS software control mode
-
-    // SCK on PC5, 10MHz Output, alt func, push-pull
-    GPIOC->CFGLR &= ~(0xf << (4 * 5));
-    GPIOC->CFGLR |= (GPIO_Speed_50MHz | GPIO_CNF_OUT_PP_AF) << (4 * 5);
-
-    // CH32V003 is master
-    SPI1->CTLR1 |= SPI_Mode_Master;
-
-    // set data direction and configure data pins
-    SPI1->CTLR1 |= SPI_Direction_2Lines_FullDuplex;
-
-    // MOSI on PC6, 10MHz Output, alt func, push-pull
-    GPIOC->CFGLR &= ~(0xf << (4 * 6));
-    GPIOC->CFGLR |= (GPIO_Speed_50MHz | GPIO_CNF_OUT_PP_AF) << (4 * 6);
-
-    // MISO on PC7, 10MHz input, floating
-    GPIOC->CFGLR &= ~(0xf << (4 * 7));
-    GPIOC->CFGLR |= GPIO_CNF_IN_FLOATING << (4 * 7);
-
-	// SPI_begin_8()
-	SPI1->CTLR1 &= ~(SPI_CTLR1_DFF); // DFF 16bit data-length enable, writable only when SPE is 0
-    SPI1->CTLR1 |= SPI_CTLR1_SPE;
-}
+/* SPI port interface; implemented by the selected MCU port. */
+void SPI_SET_PRESCALER(uint8_t prescaler);
+void SPI_INIT(void);
+void SPI_END(void);
+uint8_t SPI_READ_8(void);
+void SPI_WRITE_8(uint8_t data);
+uint8_t SPI_TRANSFER_8(uint8_t data);
+void SPI_POWEROFF(void);
+void SPI_POWERON(void);
 
 // void SPI_begin_8()
 // {
 //     SPI1->CTLR1 &= ~(SPI_CTLR1_DFF); // DFF 16bit data-length enable, writable only when SPE is 0
 //     SPI1->CTLR1 |= SPI_CTLR1_SPE;
 // }
-
-void SPI_end()
-{
-    SPI1->CTLR1 &= ~(SPI_CTLR1_SPE);
-}
-
-static inline uint8_t SPI_read_8()
-{
-    return SPI1->DATAR;
-}
-
-static inline void SPI_write_8(uint8_t data)
-{
-    SPI1->DATAR = data;
-}
-
-uint8_t SPI_transfer_8(uint8_t data)
-{
-    SPI_write_8(data);
-    SPI_wait_TX_complete();
-    asm volatile("nop");
-    SPI_wait_RX_available();
-    return SPI_read_8();
-}
-
-static inline void SPI_poweroff()
-{
-    SPI_end();
-    RCC->APB2PCENR &= ~RCC_APB2Periph_SPI1;
-}
-static inline void SPI_poweron()
-{
-    RCC->APB2PCENR |= RCC_APB2Periph_GPIOC | RCC_APB2Periph_SPI1;
-}
-
-// ########  small internal function definitions, static inline
-static inline void SPI_wait_TX_complete()
-{
-    while (!(SPI1->STATR & SPI_STATR_TXE))
-    {
-    }
-}
-static inline uint8_t SPI_is_RX_empty()
-{
-    return SPI1->STATR & SPI_STATR_RXNE;
-}
-static inline void SPI_wait_RX_available()
-{
-    while (!(SPI1->STATR & SPI_STATR_RXNE))
-    {
-    }
-}
-static inline void SPI_wait_not_busy()
-{
-    while ((SPI1->STATR & SPI_STATR_BSY) != 0)
-    {
-    }
-}
-static inline void SPI_wait_transmit_finished()
-{
-    SPI_wait_TX_complete();
-    SPI_wait_not_busy();
-}
-
-
-
 
 //! SPI STUFF END
 
@@ -193,7 +84,7 @@ static inline void SPI_wait_transmit_finished()
 static void xmit_mmc (
 	BYTE d			/* Data to be sent */
 ) {
-	SPI_transfer_8(d);
+	SPI_TRANSFER_8(d);
 }
 
 /*-----------------------------------------------------------------------*/
@@ -201,7 +92,7 @@ static void xmit_mmc (
 /*-----------------------------------------------------------------------*/
 
 static BYTE rcvr_mmc (void) {
-	BYTE r = SPI_transfer_8(0xFF);
+	BYTE r = SPI_TRANSFER_8(0xFF);
 	return r;
 }
 
@@ -213,7 +104,7 @@ static void skip_mmc (
 	UINT n		/* Number of bytes to skip */
 ) {
 	do {
-		SPI_transfer_8(0xFF);
+		SPI_TRANSFER_8(0xFF);
 	} while (--n);
 }
 
@@ -222,7 +113,7 @@ static void skip_mmc (
 /*-----------------------------------------------------------------------*/
 
 static void release_spi (void) {
-	INTF_MMC_CS_HIGH();
+	SPI_CS_HIGH();
 	rcvr_mmc();
 }
 
@@ -243,8 +134,8 @@ static BYTE send_cmd (
 	}
 
 	/* Select the card */
-	INTF_MMC_CS_HIGH(); rcvr_mmc();
-	INTF_MMC_CS_LOW(); rcvr_mmc();
+	SPI_CS_HIGH(); rcvr_mmc();
+	SPI_CS_LOW(); rcvr_mmc();
 
 	/* Send a command packet */
 	xmit_mmc(cmd);					/* Start + Command index */
@@ -280,8 +171,8 @@ DSTATUS disk_initialize (void) {
 	BYTE n, cmd, ty, buf[4];
 	UINT tmr;
 
-	SPI_set_prescaler(7);
-	INTF_MMC_CS_HIGH();
+	SPI_SET_PRESCALER(7);
+	SPI_CS_HIGH();
 	skip_mmc(10);			/* Dummy clocks */
 
 	ty = 0;
@@ -315,7 +206,7 @@ DSTATUS disk_initialize (void) {
 	CardType = ty;
 	release_spi();
 
-	SPI_set_prescaler(0);
+	SPI_SET_PRESCALER(0);
 	return ty ? 0 : STA_NOINIT;
 }
 
@@ -400,10 +291,16 @@ DRESULT disk_writep (
 	} else {
 		if (sc) {	/* Initiate sector write transaction */
 			if (!(CardType & CT_BLOCK)) sc *= 512;	/* Convert to byte address if needed */
-			if (send_cmd(CMD24, sc) == 0) {			/* WRITE_SINGLE_BLOCK */
+			printf("CMD24 write attempt: card type 0x%02X, address %lu\n",
+			       CardType, (unsigned long)sc);
+			BYTE response = send_cmd(CMD24, sc);
+			if (response == 0) {			/* WRITE_SINGLE_BLOCK */
 				xmit_mmc(0xFF); xmit_mmc(0xFE);		/* Data block header */
 				wc = 512;							/* Set byte counter */
 				res = RES_OK;
+			} else {
+				printf("CMD24 rejected: response 0x%02X, card type 0x%02X, address %lu\n",
+				       response, CardType, (unsigned long)sc);
 			}
 		} else {	/* Finalize sector write transaction */
 			bc = wc + 2;
