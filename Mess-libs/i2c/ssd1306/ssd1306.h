@@ -183,7 +183,7 @@ const uint8_t expand[16] = {
 /* Send the frame buffer */
 void ssd1306_refresh(void) {
 	uint16_t i;
-	
+
 	#ifdef SH1107
 		ssd1306_cmd(SSD1306_MEMORYMODE); // vertical addressing mode.
 
@@ -201,7 +201,7 @@ void ssd1306_refresh(void) {
 		ssd1306_cmd(SSD1306_COLUMNADDR);
 		ssd1306_cmd(SSD1306_OFFSET);   // Column start address (0 = reset)
 		ssd1306_cmd(SSD1306_OFFSET+SSD1306_W-1); // Column end address (127 = reset)
-		
+
 		ssd1306_cmd(SSD1306_PAGEADDR);
 		ssd1306_cmd(0); // Page start address (0 = reset)
 		ssd1306_cmd(7); // Page end address
@@ -222,17 +222,15 @@ void ssd1306_refresh(void) {
 				{
 					for(k=0;k<SSD1306_PSZ;k++)
 						tbuf[k] = expand[ssd1306_buffer[i+j+k]&0xf];
-					
 					/* send PSZ block of data */
 					ssd1306_data(tbuf, SSD1306_PSZ);
 				}
-				
+
 				/* high nybble */
 				for(j=0;j<128;j+=SSD1306_PSZ)
 				{
 					for(k=0;k<SSD1306_PSZ;k++)
 						tbuf[k] = expand[(ssd1306_buffer[i+j+k]>>4)&0xf];
-					
 					/* send PSZ block of data */
 					ssd1306_data(tbuf, SSD1306_PSZ);
 				}
@@ -244,13 +242,13 @@ void ssd1306_refresh(void) {
 /* plot a pixel in the buffer */
 void ssd1306_drawPixel(uint32_t x, uint32_t y, int color) {
 	uint32_t addr;
-	
+
 	/* clip */
 	if(x >= SSD1306_W || y >= SSD1306_H) return;
 
 	/* compute buffer address */
 	addr = x + SSD1306_W*(y/8);
-	
+
 	/* set/clear bit in buffer */
 	if(color)
 		ssd1306_buffer[addr] |= (1<<(y&7));
@@ -261,10 +259,10 @@ void ssd1306_drawPixel(uint32_t x, uint32_t y, int color) {
 /* plot a pixel in the buffer */
 void ssd1306_xorPixel(uint32_t x, uint32_t y) {
 	uint32_t addr;
-	
+
 	/* clip */
 	if(x >= SSD1306_W || y >= SSD1306_H) return;
-	
+
 	/* compute buffer address */
 	addr = x + SSD1306_W*(y/8);
 	ssd1306_buffer[addr] ^= (1<<(y&7));
@@ -485,7 +483,7 @@ void ssd1306_drawRect(int32_t x, int32_t y, uint32_t w, uint32_t h, uint32_t col
 /* fill a rectangle */
 void ssd1306_fillRect(uint32_t x, uint32_t y, uint8_t w, uint32_t h, uint32_t color) {
 	uint32_t m, n=y, iw = w;
-	
+
 	while(h--) {			/* scan vertical */
 		m=x;
 		w=iw;
@@ -500,11 +498,11 @@ void ssd1306_fillRect(uint32_t x, uint32_t y, uint8_t w, uint32_t h, uint32_t co
 /* invert a rectangle in the buffer */
 void ssd1306_xorrect(uint8_t x, uint8_t y, uint8_t w, uint8_t h) {
 	uint8_t m, n=y, iw = w;
-	
+
 	while(h--) {			/* scan vertical */
 		m=x;
 		w=iw;
-		
+
 		while(w--) {					/* scan horizontal */
 			ssd1306_xorPixel(m++, n);	/* invert pixels */
 		}
@@ -516,18 +514,17 @@ void ssd1306_xorrect(uint8_t x, uint8_t y, uint8_t w, uint8_t h) {
 void ssd1306_drawchar(uint8_t x, uint8_t y, uint8_t chr, uint8_t color) {
 	uint16_t i, j, col;
 	uint8_t d;
-	
+
 	for(i=0;i<8;i++) {
 		d = fontdata[(chr<<3)+i];
-		
+
 		for(j=0;j<8;j++){
 			if(d&0x80)
 				col = color;
 			else
 				col = (~color)&1;
-			
 			ssd1306_drawPixel(x+j, y+i, col);
-			
+
 			// next bit
 			d <<= 1;
 		}
@@ -537,7 +534,7 @@ void ssd1306_drawchar(uint8_t x, uint8_t y, uint8_t chr, uint8_t color) {
 /* draw a string to the display */
 void ssd1306_drawstr(uint8_t x, uint8_t y, char *str, uint8_t color) {
 	uint8_t c;
-	
+
 	while((c=*str++)) {
 		ssd1306_drawchar(x, y, c, color);
 		x += 8;
@@ -591,7 +588,7 @@ void ssd1306_drawchar_sz(uint8_t x, uint8_t y, uint8_t chr, uint8_t color, font_
 /* draw a string to the display buffer, scaled to size */
 void ssd1306_drawstr_sz(uint8_t x, uint8_t y, char *str, uint8_t color, font_size_t font_size) {
 	uint8_t c;
-	
+
 	while((c=*str++)) {
 		ssd1306_drawchar_sz(x, y, c, color, font_size);
 		x += 8 * font_size;
@@ -604,7 +601,7 @@ uint8_t ssd1306_init(void) {
 	// pulse reset
 	// ssd1306_rst();
 	ssd1306_setbuf(0);
-	
+
 	// initialize OLED
 	#if !defined(SSD1306_CUSTOM_INIT_ARRAY) || !SSD1306_CUSTOM_INIT_ARRAY
 		uint8_t *cmd_list = (uint8_t *)ssd1306_init_array;
@@ -612,8 +609,8 @@ uint8_t ssd1306_init(void) {
 		while(*cmd_list != SSD1306_TERMINATE_CMDS) {
 			if(ssd1306_cmd(*cmd_list++)) return 1;
 		}
-		
-		ssd1306_refresh();	
+
+		ssd1306_refresh();
 	#endif
 
 	return 0;

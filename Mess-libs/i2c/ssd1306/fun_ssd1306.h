@@ -78,7 +78,7 @@ void ssd1306_setwindow(uint8_t start_page, uint8_t end_page, uint8_t start_colum
 	ssd1306_cmd(SSD1306_COLUMNADDR);
 	ssd1306_cmd(start_column);   				// Column start address (0 = reset)
 	ssd1306_cmd(end_column); 	// Column end address (127 = reset)
-	
+
 	ssd1306_cmd(SSD1306_PAGEADDR);
 	ssd1306_cmd(start_page); 	// Page start address (0 = reset)
 	ssd1306_cmd(end_page); 		// Page end address
@@ -142,7 +142,7 @@ void ssd1306_setup() {
 	// 	ssd1306_init();
 	// 	printf("SSD1306 init.\n\r");
 	// }
-	
+
 	//# Clear the frame buffer
 	memset(frame_buffer, 0, sizeof(frame_buffer));
 	ssd1306_renderFrame();
@@ -158,7 +158,7 @@ void ssd1306_setup() {
 //! compute_fastHorLine
 void prefill_fastHorLine(uint8_t y, uint8_t x0, uint8_t x1) {
     if (y >= SSD1306_H) return;
-    
+
 	// Clamp x-coordinates
 	if (x0 >= SSD1306_W) x0 = SSD1306_W_LIMIT;
 	if (x1 >= SSD1306_W) x1 = SSD1306_W_LIMIT;
@@ -179,7 +179,7 @@ void prefill_horLine(
 	// Clamp to display bounds
     if (x_limit.l0 >= SSD1306_W) x_limit.l0 = SSD1306_W_LIMIT;
     if (x_limit.l1 >= SSD1306_W) x_limit.l1 = SSD1306_W_LIMIT;
-    
+
 	// Handle mirroring
 	if (mirror) {
 		x_limit.l0 = SSD1306_W_LIMIT - x_limit.l0;
@@ -240,7 +240,6 @@ void prefill_verLine(
     // // Draw vertical line with thickness
     // for (uint8_t y_pos = y_limit.l0; y_pos <= y_limit.l1; y_pos++) {
     //     M_Page_Mask mask = page_masks[y_pos];
-		
     //     for (uint8_t x_pos = x; x_pos <= x_end; x_pos++) {
     //         frame_buffer[mask.page][x_pos] |= mask.bitmask;
     //     }
@@ -303,7 +302,7 @@ void prefill_line(M_Point p0, M_Point p1, uint8_t thickness) {
 			for (uint8_t y = y_start; y <= y_end; y++) {
 				M_Page_Mask mask = page_masks[y];
 				uint8_t *row = fb_base + (mask.page * SSD1306_W) + x_start;
-				
+
 				// Optimized filling based on width
 				if (width <= 4) {
 					// Fully unrolled for common cases
@@ -333,7 +332,7 @@ void prefill_line(M_Point p0, M_Point p1, uint8_t thickness) {
 void prefill_lines(M_Point *pts, uint8_t num_pts, uint8_t thickness) {
     // Early exit if not enough points (need at least 2 points for a line)
     if (num_pts < 2) return;
-    
+
     // Draw connected lines between all points
     for (uint8_t i = 0; i < num_pts - 1; i++) {
         prefill_line(pts[i], pts[i+1], thickness);
@@ -347,7 +346,7 @@ uint8_t myvalues[16] = { 30, 50, 60, 40, 20, 50, 30, 10, 35, 10, 20, 30, 40, 50,
 void test_lines() {
 	// seed(0x12345678);
 	int y = 0;
-	
+
     //! hor-ver lines
 	for(int8_t i = 0; i<sizeof(myvalues); i++) {
 		// uint8_t rand_byte_low = rand() & 0xFF;
@@ -365,10 +364,8 @@ void test_lines() {
 		M_Point point_a1 = { x: SSD1306_W, y: y };
 		M_Point point_b0 = { x: SSD1306_W-x, y: SSD1306_H };
 		M_Point point_b1 = { x: 0, y: SSD1306_H-y };
-		
 		prefill_line(point_a0, point_a1, 1);
 		prefill_line(point_b0, point_b1, 1);
-
 		y+= SSD1306_H/8;
 	}
 }
@@ -662,7 +659,7 @@ static void get_circle_point(
     uint8_t reduced_angle = angle % 90;
     uint8_t sin_val = SIN_LUT[reduced_angle];
     uint8_t cos_val = SIN_LUT[90 - reduced_angle];
-    
+
     switch (quadrant) {
         case 0: *x = center.x + (radius * cos_val) / 255;
                 *y = center.y - (radius * sin_val) / 255;
@@ -683,16 +680,16 @@ static void get_circle_point(
 void prefill_pie(M_Point center, uint8_t radius, int16_t start_angle, int16_t end_angle) {    
     // Draw center point
     prefill_pixel(center.x, center.y);
-    
+
     // Special case: full circle
     if (start_angle == end_angle) {
         prefill_circle(center, radius, 1); // Fill entire circle
         return;
     }
-    
+
     // Angle stepping (adaptive based on radius)
     uint8_t step = (radius > 40) ? 2 : 1;
-    
+
     // Draw radial lines
     int16_t angle = start_angle;
 	int16_t x, y;
@@ -700,18 +697,18 @@ void prefill_pie(M_Point center, uint8_t radius, int16_t start_angle, int16_t en
     while (1) {
         // Calculate edge point
         get_circle_point(center, radius, angle, &x, &y);
-        
+
         // Draw line from center to edge
 		M_Point p0 = { x: center.x, y: center.y };
 		M_Point p1 = { x: x, y: y };
 		prefill_line(p0, p1, 1);
-        
+
         // Break conditions
         if (angle == end_angle) break;
-        
+
         // Move to next angle
         angle = (angle + step) % 360;
-        
+
         // Handle wrap-around
         if (start_angle > end_angle && angle < start_angle && angle > end_angle) break;
     }
@@ -734,7 +731,7 @@ void prefill_ring(
         int16_t x = -r;
         int16_t y = 0;
         int16_t err = 2 - 2 * r;
-		
+
         do {
             // Calculate and clamp coordinates with 1-pixel extension
             int16_t x_start = p0.x + x;
@@ -787,7 +784,7 @@ void test_circles() {
         if (i > 1) {
             prefill_ring((M_Point){ 90, y + 12 }, 7, 2, 0, 180);
         }
-        
+
 		// compute_pie(point, 20, 0, 100);
 		y += 14;
 	}

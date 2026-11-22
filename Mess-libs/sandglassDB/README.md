@@ -312,17 +312,17 @@ The block header's `payload_length` marks the end of the last Segment. Readers c
 
 ## Total Storage Capacity
 
-The table estimates segmented temperature storage (`codec = 0x10`) with 4 Segments and a 2 B `base_value` in each block. Each 4,084 B payload holds up to 2,030 readings: the 4 Segment headers use 32 B, and 4,052 B hold 2,026 time/value offset pairs when no alignment padding is needed. Readings arrive every 1, 10, 30, or 60 seconds, or every 10 minutes. Storage sizes use binary units.
+The table estimates segmented temperature storage (`codec = 0x10`) with 4 Segments and a 2 B `base_value` in each block. Each 4,084 B payload holds up to 2,030 readings: the 4 Segment headers use 32 B, and 4,052 B hold 2,026 time/value offset pairs when no alignment padding is needed. Readings arrive every 1, 10, 30, or 60 seconds, every 10 minutes, or every hour. Storage sizes use binary units. Reading counts are rounded to the nearest 1,000 (`K`); durations use the unrounded counts.
 
-| Storage size | Continuation<br>blocks | Readings | Time to full<br>(1 sec) | Time to full<br>(10 secs) | Time to full<br>(30 secs) | Time to full<br>(1 min) | Time to full<br>(10 mins) |
-|---:|---:|---:|---:|---:|---:|---:|---:|
-| 32 KiB | 5 | 12,180 | 3.4 hrs | 1.4 days | 4.2 days | 8.5 days | 84.6 days |
-| 128 KiB | 29 | 60,900 | 16.9 hrs | 7.0 days | 21.1 days | 42.3 days | 1.2 yrs |
-| 1 MiB | 253 | 515,620 | 6.0 days | 59.7 days | 179.0 days | 358.1 days | 9.8 yrs |
-| 32 MiB | 8,189 | 16,625,700 | 0.5 yrs | 5.3 yrs | 15.8 yrs | 31.6 yrs | 316 yrs |
-| 126 MiB | 32,253 | 65,475,620 | 2.1 yrs | 20.8 yrs | 62.3 yrs | 125 yrs | 1,246 yrs |
-| 512 MiB | 131,069 | 266,072,100 | 8.4 yrs | 84.4 yrs | 253 yrs | 506 yrs | 5,062 yrs |
-| 1 GiB | 262,141 | 532,148,260 | 16.9 yrs | 169 yrs | 506 yrs | 1,012 yrs | 10,125 yrs |
+| Storage size | C blocks | Readings | Time to full<br>(1 sec) | Time to full<br>(10 secs) | Time to full<br>(30 secs) | Time to full<br>(1 min) | Time to full<br>(10 mins) | Time to full<br>(1 hr) |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 32 KiB | 5 | 12K | 3.4 hrs | 1.4 days | 4.2 days | 8.5 days | 84.6 days | 1.4 yrs |
+| 128 KiB | 29 | 61K | 16.9 hrs | 7.0 days | 21.1 days | 42.3 days | 1.2 yrs | 7.0 yrs |
+| 1 MiB | 253 | 516K | 6.0 days | 59.7 days | 179.0 days | 358.1 days | 9.8 yrs | 58.9 yrs |
+| 32 MiB | 8,189 | 16,626K | 0.5 yrs | 5.3 yrs | 15.8 yrs | 31.6 yrs | 316 yrs | 1,898 yrs |
+| 126 MiB | 32,253 | 65,476K | 2.1 yrs | 20.8 yrs | 62.3 yrs | 125 yrs | 1,246 yrs | 7,474 yrs |
+| 512 MiB | 131,069 | 266,072K | 8.4 yrs | 84.4 yrs | 253 yrs | 506 yrs | 5,062 yrs | 30,374 yrs |
+| 1 GiB | 262,141 | 532,148K | 16.9 yrs | 169 yrs | 506 yrs | 1,012 yrs | 10,125 yrs | 60,748 yrs |
 
 > Assumes 2 Superblocks and 1 `R` block, each occupying one sector; all remaining sectors hold `C` blocks. The estimate requires 4 Segments per block, 2 B per later reading, and no alignment padding. More Segments or padding reduce the reading count. Multiple datasets need additional `R` blocks.
 
