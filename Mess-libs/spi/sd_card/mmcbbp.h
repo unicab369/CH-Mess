@@ -89,7 +89,12 @@ static void xmit_mmc (
 /*-----------------------------------------------------------------------*/
 
 static BYTE rcvr_mmc (void) {
+	/* Send 0xFF while clocking in one byte from the card. */
+#if defined(CH582_CH583)
+	BYTE r = SPI_RECEIVE_8();
+#else
 	BYTE r = SPI_TRANSFER_8(0xFF);
+#endif
 	return r;
 }
 

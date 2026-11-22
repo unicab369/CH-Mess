@@ -10,9 +10,9 @@
 int main(void) {
 	SystemInit();
 	SPI_INIT();
-	R8_SPI0_CLOCK_DIV = 60; // Conservative 1 MHz SPI clock at 60 MHz system clock.
+	// R8_SPI0_CLOCK_DIV = 60; // Conservative 1 MHz SPI clock at 60 MHz system clock.
 	SPI_CONFIGURE_PINS(TFT_RESET, TFT_DC);
-	SPI_RESET(TFT_RESET, 1);
+	SPI_RESET(TFT_RESET, 100);
 	st7735_init(160, 80, TFT_CS);
 
 	st7735_fill(ST_BLACK);

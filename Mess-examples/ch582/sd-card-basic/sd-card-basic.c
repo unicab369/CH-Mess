@@ -27,7 +27,7 @@ static uint8_t probe_idle_command(void) {
 	for (unsigned i = 0; i < sizeof(command); ++i)
 		(void)SPI_TRANSFER_8(command[i]);
 	for (unsigned i = 0; i < 10 && (response & 0x80); ++i)
-		response = SPI_TRANSFER_8(0xFF);
+		response = SPI_RECEIVE_8();
 	SPI_CS_HIGH();
 	(void)SPI_TRANSFER_8(0xFF);
 	SPI_SET_PRESCALER(0);

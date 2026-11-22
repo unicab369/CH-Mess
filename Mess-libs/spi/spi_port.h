@@ -161,8 +161,10 @@ static inline void SPI_INIT(void) {
 	/* SPI0 pins: PA13=SCK, PA14=MOSI, PA15=MISO. */
 	funPinMode(PA13, GPIO_CFGLR_OUT_2Mhz_PP); /* PA13 SCK */
 	funPinMode(PA14, GPIO_CFGLR_OUT_2Mhz_PP); /* PA14 MOSI */
-	funPinMode(PA15, GPIO_CFGLR_IN_PUPD); /* PA15 MISO */
-	R8_SPI0_CTRL_MOD = RB_SPI_ALL_CLEAR;
+	funPinMode(PA15, GPIO_CFGLR_IN_FLOAT); /* PA15 MISO */
+	/* Master, SPI mode 0: leave RB_SPI_MODE_SLAVE and RB_SPI_MST_SCK_MOD clear. */
+	R8_SPI0_CTRL_MOD = RB_SPI_ALL_CLEAR &
+	                   (uint8_t)~(RB_SPI_MODE_SLAVE | RB_SPI_MST_SCK_MOD);
 	R8_SPI0_CTRL_CFG = RB_SPI_AUTO_IF;
 	R8_SPI0_CLOCK_DIV = 4;
 
@@ -177,7 +179,11 @@ static inline void SPI_CONFIGURE_PINS(uint32_t reset_pin, uint32_t dc_pin) {
 		funPinMode(dc_pin, GPIO_CFGLR_OUT_2Mhz_PP);
 }
 
-static inline void SPI_START(void) { R8_SPI0_CTRL_MOD = RB_SPI_SCK_OE | RB_SPI_MOSI_OE; }
+static inline void SPI_START(void) {
+	/* Release the FIFO/count reset before enabling the SPI pins. */
+	R8_SPI0_CTRL_MOD = (R8_SPI0_CTRL_MOD & (uint8_t)~RB_SPI_ALL_CLEAR) |
+	                   RB_SPI_SCK_OE | RB_SPI_MOSI_OE;
+}
 static inline void SPI_STOP(void) { R8_SPI0_CTRL_MOD = 0; }
 static inline void SPI_SET_PRESCALER(uint8_t prescaler) {
 	R8_SPI0_CLOCK_DIV = prescaler >= 7 ? 255 : 4;
@@ -202,6 +208,54 @@ static inline uint8_t SPI_TRANSFER_8(uint8_t data) {
 	SPI_WAIT_NOT_BUSY();
 	return SPI_READ_8();
 }
+
+/* Match WCH's SPI0_MasterRecvByte: select receive direction, then clock 0xFF. */
+static inline uint8_t SPI_RECEIVE_8(void) {
+	R8_SPI0_CTRL_MOD |= RB_SPI_FIFO_DIR;
+	R8_SPI0_BUFFER = 0xFF;
+	SPI_WAIT_NOT_BUSY();
+	return R8_SPI0_BUFFER;
+}
+
+/* Receive len bytes using the CH582 master FIFO procedure from the datasheet.
+ * The caller must assert the peripheral's CS before calling and deassert it
+ * after this function returns. The SPI controller generates the receive clocks.
+ */
+static inline uint8_t SPI_RECEIVE_FIFO(uint8_t *buffer, uint16_t len) {
+	/* R16_SPI0_TOTAL_CNT uses only its low 12 bits. */
+	if (buffer == 0 || len == 0 || len > 4095) return 0;
+	SPI_WAIT_NOT_BUSY();
+	while (R8_SPI0_FIFO_COUNT != 0) (void)R8_SPI0_FIFO;
+
+	R8_SPI0_CTRL_MOD |= RB_SPI_FIFO_DIR;
+	R16_SPI0_TOTAL_CNT = len;
+	for (uint16_t i = 0; i < len; ++i) {
+		uint32_t timeout = 1000000;
+		while (R8_SPI0_FIFO_COUNT == 0 && --timeout != 0) { }
+		if (timeout == 0) {
+			R16_SPI0_TOTAL_CNT = 0;
+			R8_SPI0_CTRL_MOD &= (uint8_t)~RB_SPI_FIFO_DIR;
+			return 0;
+		}
+		buffer[i] = R8_SPI0_FIFO;
+	}
+	uint32_t timeout = 1000000;
+	while (R16_SPI0_TOTAL_CNT != 0 && --timeout != 0) { }
+	if (timeout == 0) {
+		R16_SPI0_TOTAL_CNT = 0;
+		R8_SPI0_CTRL_MOD &= (uint8_t)~RB_SPI_FIFO_DIR;
+		return 0;
+	}
+	timeout = 1000000;
+	while (!(R8_SPI0_INT_FLAG & RB_SPI_FREE) && --timeout != 0) { }
+	if (timeout == 0) {
+		R8_SPI0_CTRL_MOD &= (uint8_t)~RB_SPI_FIFO_DIR;
+		return 0;
+	}
+	R8_SPI0_CTRL_MOD &= (uint8_t)~RB_SPI_FIFO_DIR;
+	return 1;
+}
+
 static inline void SPI_WRITE_16(uint16_t data) {
 	SPI_WRITE_8((uint8_t)(data >> 8));
 	SPI_WRITE_8((uint8_t)data);
