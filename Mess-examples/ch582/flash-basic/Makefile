@@ -7,7 +7,7 @@ TARGET:=flash-basic
 FLASH_LOG_SIZE := 8192
 FLASH_BLOCK_SIZE := 4096
 
-include ../../ch32fun/ch32fun/ch32fun.mk
+include ../../../ch32fun/ch32fun/ch32fun.mk
 
 # Use ch32fun's selected memory map, then append the log reservation assertion.
 LINKER_SCRIPT := flash-basic-reserve.generated.ld

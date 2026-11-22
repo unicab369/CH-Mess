@@ -11,7 +11,7 @@ DATAFLASH_BYTES_OFFSET ?= 0x080
 DATAFLASH_CHECKSUM_OFFSET ?= 0x0c0
 DATAFLASH_STRUCT_OFFSET ?= 0x100
 
-include ../../ch32fun/ch32fun/ch32fun.mk
+include ../../../ch32fun/ch32fun/ch32fun.mk
 
 # The app and linker script use the same offsets for function addresses.
 EXTRA_CFLAGS += -DDATAFLASH_SUM_OFFSET=$(DATAFLASH_SUM_OFFSET) \

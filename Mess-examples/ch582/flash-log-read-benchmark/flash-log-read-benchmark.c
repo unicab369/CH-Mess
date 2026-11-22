@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "../../Mess-libs/flash/flash_log_ch5xx.h"
+#include "../../../Mess-libs/flash/flash_log_ch5xx.h"
 
 #define RECORDS_PER_CLASS 128u
 #define BENCH_RUNS 128u

@@ -7,7 +7,7 @@ all: $(TARGET).elf
 FLASH_BLOCK_SIZE := 4096
 FLASH_LOG_SIZE := 12288
 
-include ../../ch32fun/ch32fun/ch32fun.mk
+include ../../../ch32fun/ch32fun/ch32fun.mk
 
 LINKER_SCRIPT := flash-log-read-benchmark.generated.ld
 $(LINKER_SCRIPT): $(GENERATED_LD_FILE) flash-log-read-benchmark.ld

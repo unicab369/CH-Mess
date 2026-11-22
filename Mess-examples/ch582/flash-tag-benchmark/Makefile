@@ -3,7 +3,7 @@ all: $(TARGET).elf
 TARGET_MCU := CH582
 TARGET := flash-tag-benchmark
 
-include ../../ch32fun/ch32fun/ch32fun.mk
+include ../../../ch32fun/ch32fun/ch32fun.mk
 
 $(TARGET).elf: tag-benchmark-data.h
 

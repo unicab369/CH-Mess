@@ -1,6 +1,6 @@
 #include <stdint.h>
 
-#include "../../Mess-libs/flash/flash_log_ch5xx.h"
+#include "../../../Mess-libs/flash/flash_log_ch5xx.h"
 
 #include <stdio.h>
 
