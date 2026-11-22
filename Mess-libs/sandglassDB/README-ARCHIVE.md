@@ -13,19 +13,20 @@ Uniform quantization maps a configured value range to evenly spaced integer code
 | `0x02` | Raw | Delta | Off |
 | `0x03` | Uniform quantization | Delta | Off |
 | `0x0B` | Uniform quantization | Delta | On |
-| `0x10` | Segmented 2 B or 4 B base + signed 1 B offsets | Block base | Off |
+| `0x10` | Segmented 2, 4, 6, or 8 B base + 1 B each for time and value offsets | Segment base | Off |
 
 `0x00` and `0x10` have defined payload formats; the other rows are candidates. Compare candidate combinations on representative readings before defining the other formats. In particular, record the total bytes per block, decoding work, quantization error, and the effect of out-of-range values. A uniform range and bit width must be stored in the schema before quantized blocks can be written.
 
 ### Segmented Temperature Example
 
-For `codec = 0x10`, use a temperature schema with `value_width = 2`, signed values, and a scale of 0.1 °F per integer. The same `R` and `C` headers apply. Each block payload contains one or more segments; other schemas may use a 4 B base:
+For `codec = 0x10`, use a temperature schema with `value_width = 2`, signed values, and a scale of 0.1 °F per integer. Each `R` or `C` payload contains one or more Segments:
 
 ```text
-[time_offset: 2 B unsigned][reading_count: 2 B][base_value: 2 B][value_offsets: 1 B each]
+[Segment: base_time: 4 B][base_value: 2 B][offset_count: 2 B][alignment_padding: 0 B]
+[time_offset: 1 B][value_offset: 1 B] × offset_count
 ```
 
-The first segment uses `time_offset = 0`; later segments use unsigned time offsets from the block's `base_time` when timing skips or moves backward relative to a previous segment. A segment cannot start before `base_time`. For example, `base_value = 700` represents 70.0 °F. Each later reading stores one signed 1 B value offset from that base, from −127 to +127 tenths of a degree, so this segment can represent 57.3–82.7 °F. The `-128` code is reserved. Readings 70.0, 70.1, 70.2, and 70.1 °F store `base_value = 700`, `reading_count = 4`, and `value_offsets = [+1, +2, +1]`. Start a new segment when a reading falls outside the range. The block header's `payload_length` marks the end of the segments; add their `reading_count` values to obtain the total reading count.
+The Segment's `base_time` gives the timestamp of its first reading. Each unsigned 1 B `time_offset` gives the gap from the previous reading in `interval_code` units; `interval_value` is the nominal gap. For example, `base_value = 700` represents 70.0 °F. Each later reading stores one signed 1 B value offset from that base, from −127 to +127 tenths of a degree, so this Segment can represent 57.3–82.7 °F. The `-128` value-offset code is reserved. At times 1000, 1001, 1003, and 1004 seconds, readings 70.0, 70.1, 70.2, and 70.1 °F store `base_time = 1000`, `base_value = 700`, `offset_count = 3`, and offset pairs `[(1, +1), (2, +2), (1, +1)]`. Here the grouped fields use 8 B, so no alignment padding is needed before the pairs. Start a new Segment when a time gap exceeds 255 units, time moves backward, or a reading falls outside the value range. The block header's `payload_length` marks the end of the Segments; add `1 + offset_count` for each Segment to obtain the total reading count.
 
 Other lossless methods to compare include:
 
