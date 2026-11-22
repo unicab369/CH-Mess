@@ -130,3 +130,16 @@ Hourly * 240 = ~10 days<br>
 5 secs * 720 = 1 hour<br>
 1 sec * 3600 = 1 hour
 <br>
+
+## RTC Drift Comparison
+
+| RTC | Accuracy used | Drift per day | Drift per 30 days | Drift per year | Approx. module price (USD) |
+|---|---:|---:|---:|---:|---:|
+| DS3231 | ±2 ppm at 0–40 °C | ±0.17 s | ±5.2 s | ±63 s | $1–6 |
+| DS3231 | ±3.5 ppm across its wider temperature range | ±0.30 s | ±9.1 s | ±110 s | $1–6 |
+| PCF8563 | About ±5 ppm average, with proper crystal tuning | ±0.43 s | ±13 s | ±2.6 min | $1–5 |
+| PCF8523 | ±20–50 ppm at 25 °C | ±1.7–4.3 s | ±52–130 s | ±10.5–26 min | $4–8 |
+| DS1307 | Rough estimate: ±20 ppm crystal | ±1.7 s | ±52 s | ±10.5 min | $1–9 |
+| DS1302 | Rough estimate: ±20 ppm crystal | ±1.7 s | ±52 s | ±10.5 min | $1–10 |
+
+Module prices are rough U.S. retail estimates for assembled breakouts, before shipping; generic boards and branded boards can differ substantially, and quantity discounts may lower the unit price. Examples include [DS3231 modules](https://www.jameco.com/z/DS3231-Jameco-Valuepro-IC-DS3231-Real-Time-Clock-DS3231-Module-Breakout-Board-with-Battery-Backup_2217625.html), [PCF8563 modules](https://www.electropeak.com/pcf8563-rtc-module), [PCF8523 breakouts](https://www.adafruit.com/product/5189), and [DS1307 modules](https://www.robotshop.com/products/real-time-clock-rtc-ds1307-module). DS1302 prices vary widely by seller; [example listings](https://www.parallax.com/product/ds1302-real-time-clock-module/) include low-cost and branded modules.

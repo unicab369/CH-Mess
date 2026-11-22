@@ -190,7 +190,7 @@ void ssd1306_refresh(void) {
 		for(i=0;i<SSD1306_H/8;i++)
 		{
 			ssd1306_cmd(0xb0 | i);
-			ssd1306_cmd( 0x00 | (0&0xf) ); 
+			ssd1306_cmd( 0x00 | (0&0xf) );
 			ssd1306_cmd( 0x10 | (0>>4) );
 			ssd1306_data(&ssd1306_buffer[i*4*SSD1306_PSZ+0*SSD1306_PSZ], SSD1306_PSZ);
 			ssd1306_data(&ssd1306_buffer[i*4*SSD1306_PSZ+1*SSD1306_PSZ], SSD1306_PSZ);

@@ -64,12 +64,24 @@ typedef struct {
 	uint8_t bitmask;
 } M_Page_Mask;
 
+// The SSD1306 frame buffer is divided into pages, each 8 pixels tall.
+// At each x column, one byte stores that page's 8 vertical pixels.
+// page_masks acts as a lookup translator from a pixel's y position to its page and bit.
+
+// For each pixel's Y position, page_masks tells the code:
+// - Which page (group of 8 vertical pixels) contains it.
+// - Which bit within that page's byte to set.
 M_Page_Mask page_masks[SSD1306_H];
 
 void precompute_page_masks() {
 	for (uint8_t y = 0; y < SSD1306_H; y++) {
 		page_masks[y].page       = y >> 3;             // (y / 8)
-		page_masks[y].bitmask    = 1 << (y & 0x07);    // (y % 8)
+		// Pick one vertical pixel position in this 8-pixel page. Example: offset 2:
+		//   screen y:  0  1 [2] 3  4  5  6  7   (top to bottom within the page)
+		//   bit:       0  1  2  3  4  5  6  7
+		//   mask:      00000100
+		// y % 8 gives this position within the page; e.g. y = 10 -> page 1, position 2.
+		page_masks[y].bitmask    = 1 << (y & 0x07);    // same as 1 << (y % 8)
 	}
 }
 
@@ -129,7 +141,9 @@ void ssd1306_renderFrame() {
 //! compute pixel
 void prefill_pixel(uint8_t x, uint8_t y) {
     if (x >= SSD1306_W || y >= SSD1306_H) return; // Skip if out of bounds
+    // Look up the precomputed page and bit mask that correspond to this y coordinate.
     M_Page_Mask mask = page_masks[y];
+    // mask.page selects the 8-pixel vertical page for y; mask.bitmask selects y's bit within it.
     frame_buffer[mask.page][x] |= mask.bitmask;
 }
 
@@ -163,8 +177,10 @@ void prefill_fastHorLine(uint8_t y, uint8_t x0, uint8_t x1) {
 	if (x0 >= SSD1306_W) x0 = SSD1306_W_LIMIT;
 	if (x1 >= SSD1306_W) x1 = SSD1306_W_LIMIT;
 
+    // Look up the precomputed page and bit mask that correspond to this y coordinate.
     M_Page_Mask mask = page_masks[y];
     for (uint8_t x = x0; x <= x1; x++) {
+        // Reuse y's page and bit mask to turn on this vertical pixel at each x.
         frame_buffer[mask.page][x] |= mask.bitmask;
     }
 }
@@ -300,6 +316,7 @@ void prefill_line(M_Point p0, M_Point p1, uint8_t thickness) {
 
 			// Optimized row filling
 			for (uint8_t y = y_start; y <= y_end; y++) {
+				// Look up the precomputed page and bit mask that correspond to this y coordinate.
 				M_Page_Mask mask = page_masks[y];
 				uint8_t *row = fb_base + (mask.page * SSD1306_W) + x_start;
 
