@@ -24,17 +24,17 @@
 //# INTERFACES
 //###########################################
 
-uint8_t ST7735_CS_PIN = -1;
+uint32_t ST7735_CS_PIN = SPI_PORT_PIN_NONE;
 
 // Disable
 void TFT_CS_HIGH() {
-    if (ST7735_CS_PIN == -1) return;
+    if (ST7735_CS_PIN == SPI_PORT_PIN_NONE) return;
     funDigitalWrite(ST7735_CS_PIN, 1);
 }
 
 // Enable
 void TFT_CS_LOW() {
-    if (ST7735_CS_PIN == -1) return;
+    if (ST7735_CS_PIN == SPI_PORT_PIN_NONE) return;
     funDigitalWrite(ST7735_CS_PIN, 0);
 }
 
@@ -94,7 +94,7 @@ void st7735_fill(uint16_t color) {
     tft_fill_rect(0, 0, ST7735_WIDTH, ST7735_HEIGHT, color);
 }
 
-void st7735_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
+void st7735_init(uint8_t width, uint8_t height, uint32_t cs_pin) {
     ST7735_WIDTH = width;
     ST7735_HEIGHT = height;
 
@@ -104,9 +104,13 @@ void st7735_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
         ST7735_YOFFSET = 26;
     }
 
-    if (cs_pin != -1) {
+    if (cs_pin != SPI_PORT_PIN_NONE) {
         ST7735_CS_PIN = cs_pin;
+#if defined(CH582_CH583) || defined(CH571_CH573)
+        funPinMode(cs_pin, GPIO_ModeOut_PP_5mA);
+#else
         funPinMode(cs_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
+#endif
         funDigitalWrite(cs_pin, 1);
     }
 
@@ -160,7 +164,7 @@ void st7735_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
 
     //# Display On
     SPI_CMD_8(ST7735_DISPON);
-    // Delay_Ms(10);
+    // Delay_Ms(100);
 
     TFT_CS_HIGH();
 }

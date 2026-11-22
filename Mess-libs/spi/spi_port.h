@@ -5,16 +5,16 @@
 #include "ch32fun.h"
 #include <stdint.h>
 
-#define SPI_PORT_PIN_NONE 0xFFu
+#define SPI_PORT_PIN_NONE 0xFFFFFFFFu
 #define SPI_FRAME_8BIT 8u
 #define SPI_FRAME_16BIT 16u
 
-static uint8_t SPI_DC_PIN = SPI_PORT_PIN_NONE;
+static uint32_t SPI_DC_PIN = SPI_PORT_PIN_NONE;
 
 /* SPI interface */
 static inline void SPI_INIT(void);
-static inline void SPI_CONFIGURE_PINS(uint8_t reset_pin, uint8_t dc_pin);
-static inline void SPI_RESET(uint8_t reset_pin, uint16_t delay_ms);
+static inline void SPI_CONFIGURE_PINS(uint32_t reset_pin, uint32_t dc_pin);
+static inline void SPI_RESET(uint32_t reset_pin, uint16_t delay_ms);
 static inline void SPI_START(void);
 static inline void SPI_STOP(void);
 static inline void SPI_SET_PRESCALER(uint8_t prescaler);
@@ -60,7 +60,7 @@ static inline void SPI_INIT(void) {
 	SPI_START();
 }
 
-static inline void SPI_CONFIGURE_PINS(uint8_t reset_pin, uint8_t dc_pin) {
+static inline void SPI_CONFIGURE_PINS(uint32_t reset_pin, uint32_t dc_pin) {
 	SPI_DC_PIN = dc_pin;
 	if (reset_pin != SPI_PORT_PIN_NONE)
 		funPinMode(reset_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
@@ -159,8 +159,8 @@ static inline void SPI_INIT(void) {
 	R16_PIN_ALTERNATE &= (uint16_t)~RB_PIN_SPI0;
 
 	/* SPI0 pins: PA13=SCK, PA14=MOSI, PA15=MISO. */
-	funPinMode(PA14, GPIO_CFGLR_OUT_2Mhz_PP); /* PA14 MOSI */
 	funPinMode(PA13, GPIO_CFGLR_OUT_2Mhz_PP); /* PA13 SCK */
+	funPinMode(PA14, GPIO_CFGLR_OUT_2Mhz_PP); /* PA14 MOSI */
 	funPinMode(PA15, GPIO_CFGLR_IN_PUPD); /* PA15 MISO */
 	R8_SPI0_CTRL_MOD = RB_SPI_ALL_CLEAR;
 	R8_SPI0_CTRL_CFG = RB_SPI_AUTO_IF;
@@ -169,7 +169,7 @@ static inline void SPI_INIT(void) {
 	SPI_START();
 }
 
-static inline void SPI_CONFIGURE_PINS(uint8_t reset_pin, uint8_t dc_pin) {
+static inline void SPI_CONFIGURE_PINS(uint32_t reset_pin, uint32_t dc_pin) {
 	SPI_DC_PIN = dc_pin;
 	if (reset_pin != SPI_PORT_PIN_NONE)
 		funPinMode(reset_pin, GPIO_CFGLR_OUT_2Mhz_PP);
@@ -191,13 +191,15 @@ static inline uint8_t SPI_READ_8(void) { return R8_SPI0_BUFFER; }
 static inline uint16_t SPI_READ_16(void) { return R8_SPI0_BUFFER; }
 
 static inline void SPI_WRITE_8(uint8_t data) {
+	R8_SPI0_CTRL_MOD &= (uint8_t)~RB_SPI_FIFO_DIR;
 	R8_SPI0_BUFFER = data;
-	SPI_WAIT_RX_AVAILABLE();
+	SPI_WAIT_NOT_BUSY();
 	(void)SPI_READ_8();
 }
 static inline uint8_t SPI_TRANSFER_8(uint8_t data) {
+	R8_SPI0_CTRL_MOD &= (uint8_t)~RB_SPI_FIFO_DIR;
 	R8_SPI0_BUFFER = data;
-	SPI_WAIT_RX_AVAILABLE();
+	SPI_WAIT_NOT_BUSY();
 	return SPI_READ_8();
 }
 static inline void SPI_WRITE_16(uint16_t data) {
@@ -212,7 +214,7 @@ static inline uint16_t SPI_TRANSFER_16(uint16_t data) {
 #error "spi_port.h supports CH32V003 and CH582/CH583 targets"
 #endif
 
-static inline void SPI_RESET(uint8_t reset_pin, uint16_t delay_ms) {
+static inline void SPI_RESET(uint32_t reset_pin, uint16_t delay_ms) {
 	if (reset_pin == SPI_PORT_PIN_NONE) return;
 	funDigitalWrite(reset_pin, FUN_HIGH);
 	funDigitalWrite(reset_pin, FUN_LOW);
