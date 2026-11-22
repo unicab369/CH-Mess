@@ -1,7 +1,7 @@
 #include "ch32fun.h"
 
 #define TFT_CS    PB4
-#define TFT_DC    PB23
+#define TFT_DC    PB10
 #define TFT_RESET PB22
 
 #include "../../../Mess-libs/spi/spi_port.h"

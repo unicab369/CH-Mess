@@ -15,6 +15,25 @@
 
 static FATFS filesystem;
 
+static uint8_t probe_idle_command(void) {
+	static const uint8_t command[] = { 0x40, 0, 0, 0, 0, 0x95 }; // CMD0
+	uint8_t response = 0xFF;
+
+	SPI_SET_PRESCALER(7);
+	SPI_CS_HIGH();
+	for (unsigned i = 0; i < 10; ++i) (void)SPI_TRANSFER_8(0xFF);
+	SPI_CS_LOW();
+	(void)SPI_TRANSFER_8(0xFF);
+	for (unsigned i = 0; i < sizeof(command); ++i)
+		(void)SPI_TRANSFER_8(command[i]);
+	for (unsigned i = 0; i < 10 && (response & 0x80); ++i)
+		response = SPI_TRANSFER_8(0xFF);
+	SPI_CS_HIGH();
+	(void)SPI_TRANSFER_8(0xFF);
+	SPI_SET_PRESCALER(0);
+	return response;
+}
+
 int main(void) {
 	uint8_t sector[512];
 	static const char message[] = "Hello from CH582 SD card test!\r\n";
@@ -26,13 +45,20 @@ int main(void) {
 	UINT bytes_read = 0;
 
 	SystemInit();
-	SPI_INIT();
-	SPI_SET_FRAME_SIZE(SPI_FRAME_8BIT);
 	funPinMode(SD_CARD_CS_PIN, GPIO_CFGLR_OUT_2Mhz_PP);
 	SPI_CS_HIGH();
+	SPI_INIT();
+	SPI_SET_FRAME_SIZE(SPI_FRAME_8BIT);
 	Delay_Ms(10);
+	uint8_t cs_high = (uint8_t)funDigitalRead(SD_CARD_CS_PIN);
+	SPI_CS_LOW();
+	uint8_t cs_low = (uint8_t)funDigitalRead(SD_CARD_CS_PIN);
+	SPI_CS_HIGH();
+	printf("CS pin readback: %u -> %u\n", cs_high, cs_low);
 
 	printf("Initializing SD card...\n");
+	uint8_t cmd0_response = probe_idle_command();
+	printf("CMD0 response: 0x%02X\n", cmd0_response);
 	status = disk_initialize();
 	if (status & STA_NOINIT) {
 		printf("SD card initialization failed (status 0x%02X)\n", status);
