@@ -192,22 +192,16 @@ void prefill_horLine(
     if (y >= SSD1306_H) return;
 
 	// Clamp to display bounds
-	if (x_min >= SSD1306_W) x_min = SSD1306_W_LIMIT;
-	if (x_max >= SSD1306_W) x_max = SSD1306_W_LIMIT;
-
-	if (x_min > x_max) {
-		uint8_t temp = x_min;
-		x_min = x_max;
-		x_max = temp;
-	}
+	if (x_min >= SSD1306_W) x_min = SSD1306_W - 1;
+	if (x_max >= SSD1306_W) x_max = SSD1306_W - 1;
 
 	if (thickness == 0) return;
 	if (thickness == 1) {
 		prefill_fastHorLine(y, x_min, x_max);
 		return;
 	}
-	uint16_t y_end_wide = (uint16_t)y + thickness - 1u;
-	uint8_t y_end = (y_end_wide >= SSD1306_H) ? SSD1306_H_LIMIT : (uint8_t)y_end_wide;
+	uint8_t y_end = thickness > SSD1306_H - y ? SSD1306_H - 1
+		                                    : y + thickness - 1u;
 
 	// Combine the pixels within each 8-row page, then apply that mask across x.
 	uint8_t first_page = y >> 3;
@@ -234,14 +228,13 @@ void prefill_verLine(
     if (x >= SSD1306_W) return;
 
 	// Clamp to display bounds
-	if (y_min >= SSD1306_H) y_min = SSD1306_H_LIMIT;
-	if (y_max >= SSD1306_H) y_max = SSD1306_H_LIMIT;
-
+	if (y_min >= SSD1306_H) y_min = SSD1306_H - 1;
+	if (y_max >= SSD1306_H) y_max = SSD1306_H - 1;
 
     // Handle thickness
 	if (thickness == 0) return;
-	uint16_t x_end_wide = (uint16_t)x + thickness - 1u;
-	uint8_t x_end = x_end_wide >= SSD1306_W ? SSD1306_W_LIMIT : (uint8_t)x_end_wide;
+	uint8_t x_end = thickness > SSD1306_W - x ? SSD1306_W - 1
+		                                    : x + thickness - 1u;
 	uint8_t x_len = x_end - x + 1u;
 
 	// Combine pixels within each 8-row page and write once per page.
