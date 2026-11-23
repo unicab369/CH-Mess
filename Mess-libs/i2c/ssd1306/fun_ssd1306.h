@@ -207,17 +207,19 @@ void prefill_horLine(
 		return;
 	}
 	uint16_t y_end_wide = (uint16_t)y + thickness - 1u;
-	uint8_t y_end = y_end_wide >= SSD1306_H ? SSD1306_H_LIMIT : (uint8_t)y_end_wide;
+	uint8_t y_end = (y_end_wide >= SSD1306_H) ? SSD1306_H_LIMIT : (uint8_t)y_end_wide;
 
 	// Combine the pixels within each 8-row page, then apply that mask across x.
 	uint8_t first_page = y >> 3;
 	uint8_t last_page = y_end >> 3;
+	uint8_t first_bit = y & 0x07u;
+	uint8_t last_bit = y_end & 0x07u;
 
 	for (uint8_t page = first_page; page <= last_page; ++page) {
-		uint8_t first_bit = page == first_page ? (y & 0x07u) : 0;
-		uint8_t last_bit = page == last_page ? (y_end & 0x07u) : 7;
-		uint8_t page_mask = (uint8_t)(0xFFu << first_bit)
-			                & (uint8_t)(0xFFu >> (7u - last_bit));
+		uint8_t page_first_bit = page == first_page ? first_bit : 0;
+		uint8_t page_last_bit = page == last_page ? last_bit : 7;
+		uint8_t page_mask = (uint8_t)(0xFFu << page_first_bit)
+			                & (uint8_t)(0xFFu >> (7u - page_last_bit));
 
 		for (uint8_t x_pos = x_min; x_pos <= x_max; ++x_pos)
 			frame_buffer[page][x_pos] |= page_mask;
@@ -245,12 +247,14 @@ void prefill_verLine(
 	// Combine pixels within each 8-row page and write once per page.
 	uint8_t first_page = y_min >> 3;
 	uint8_t last_page = y_max >> 3;
+	uint8_t first_bit = y_min & 0x07u;
+	uint8_t last_bit = y_max & 0x07u;
 
 	for (uint8_t page = first_page; page <= last_page; ++page) {
-		uint8_t first_bit = page == first_page ? (y_min & 0x07u) : 0;
-		uint8_t last_bit = page == last_page ? (y_max & 0x07u) : 7;
-		uint8_t page_mask = (uint8_t)(0xFFu << first_bit)
-			                & (uint8_t)(0xFFu >> (7u - last_bit));
+		uint8_t page_first_bit = page == first_page ? first_bit : 0;
+		uint8_t page_last_bit = page == last_page ? last_bit : 7;
+		uint8_t page_mask = (uint8_t)(0xFFu << page_first_bit)
+			                & (uint8_t)(0xFFu >> (7u - page_last_bit));
 		uint8_t *row_start = &frame_buffer[page][x];
 
 		for (uint8_t i = 0; i < x_len; ++i)
