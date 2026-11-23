@@ -186,7 +186,7 @@ void prefill_fastHorLine(uint8_t y, uint8_t x0, uint8_t x1) {
 
 //! compute horizontal line
 void prefill_horLine(
-	uint8_t y, uint8_t x_min, uint8_t x_max, uint8_t thickness, uint8_t mirror
+	uint8_t y, uint8_t x_min, uint8_t x_max, uint8_t thickness
 ) {
     // Validate coordinates
     if (y >= SSD1306_H) return;
@@ -195,13 +195,6 @@ void prefill_horLine(
 	if (x_min >= SSD1306_W) x_min = SSD1306_W_LIMIT;
 	if (x_max >= SSD1306_W) x_max = SSD1306_W_LIMIT;
 
-	// Handle mirroring
-	if (mirror) {
-		x_min = SSD1306_W_LIMIT - x_min;
-		x_max = SSD1306_W_LIMIT - x_max;
-	}
-
-	// Ensure x1 <= x2 (swap if needed)
 	if (x_min > x_max) {
 		uint8_t temp = x_min;
 		x_min = x_max;
@@ -233,7 +226,7 @@ void prefill_horLine(
 
 //! compute vertical line
 void prefill_verLine(
-	uint8_t x, uint8_t y_min, uint8_t y_max, uint8_t thickness, uint8_t mirror
+	uint8_t x, uint8_t y_min, uint8_t y_max, uint8_t thickness
 ) {
     // Validate coordinates
     if (x >= SSD1306_W) return;
@@ -242,18 +235,6 @@ void prefill_verLine(
 	if (y_min >= SSD1306_H) y_min = SSD1306_H_LIMIT;
 	if (y_max >= SSD1306_H) y_max = SSD1306_H_LIMIT;
 
-	// Handle mirroring
-	if (mirror) {
-		y_min = SSD1306_H_LIMIT - y_min;
-		y_max = SSD1306_H_LIMIT - y_max;
-	}
-
-	// Ensure y1 <= y2 (swap if needed)
-	if (y_min > y_max) {
-		uint8_t temp = y_min;
-		y_min = y_max;
-		y_max = temp;
-	}
 
     // Handle thickness
 	if (thickness == 0) return;
@@ -370,8 +351,8 @@ void test_lines() {
     //! hor-ver lines
 	for(int8_t i = 0; i<sizeof(myvalues); i++) {
 		// uint8_t rand_byte_low = rand() & 0xFF;
-		// prefill_horLine(y, 0, myvalues[i], 3, 0);
-		prefill_verLine(y, 0, myvalues[i], 3, 0);
+		// prefill_horLine(y, 0, myvalues[i], 3);
+		prefill_verLine(y, 0, myvalues[i], 3);
 		y += 4;
 	}
 
@@ -497,16 +478,16 @@ void prefill_rect(
     if (fill) {
 		// Filled rectangle using horizontal lines (faster for row-major displays)
 		for (uint8_t y_pos = p0.y; y_pos <= y_end; y_pos++) {
-			prefill_horLine(y_pos, p0.x, x_end, 1, 0);
+			prefill_horLine(y_pos, p0.x, x_end, 1);
 		}
     } else {
 
 
         // Outline only
-        prefill_horLine(p0.y, p0.x, x_end, 1, 0);     	// Top edge
-        prefill_horLine(y_end, p0.x, x_end, 1, 0);    	// Bottom edge
-        prefill_verLine(p0.x, p0.y + 1, y_end - 1, 1, 0); 		// Left edge
-        prefill_verLine(x_end, p0.y + 1, y_end - 1, 1, 0); 		// Right edge
+        prefill_horLine(p0.y, p0.x, x_end, 1);     	// Top edge
+        prefill_horLine(y_end, p0.x, x_end, 1);    	// Bottom edge
+        prefill_verLine(p0.x, p0.y + 1, y_end - 1, 1); 		// Left edge
+        prefill_verLine(x_end, p0.y + 1, y_end - 1, 1); 		// Right edge
     }
 }
 

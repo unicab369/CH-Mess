@@ -47,7 +47,7 @@ static uint32_t time_prefill_horLine(void) {
 	uint32_t start = funSysTick32();
 
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i)
-		prefill_horLine(line_y(i), LINE_X, LINE_X + LINE_WIDTH - 1u, 1, 0);
+		prefill_horLine(line_y(i), LINE_X, LINE_X + LINE_WIDTH - 1u, 1);
 
 	return (uint32_t)(funSysTick32() - start);
 }
@@ -66,7 +66,7 @@ static uint32_t time_prefill_horLine_2px(void) {
 
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i)
 		prefill_horLine(line_y_2px(i), LINE_X, LINE_X + LINE_WIDTH - 1u,
-			COMPARE_THICKNESS, 0);
+			COMPARE_THICKNESS);
 
 	return (uint32_t)(funSysTick32() - start);
 }

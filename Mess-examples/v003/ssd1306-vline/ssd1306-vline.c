@@ -39,7 +39,7 @@ static uint32_t time_prefill_verLine(void) {
 
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
 		uint8_t x = (uint8_t)((i * 37u) % SSD1306_W);
-		prefill_verLine(x, LINE_Y, LINE_Y + LINE_HEIGHT - 1u, 1, 0);
+		prefill_verLine(x, LINE_Y, LINE_Y + LINE_HEIGHT - 1u, 1);
 	}
 
 	return (uint32_t)(funSysTick32() - start);
