@@ -38,6 +38,6 @@ int main(void) {
 
 	ssd1306_setup();
 	ssd1306_print_str_at("CH32V003 I2C", 0, 0);
-	ssd1306_print_str_at("SSD1306 test", 1, 0);
+	ssd1306_print_str_at("SSD1306 basic", 1, 0);
 	while (1) { }
 }

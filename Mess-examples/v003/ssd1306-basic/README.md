@@ -1,4 +1,4 @@
-# CH32V003 SSD1306 I2C test
+# CH32V003 SSD1306 I2C basic example
 
 This example initializes an SSD1306 128×64 display at I2C address `0x3C`,
 then draws an alternating pattern on the first page and clears the rest. It
