@@ -35,12 +35,11 @@ uint8_t ssd1306_data(uint8_t *data, int length) {
 }
 
 static uint32_t time_prefill_verLine(void) {
-	Limit y_limit = { LINE_Y, LINE_Y + LINE_HEIGHT - 1u };
 	uint32_t start = funSysTick32();
 
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
 		uint8_t x = (uint8_t)((i * 37u) % SSD1306_W);
-		prefill_verLine(x, y_limit, 1, 0);
+		prefill_verLine(x, LINE_Y, LINE_Y + LINE_HEIGHT - 1u, 1, 0);
 	}
 
 	return (uint32_t)(funSysTick32() - start);

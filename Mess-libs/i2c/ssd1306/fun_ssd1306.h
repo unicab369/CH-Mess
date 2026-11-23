@@ -59,11 +59,6 @@ typedef struct {
 } Area;
 
 typedef struct {
-	uint8_t l0;
-	uint8_t l1;
-} Limit;
-
-typedef struct {
 	uint8_t page;
 	uint8_t bitmask;
 } M_Page_Mask;
@@ -191,65 +186,73 @@ void prefill_fastHorLine(uint8_t y, uint8_t x0, uint8_t x1) {
 
 //! compute horizontal line
 void prefill_horLine(
-	uint8_t y, Limit x_limit, uint8_t thickness, uint8_t mirror
+	uint8_t y, uint8_t x_min, uint8_t x_max, uint8_t thickness, uint8_t mirror
 ) {
     // Validate coordinates
     if (y >= SSD1306_H) return;
 
 	// Clamp to display bounds
-    if (x_limit.l0 >= SSD1306_W) x_limit.l0 = SSD1306_W_LIMIT;
-    if (x_limit.l1 >= SSD1306_W) x_limit.l1 = SSD1306_W_LIMIT;
+	if (x_min >= SSD1306_W) x_min = SSD1306_W_LIMIT;
+	if (x_max >= SSD1306_W) x_max = SSD1306_W_LIMIT;
 
 	// Handle mirroring
 	if (mirror) {
-		x_limit.l0 = SSD1306_W_LIMIT - x_limit.l0;
-		x_limit.l1 = SSD1306_W_LIMIT - x_limit.l1;
+		x_min = SSD1306_W_LIMIT - x_min;
+		x_max = SSD1306_W_LIMIT - x_max;
 	}
 
 	// Ensure x1 <= x2 (swap if needed)
-	if (x_limit.l0 > x_limit.l1) {
-		uint8_t temp = x_limit.l0;
-		x_limit.l0 = x_limit.l1;
-		x_limit.l1 = temp;
+	if (x_min > x_max) {
+		uint8_t temp = x_min;
+		x_min = x_max;
+		x_max = temp;
 	}
 
-    // Handle thickness
-    uint8_t y_end  = y + thickness - 1;
-    if (y_end >= SSD1306_H) y_end = SSD1306_H_LIMIT;
-	if (y_end < y) return;  // Skip if thickness is 0 or overflowed
+	if (thickness == 0) return;
+	if (thickness == 1) {
+		prefill_fastHorLine(y, x_min, x_max);
+		return;
+	}
+	uint16_t y_end_wide = (uint16_t)y + thickness - 1u;
+	uint8_t y_end = y_end_wide >= SSD1306_H ? SSD1306_H_LIMIT : (uint8_t)y_end_wide;
 
-    // Draw thick line
-    for (uint8_t y_pos = y; y_pos <= y_end ; y_pos++) {
-        M_Page_Mask mask = page_masks[y_pos];
+	// Combine the pixels within each 8-row page, then apply that mask across x.
+	uint8_t first_page = y >> 3;
+	uint8_t last_page = y_end >> 3;
 
-        for (uint8_t x_pos = x_limit.l0; x_pos <= x_limit.l1; x_pos++) {
-            frame_buffer[mask.page][x_pos] |= mask.bitmask;
-        }
-    }
+	for (uint8_t page = first_page; page <= last_page; ++page) {
+		uint8_t first_bit = page == first_page ? (y & 0x07u) : 0;
+		uint8_t last_bit = page == last_page ? (y_end & 0x07u) : 7;
+		uint8_t page_mask = (uint8_t)(0xFFu << first_bit)
+			                & (uint8_t)(0xFFu >> (7u - last_bit));
+
+		for (uint8_t x_pos = x_min; x_pos <= x_max; ++x_pos)
+			frame_buffer[page][x_pos] |= page_mask;
+	}
 }
 
 //! compute vertical line
 void prefill_verLine(
-	uint8_t x, Limit y_limit, uint8_t thickness, uint8_t mirror
+	uint8_t x, uint8_t y_min, uint8_t y_max, uint8_t thickness, uint8_t mirror
 ) {
     // Validate coordinates
     if (x >= SSD1306_W) return;
 
 	// Clamp to display bounds
-    if (y_limit.l0 >= SSD1306_H) y_limit.l0 = SSD1306_H_LIMIT;
-    if (y_limit.l1 >= SSD1306_H) y_limit.l1 = SSD1306_H_LIMIT;
+	if (y_min >= SSD1306_H) y_min = SSD1306_H_LIMIT;
+	if (y_max >= SSD1306_H) y_max = SSD1306_H_LIMIT;
 
 	// Handle mirroring
 	if (mirror) {
-		y_limit.l0 = SSD1306_H_LIMIT - y_limit.l0;
-		y_limit.l1 = SSD1306_H_LIMIT - y_limit.l1;
+		y_min = SSD1306_H_LIMIT - y_min;
+		y_max = SSD1306_H_LIMIT - y_max;
 	}
 
 	// Ensure y1 <= y2 (swap if needed)
-	if (y_limit.l0 > y_limit.l1) {
-		uint8_t temp = y_limit.l0;
-		y_limit.l0 = y_limit.l1;
-		y_limit.l1 = temp;
+	if (y_min > y_max) {
+		uint8_t temp = y_min;
+		y_min = y_max;
+		y_max = temp;
 	}
 
     // Handle thickness
@@ -259,12 +262,12 @@ void prefill_verLine(
 	uint8_t x_len = x_end - x + 1u;
 
 	// Combine pixels within each 8-row page and write once per page.
-	uint8_t first_page = y_limit.l0 >> 3;
-	uint8_t last_page = y_limit.l1 >> 3;
+	uint8_t first_page = y_min >> 3;
+	uint8_t last_page = y_max >> 3;
 
 	for (uint8_t page = first_page; page <= last_page; ++page) {
-		uint8_t first_bit = page == first_page ? (y_limit.l0 & 0x07u) : 0;
-		uint8_t last_bit = page == last_page ? (y_limit.l1 & 0x07u) : 7;
+		uint8_t first_bit = page == first_page ? (y_min & 0x07u) : 0;
+		uint8_t last_bit = page == last_page ? (y_max & 0x07u) : 7;
 		uint8_t page_mask = (uint8_t)(0xFFu << first_bit)
 			                & (uint8_t)(0xFFu >> (7u - last_bit));
 		uint8_t *row_start = &frame_buffer[page][x];
@@ -367,11 +370,8 @@ void test_lines() {
     //! hor-ver lines
 	for(int8_t i = 0; i<sizeof(myvalues); i++) {
 		// uint8_t rand_byte_low = rand() & 0xFF;
-		Limit limit = { l0: 0, l1: myvalues[i] };
-		// prefill_horLine(y, limit, 3, 0);
-		// prefill_horLine(y, 0, myvalues[i], 3, 1);
-		prefill_verLine(y, limit, 3, 0);
-		// prefill_verLine(y, 0, myvalues[i], 3, 1);
+		// prefill_horLine(y, 0, myvalues[i], 3, 0);
+		prefill_verLine(y, 0, myvalues[i], 3, 0);
 		y += 4;
 	}
 
@@ -493,20 +493,20 @@ void prefill_rect(
 	}
 
 	// Draw rectangle with optional fill
-	Limit hLimit = { l0: p0.x, l1: x_end };
+
     if (fill) {
 		// Filled rectangle using horizontal lines (faster for row-major displays)
 		for (uint8_t y_pos = p0.y; y_pos <= y_end; y_pos++) {
-			prefill_horLine(y_pos, hLimit, 1, 0);
+			prefill_horLine(y_pos, p0.x, x_end, 1, 0);
 		}
     } else {
-		Limit vLimit = { l0: p0.y + 1, l1: y_end - 1 };
+
 
         // Outline only
-        prefill_horLine(p0.y, hLimit, 1, 0);     	// Top edge
-        prefill_horLine(y_end, hLimit, 1, 0);    	// Bottom edge
-        prefill_verLine(p0.x, vLimit, 1, 0); 		// Left edge
-        prefill_verLine(x_end, vLimit, 1, 0); 		// Right edge
+        prefill_horLine(p0.y, p0.x, x_end, 1, 0);     	// Top edge
+        prefill_horLine(y_end, p0.x, x_end, 1, 0);    	// Bottom edge
+        prefill_verLine(p0.x, p0.y + 1, y_end - 1, 1, 0); 		// Left edge
+        prefill_verLine(x_end, p0.y + 1, y_end - 1, 1, 0); 		// Right edge
     }
 }
 
