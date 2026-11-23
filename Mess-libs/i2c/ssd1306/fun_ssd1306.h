@@ -42,7 +42,11 @@ const uint8_t SIN_LUT[] = {
 
 #define M_PI 3.14
 
+#ifdef SSD1306_SHARED_FRAME_BUFFER
+#define frame_buffer ((uint8_t (*)[SSD1306_W])ssd1306_buffer)
+#else
 uint8_t frame_buffer[SSD1306_PAGES][SSD1306_W] = { 0 };
+#endif
 
 typedef struct {
 	uint8_t x;
@@ -158,7 +162,7 @@ void ssd1306_setup() {
 	// }
 
 	//# Clear the frame buffer
-	memset(frame_buffer, 0, sizeof(frame_buffer));
+	memset(frame_buffer, 0, SSD1306_PAGES * SSD1306_W);
 	ssd1306_renderFrame();
 }
 
@@ -249,28 +253,24 @@ void prefill_verLine(
 	}
 
     // Handle thickness
-    uint8_t x_end = x + thickness - 1;
-    if (x_end >= SSD1306_W) x_end = SSD1306_W_LIMIT;
-	if (x_end < x) return;  // Skip if thickness causes overflow
+	if (thickness == 0) return;
+	uint16_t x_end_wide = (uint16_t)x + thickness - 1u;
+	uint8_t x_end = x_end_wide >= SSD1306_W ? SSD1306_W_LIMIT : (uint8_t)x_end_wide;
+	uint8_t x_len = x_end - x + 1u;
 
-    // // Draw vertical line with thickness
-    // for (uint8_t y_pos = y_limit.l0; y_pos <= y_limit.l1; y_pos++) {
-    //     M_Page_Mask mask = page_masks[y_pos];
-    //     for (uint8_t x_pos = x; x_pos <= x_end; x_pos++) {
-    //         frame_buffer[mask.page][x_pos] |= mask.bitmask;
-    //     }
-    // }
+	// Combine pixels within each 8-row page and write once per page.
+	uint8_t first_page = y_limit.l0 >> 3;
+	uint8_t last_page = y_limit.l1 >> 3;
 
-	//# Optimized: save 500-700 us
-	uint8_t x_len = x_end - x + 1;  // Precompute length
+	for (uint8_t page = first_page; page <= last_page; ++page) {
+		uint8_t first_bit = page == first_page ? (y_limit.l0 & 0x07u) : 0;
+		uint8_t last_bit = page == last_page ? (y_limit.l1 & 0x07u) : 7;
+		uint8_t page_mask = (uint8_t)(0xFFu << first_bit)
+			                & (uint8_t)(0xFFu >> (7u - last_bit));
+		uint8_t *row_start = &frame_buffer[page][x];
 
-	for (uint8_t y_pos = y_limit.l0; y_pos <= y_limit.l1; y_pos++) {
-		M_Page_Mask mask = page_masks[y_pos];
-		uint8_t* row_start = &frame_buffer[mask.page][x];  	// Get row pointer
-
-		for (uint8_t i = 0; i < x_len; i++) {
-			row_start[i] |= mask.bitmask;  					// Sequential access
-		}
+		for (uint8_t i = 0; i < x_len; ++i)
+			row_start[i] |= page_mask;
 	}
 }
 

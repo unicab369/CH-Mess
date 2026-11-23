@@ -162,8 +162,7 @@ const uint8_t ssd1306_init_array[] = {
 #endif
 
 // the display buffer
-// uint8_t ssd1306_buffer[SSD1306_W*SSD1306_H/8];
-uint8_t ssd1306_buffer[1];
+uint8_t ssd1306_buffer[SSD1306_W * SSD1306_H / 8];
 
 /* set the buffer to a color */
 void ssd1306_setbuf(uint8_t color) {
