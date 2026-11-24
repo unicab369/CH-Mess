@@ -167,22 +167,28 @@ void ssd1306_setup() {
 //! ***** Line Methods *****
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+//! Apply a vertical pixel span across a horizontal range of the frame buffer.
+static void _prefill_page_span(
+	uint8_t y_min, uint8_t y_max,
+	uint8_t x, uint8_t x_len
+) {
+	uint8_t first_page = y_min >> 3;
+	uint8_t last_page = y_max >> 3;
+	uint8_t first_bit = y_min & 0x07u;
+	uint8_t last_bit = y_max & 0x07u;
 
-//! compute_fastHorLine
-void prefill_fastHorLine(uint8_t y, uint8_t x0, uint8_t x1) {
-    if (y >= SSD1306_H) return;
+	for (uint8_t page = first_page; page <= last_page; ++page) {
+		uint8_t page_first_bit = (page == first_page) ? first_bit : 0;
+		uint8_t page_last_bit = (page == last_page) ? last_bit : 7;
+	uint8_t page_mask = (uint8_t)(0xFFu << page_first_bit)
+		                & (uint8_t)(0xFFu >> (7u - page_last_bit));
+		uint8_t *row_start = &frame_buffer[page][x];
 
-	// Clamp x-coordinates
-	if (x0 >= SSD1306_W) x0 = SSD1306_W_LIMIT;
-	if (x1 >= SSD1306_W) x1 = SSD1306_W_LIMIT;
-
-    // Look up the precomputed page and bit mask that correspond to this y coordinate.
-    M_Page_Mask mask = page_masks[y];
-    for (uint8_t x = x0; x <= x1; x++) {
-        // Reuse y's page and bit mask to turn on this vertical pixel at each x.
-        frame_buffer[mask.page][x] |= mask.bitmask;
-    }
+		for (uint8_t i = 0; i < x_len; ++i)
+			row_start[i] |= page_mask;
+	}
 }
+
 
 //! compute horizontal line
 void prefill_horLine(
@@ -191,33 +197,27 @@ void prefill_horLine(
     // Validate coordinates
     if (y >= SSD1306_H) return;
 
-	// Clamp to display bounds
+	// Clamp inclusive x bounds to the display.
 	if (x_min >= SSD1306_W) x_min = SSD1306_W - 1;
-	if (x_max >= SSD1306_W) x_max = SSD1306_W - 1;
+	uint16_t x_end = (x_max >= SSD1306_W) ? SSD1306_W : (uint16_t)x_max + 1u;
 
 	if (thickness == 0) return;
+	uint8_t x_len = x_end > x_min ? x_end - x_min : 0;
+
 	if (thickness == 1) {
-		prefill_fastHorLine(y, x_min, x_max);
+		M_Page_Mask mask = page_masks[y];
+		uint8_t *row_start = &frame_buffer[mask.page][x_min];
+
+		for (uint8_t i = 0; i < x_len; ++i)
+			row_start[i] |= mask.bitmask;
 		return;
 	}
+
 	uint8_t y_end = thickness > SSD1306_H - y ? SSD1306_H - 1
 		                                    : y + thickness - 1u;
 
 	// Combine the pixels within each 8-row page, then apply that mask across x.
-	uint8_t first_page = y >> 3;
-	uint8_t last_page = y_end >> 3;
-	uint8_t first_bit = y & 0x07u;
-	uint8_t last_bit = y_end & 0x07u;
-
-	for (uint8_t page = first_page; page <= last_page; ++page) {
-		uint8_t page_first_bit = page == first_page ? first_bit : 0;
-		uint8_t page_last_bit = page == last_page ? last_bit : 7;
-		uint8_t page_mask = (uint8_t)(0xFFu << page_first_bit)
-			                & (uint8_t)(0xFFu >> (7u - page_last_bit));
-
-		for (uint8_t x_pos = x_min; x_pos <= x_max; ++x_pos)
-			frame_buffer[page][x_pos] |= page_mask;
-	}
+	_prefill_page_span(y, y_end, x_min, x_len);
 }
 
 //! compute vertical line
@@ -233,26 +233,11 @@ void prefill_verLine(
 
     // Handle thickness
 	if (thickness == 0) return;
-	uint8_t x_end = thickness > SSD1306_W - x ? SSD1306_W - 1
-		                                    : x + thickness - 1u;
-	uint8_t x_len = x_end - x + 1u;
+	uint8_t remaining_width = SSD1306_W - x;
+	uint8_t x_len = thickness > remaining_width ? remaining_width : thickness;
 
 	// Combine pixels within each 8-row page and write once per page.
-	uint8_t first_page = y_min >> 3;
-	uint8_t last_page = y_max >> 3;
-	uint8_t first_bit = y_min & 0x07u;
-	uint8_t last_bit = y_max & 0x07u;
-
-	for (uint8_t page = first_page; page <= last_page; ++page) {
-		uint8_t page_first_bit = page == first_page ? first_bit : 0;
-		uint8_t page_last_bit = page == last_page ? last_bit : 7;
-		uint8_t page_mask = (uint8_t)(0xFFu << page_first_bit)
-			                & (uint8_t)(0xFFu >> (7u - page_last_bit));
-		uint8_t *row_start = &frame_buffer[page][x];
-
-		for (uint8_t i = 0; i < x_len; ++i)
-			row_start[i] |= page_mask;
-	}
+	_prefill_page_span(y_min, y_max, x, x_len);
 }
 
 //! compute line (Bresenham's algorithm)
@@ -446,7 +431,7 @@ void prefill_solid_poly(M_Point *pts, uint8_t num_pts) {
         for (uint8_t i = 0; i+1 < x_count; i += 2) {
             uint8_t x1 = x_list[i] < SSD1306_W ? x_list[i] : SSD1306_W-1;
             uint8_t x2 = x_list[i+1] < SSD1306_W ? x_list[i+1] : SSD1306_W-1;
-            if (x1 < x2) prefill_fastHorLine(y, x1, x2);
+            if (x1 < x2) prefill_horLine(y, x1, x2, 1);
         }
     }
 }
@@ -614,8 +599,8 @@ void prefill_circle(
 
 		if (fill) {
             // Draw filled horizontal lines (top and bottom halves)
-            prefill_fastHorLine(y_top, x_start, x_end);     // Top half
-            prefill_fastHorLine(y_bottom, x_start, x_end);  // Bottom half
+            prefill_horLine(y_top, x_start, x_end, 1);     // Top half
+            prefill_horLine(y_bottom, x_start, x_end, 1);  // Bottom half
 		} else {
 			uint8_t xy_start 	= p0.x + y;
 			uint8_t xy_end   	= p0.x - y;
