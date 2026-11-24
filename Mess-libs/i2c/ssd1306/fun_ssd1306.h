@@ -202,7 +202,6 @@ static void _render_page_span(
 }
 
 
-//! compute horizontal line
 void render_horLine(
 	uint8_t y, uint8_t x_min, uint8_t x_max, uint8_t thickness
 ) {
@@ -232,7 +231,6 @@ void render_horLine(
 	_render_page_span(y, y_end, x_min, x_len);
 }
 
-//! compute vertical line
 void render_verLine(
 	uint8_t x, uint8_t y_min, uint8_t y_max, uint8_t thickness
 ) {
@@ -257,7 +255,7 @@ void render_verLine(
 // | render_line() | 426 bytes |
 // | ssd1306_drawLine() | 300 bytes |
 
-//! compute line (Bresenham's algorithm)
+//! (Bresenham's algorithm)
 void render_line(M_Point p0, M_Point p1, uint8_t thickness) {
     // Bresenham's line algorithm
     int16_t dx = abs(p1.x - p0.x);
@@ -308,7 +306,6 @@ void render_line(M_Point p0, M_Point p1, uint8_t thickness) {
 	}
 }
 
-//! compute lines
 void render_lines(M_Point *pts, uint8_t num_pts, uint8_t thickness) {
     // Early exit if not enough points (need at least 2 points for a line)
     if (num_pts < 2) return;
@@ -323,7 +320,6 @@ void render_lines(M_Point *pts, uint8_t num_pts, uint8_t thickness) {
 //! ***** Polygon Methods *****
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-//! compute poligon
 void render_poly(M_Point *pts, uint8_t num_pts, uint8_t thickness) {
     if (num_pts < 3) return;  // Need at least 3 points for a polygon
     render_lines(pts, num_pts, thickness);
@@ -403,18 +399,14 @@ void render_solid_poly(M_Point *pts, uint8_t num_pts) {
     }
 }
 
-//! compute rectangle
 void render_rect(
 	M_Point p0, Area area, uint8_t fill, uint8_t mirror
 ) {
 	// Validate coordinates
 	if (p0.x >= SSD1306_W || p0.y >= SSD1306_H) return;
 
-	// Clamp to display bounds
 	uint16_t x_end = p0.x + area.w;
 	uint16_t y_end = p0.y + area.h;
-	if (x_end >= SSD1306_W) area.w = SSD1306_W_LIMIT - p0.x;
-	if (y_end >= SSD1306_H) area.h = SSD1306_H_LIMIT - p0.y;
 
 	// Handle mirroring
 	if (mirror) {
@@ -430,8 +422,6 @@ void render_rect(
 			render_horLine(y_pos, p0.x, x_end, 1);
 		}
     } else {
-
-
         // Outline only
         render_horLine(p0.y, p0.x, x_end, 1);     	// Top edge
         render_horLine(y_end, p0.x, x_end, 1);    	// Bottom edge
