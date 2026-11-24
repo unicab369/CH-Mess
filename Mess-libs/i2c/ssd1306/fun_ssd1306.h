@@ -167,6 +167,18 @@ void ssd1306_setup() {
 //! ***** Line Methods *****
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+// | Drawing code | Size |
+// |---|---:|
+// | ssd1306_drawPixel | 62 bytes |
+// | ssd1306_drawFastVLine | 80 bytes |
+// | ssd1306_drawFastHLine | 84 bytes |
+// | Drawing total | 226 bytes |
+// | _prefill_page_span | 134 bytes |
+// | prefill_horLine | 160 bytes |
+// | prefill_verLine | 78 bytes |
+// | Prefill total | 372 bytes |
+
+
 //! Apply a vertical pixel span across a horizontal range of the frame buffer.
 static void _prefill_page_span(
 	uint8_t y_min, uint8_t y_max,
@@ -242,12 +254,6 @@ void prefill_verLine(
 
 //! compute line (Bresenham's algorithm)
 void prefill_line(M_Point p0, M_Point p1, uint8_t thickness) {
-    // Clamp coordinates to display bounds
-    p0.x = (p0.x < SSD1306_W) ? p0.x : SSD1306_W_LIMIT;
-    p0.y = (p0.y < SSD1306_H) ? p0.y : SSD1306_H_LIMIT;
-    p1.x = (p1.x < SSD1306_W) ? p1.x : SSD1306_W_LIMIT;
-    p1.y = (p1.y < SSD1306_H) ? p1.y : SSD1306_H_LIMIT;
-
     // Bresenham's line algorithm
     int16_t dx = abs(p1.x - p0.x);
     int16_t dy = -abs(p1.y - p0.y);
