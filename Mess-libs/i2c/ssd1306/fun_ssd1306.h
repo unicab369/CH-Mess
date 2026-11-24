@@ -138,7 +138,7 @@ void ssd1306_displayFrame() {
 }
 
 //! compute pixel
-void prefill_pixel(uint8_t x, uint8_t y) {
+void render_pixel(uint8_t x, uint8_t y) {
     if (x >= SSD1306_W || y >= SSD1306_H) return; // Skip if out of bounds
     // Look up the precomputed page and bit mask that correspond to this y coordinate.
     M_Page_Mask mask = page_masks[y];
@@ -173,14 +173,14 @@ void ssd1306_setup() {
 // | ssd1306_drawFastVLine | 80 bytes |
 // | ssd1306_drawFastHLine | 84 bytes |
 // | Drawing total | 226 bytes |
-// | _prefill_page_span | 134 bytes |
-// | prefill_horLine | 160 bytes |
-// | prefill_verLine | 78 bytes |
+// | _render_page_span | 134 bytes |
+// | render_horLine | 160 bytes |
+// | render_verLine | 78 bytes |
 // | Prefill total | 372 bytes |
 
 
 //! Apply a vertical pixel span across a horizontal range of the frame buffer.
-static void _prefill_page_span(
+static void _render_page_span(
 	uint8_t y_min, uint8_t y_max,
 	uint8_t x, uint8_t x_len
 ) {
@@ -203,7 +203,7 @@ static void _prefill_page_span(
 
 
 //! compute horizontal line
-void prefill_horLine(
+void render_horLine(
 	uint8_t y, uint8_t x_min, uint8_t x_max, uint8_t thickness
 ) {
     // Validate coordinates
@@ -229,11 +229,11 @@ void prefill_horLine(
 		                                    : y + thickness - 1u;
 
 	// Combine the pixels within each 8-row page, then apply that mask across x.
-	_prefill_page_span(y, y_end, x_min, x_len);
+	_render_page_span(y, y_end, x_min, x_len);
 }
 
 //! compute vertical line
-void prefill_verLine(
+void render_verLine(
 	uint8_t x, uint8_t y_min, uint8_t y_max, uint8_t thickness
 ) {
     // Validate coordinates
@@ -249,16 +249,16 @@ void prefill_verLine(
 	uint8_t x_len = thickness > remaining_width ? remaining_width : thickness;
 
 	// Combine pixels within each 8-row page and write once per page.
-	_prefill_page_span(y_min, y_max, x, x_len);
+	_render_page_span(y_min, y_max, x, x_len);
 }
 
 
 // |---|---:|---:|---:|
-// | prefill_line() | 426 bytes |
+// | render_line() | 426 bytes |
 // | ssd1306_drawLine() | 300 bytes |
 
 //! compute line (Bresenham's algorithm)
-void prefill_line(M_Point p0, M_Point p1, uint8_t thickness) {
+void render_line(M_Point p0, M_Point p1, uint8_t thickness) {
     // Bresenham's line algorithm
     int16_t dx = abs(p1.x - p0.x);
     int16_t dy = -abs(p1.y - p0.y);
@@ -309,13 +309,13 @@ void prefill_line(M_Point p0, M_Point p1, uint8_t thickness) {
 }
 
 //! compute lines
-void prefill_lines(M_Point *pts, uint8_t num_pts, uint8_t thickness) {
+void render_lines(M_Point *pts, uint8_t num_pts, uint8_t thickness) {
     // Early exit if not enough points (need at least 2 points for a line)
     if (num_pts < 2) return;
 
     // Draw connected lines between all points
     for (uint8_t i = 0; i < num_pts - 1; i++) {
-        prefill_line(pts[i], pts[i+1], thickness);
+        render_line(pts[i], pts[i+1], thickness);
     }
 }
 
@@ -324,14 +324,14 @@ void prefill_lines(M_Point *pts, uint8_t num_pts, uint8_t thickness) {
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 //! compute poligon
-void prefill_poly(M_Point *pts, uint8_t num_pts, uint8_t thickness) {
+void render_poly(M_Point *pts, uint8_t num_pts, uint8_t thickness) {
     if (num_pts < 3) return;  // Need at least 3 points for a polygon
-    prefill_lines(pts, num_pts, thickness);
-    prefill_line(pts[num_pts-1], pts[0], thickness);
+    render_lines(pts, num_pts, thickness);
+    render_line(pts[num_pts-1], pts[0], thickness);
 }
 
 //! optimized: compute filled polygon
-void prefill_solid_poly(M_Point *pts, uint8_t num_pts) {
+void render_solid_poly(M_Point *pts, uint8_t num_pts) {
     // ===== [1] EDGE EXTRACTION =====
     struct Edge {
         uint8_t y_start, y_end;
@@ -398,13 +398,13 @@ void prefill_solid_poly(M_Point *pts, uint8_t num_pts) {
         for (uint8_t i = 0; i+1 < x_count; i += 2) {
             uint8_t x1 = x_list[i] < SSD1306_W ? x_list[i] : SSD1306_W-1;
             uint8_t x2 = x_list[i+1] < SSD1306_W ? x_list[i+1] : SSD1306_W-1;
-            if (x1 < x2) prefill_horLine(y, x1, x2, 1);
+            if (x1 < x2) render_horLine(y, x1, x2, 1);
         }
     }
 }
 
 //! compute rectangle
-void prefill_rect(
+void render_rect(
 	M_Point p0, Area area, uint8_t fill, uint8_t mirror
 ) {
 	// Validate coordinates
@@ -427,16 +427,16 @@ void prefill_rect(
     if (fill) {
 		// Filled rectangle using horizontal lines (faster for row-major displays)
 		for (uint8_t y_pos = p0.y; y_pos <= y_end; y_pos++) {
-			prefill_horLine(y_pos, p0.x, x_end, 1);
+			render_horLine(y_pos, p0.x, x_end, 1);
 		}
     } else {
 
 
         // Outline only
-        prefill_horLine(p0.y, p0.x, x_end, 1);     	// Top edge
-        prefill_horLine(y_end, p0.x, x_end, 1);    	// Bottom edge
-        prefill_verLine(p0.x, p0.y + 1, y_end - 1, 1); 		// Left edge
-        prefill_verLine(x_end, p0.y + 1, y_end - 1, 1); 		// Right edge
+        render_horLine(p0.y, p0.x, x_end, 1);     	// Top edge
+        render_horLine(y_end, p0.x, x_end, 1);    	// Bottom edge
+        render_verLine(p0.x, p0.y + 1, y_end - 1, 1); 		// Left edge
+        render_verLine(x_end, p0.y + 1, y_end - 1, 1); 		// Right edge
     }
 }
 
@@ -447,7 +447,7 @@ void test_polys() {
     //! rectangles
     for (int8_t i = 0; i<4; i++) {
 		uint8_t should_fill = i > 1 ? 1 : 0;
-		prefill_rect((M_Point){ 84, y }, (Area) { 15, 5 }, should_fill, 0);
+		render_rect((M_Point){ 84, y }, (Area) { 15, 5 }, should_fill, 0);
 		y += 7;
 	}
 
@@ -461,7 +461,7 @@ void test_polys() {
     };
 
     uint8_t pt_count = sizeof(zigzag)/sizeof(M_Point);
-    prefill_solid_poly(zigzag, pt_count);
+    render_solid_poly(zigzag, pt_count);
 
     M_Point zigzag2[4];
     memcpy(zigzag2, zigzag, sizeof(zigzag));  // Fast copy
@@ -469,7 +469,7 @@ void test_polys() {
     for (int i = 0; i < sizeof(zigzag)/sizeof(M_Point); i++) {
         zigzag2[i].y += 24;  // Add 20 to each x-coordinate
     }
-    prefill_poly(zigzag2, pt_count, 1);
+    render_poly(zigzag2, pt_count, 1);
 
 
     // Concave polygon: Star (22px tall)
@@ -504,17 +504,17 @@ void test_polys() {
 
     //! star
     pt_count = sizeof(star)/sizeof(M_Point);
-    prefill_solid_poly(star, pt_count);
+    render_solid_poly(star, pt_count);
 
     // Shift star right by 25px
     for (int i = 0; i < sizeof(star)/sizeof(M_Point); i++) {
         star[i].x += 25;  // Add 20 to each x-coordinate
     }
-    prefill_poly(star, pt_count, 1);
+    render_poly(star, pt_count, 1);
 
     //! quad
     pt_count = sizeof(quad)/sizeof(M_Point);
-    prefill_solid_poly(quad, pt_count);
+    render_solid_poly(quad, pt_count);
 
     // Shift quad right by 25px
     M_Point quad2[4];
@@ -523,11 +523,11 @@ void test_polys() {
     for (int i = 0; i < sizeof(quad)/sizeof(M_Point); i++) {
         quad2[i].x += 25;  // Add 20 to each x-coordinate
     }
-    prefill_poly(quad2, pt_count, 1);
+    render_poly(quad2, pt_count, 1);
 
     //! hourglass
     pt_count = sizeof(hourglass)/sizeof(M_Point);
-    prefill_solid_poly(hourglass, pt_count);
+    render_solid_poly(hourglass, pt_count);
 
     // Shift hourglass right by 25px
     M_Point hourglass2[4];
@@ -536,7 +536,7 @@ void test_polys() {
     for (int i = 0; i < sizeof(hourglass)/sizeof(M_Point); i++) {
         hourglass2[i].x += 25;  // Add 20 to each x-coordinate
     }
-    prefill_poly(hourglass2, pt_count, 1);
+    render_poly(hourglass2, pt_count, 1);
 }
 
 
@@ -546,7 +546,7 @@ void test_polys() {
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 //! compute circle (Bresenham's algorithm)
-void prefill_circle(
+void render_circle(
 	M_Point p0, uint8_t radius, uint8_t fill
 ) {
 	// Validate center coordinates
@@ -566,8 +566,8 @@ void prefill_circle(
 
 		if (fill) {
             // Draw filled horizontal lines (top and bottom halves)
-            prefill_horLine(y_top, x_start, x_end, 1);     // Top half
-            prefill_horLine(y_bottom, x_start, x_end, 1);  // Bottom half
+            render_horLine(y_top, x_start, x_end, 1);     // Top half
+            render_horLine(y_bottom, x_start, x_end, 1);  // Bottom half
 		} else {
 			uint8_t xy_start 	= p0.x + y;
 			uint8_t xy_end   	= p0.x - y;
@@ -575,14 +575,14 @@ void prefill_circle(
 			uint8_t yx_end   	= p0.y - x;
 
 			// Draw all 8 symmetric points (using precomputed page_masks)
-			prefill_pixel(x_end		, y_bottom); 	// Octant 1
-			prefill_pixel(x_start	, y_bottom); 	// Octant 2
-			prefill_pixel(x_start	, y_top); 		// Octant 3
-			prefill_pixel(x_end		, y_top); 		// Octant 4
-			prefill_pixel(xy_end	, yx_start); 	// Octant 5
-			prefill_pixel(xy_start	, yx_start); 	// Octant 6
-			prefill_pixel(xy_start	, yx_end); 		// Octant 7
-			prefill_pixel(xy_end	, yx_end); 		// Octant 8
+			render_pixel(x_end		, y_bottom); 	// Octant 1
+			render_pixel(x_start	, y_bottom); 	// Octant 2
+			render_pixel(x_start	, y_top); 		// Octant 3
+			render_pixel(x_end		, y_top); 		// Octant 4
+			render_pixel(xy_end	, yx_start); 	// Octant 5
+			render_pixel(xy_start	, yx_start); 	// Octant 6
+			render_pixel(xy_start	, yx_end); 		// Octant 7
+			render_pixel(xy_end	, yx_end); 		// Octant 8
 		}
 
         // Update Bresenham error
@@ -624,13 +624,13 @@ static void get_circle_point(
 }
 
 //! compute pie
-void prefill_pie(M_Point center, uint8_t radius, int16_t start_angle, int16_t end_angle) {    
+void render_pie(M_Point center, uint8_t radius, int16_t start_angle, int16_t end_angle) {    
     // Draw center point
-    prefill_pixel(center.x, center.y);
+    render_pixel(center.x, center.y);
 
     // Special case: full circle
     if (start_angle == end_angle) {
-        prefill_circle(center, radius, 1); // Fill entire circle
+        render_circle(center, radius, 1); // Fill entire circle
         return;
     }
 
@@ -648,7 +648,7 @@ void prefill_pie(M_Point center, uint8_t radius, int16_t start_angle, int16_t en
         // Draw line from center to edge
 		M_Point p0 = { x: center.x, y: center.y };
 		M_Point p1 = { x: x, y: y };
-		prefill_line(p0, p1, 1);
+		render_line(p0, p1, 1);
 
         // Break conditions
         if (angle == end_angle) break;
@@ -663,7 +663,7 @@ void prefill_pie(M_Point center, uint8_t radius, int16_t start_angle, int16_t en
 
 
 //! compute ring (Bresenham's algorithm)
-void prefill_ring(
+void render_ring(
 	M_Point p0, uint8_t radius, uint8_t thickness,
 	int16_t start_angle, int16_t end_angle
 ) {
@@ -726,10 +726,10 @@ void test_circles() {
 
     for (int8_t i = 0; i<4; i++) {
 		uint8_t should_fill = i > 1 ? 1 : 0;
-		prefill_circle((M_Point){ 110, y }, 5, should_fill);
+		render_circle((M_Point){ 110, y }, 5, should_fill);
 
         if (i > 1) {
-            prefill_ring((M_Point){ 90, y + 12 }, 7, 2, 0, 180);
+            render_ring((M_Point){ 90, y + 12 }, 7, 2, 0, 180);
         }
 
 		// compute_pie(point, 20, 0, 100);

@@ -43,11 +43,11 @@ static uint8_t line_y_2px(uint32_t i) {
 	return (uint8_t)(1u + (i % (SSD1306_H - COMPARE_THICKNESS - 1u)));
 }
 
-static uint32_t time_prefill_horLine(void) {
+static uint32_t time_render_horLine(void) {
 	uint32_t start = funSysTick32();
 
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i)
-		prefill_horLine(line_y(i), LINE_X, LINE_X + LINE_WIDTH - 1u, 1);
+		render_horLine(line_y(i), LINE_X, LINE_X + LINE_WIDTH - 1u, 1);
 
 	return (uint32_t)(funSysTick32() - start);
 }
@@ -61,11 +61,11 @@ static uint32_t time_drawFastHLine(void) {
 	return (uint32_t)(funSysTick32() - start);
 }
 
-static uint32_t time_prefill_horLine_2px(void) {
+static uint32_t time_render_horLine_2px(void) {
 	uint32_t start = funSysTick32();
 
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i)
-		prefill_horLine(line_y_2px(i), LINE_X, LINE_X + LINE_WIDTH - 1u,
+		render_horLine(line_y_2px(i), LINE_X, LINE_X + LINE_WIDTH - 1u,
 			COMPARE_THICKNESS);
 
 	return (uint32_t)(funSysTick32() - start);
@@ -93,13 +93,13 @@ int main(void) {
 
 	ssd1306_setup();
 
-	uint32_t prefill_ticks = 0;
+	uint32_t render_ticks = 0;
 	uint32_t draw_ticks = 0;
-	uint32_t prefill_2px_ticks = 0;
+	uint32_t render_2px_ticks = 0;
 	uint32_t draw_2px_ticks = 0;
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
-		prefill_ticks += time_prefill_horLine();
+		render_ticks += time_render_horLine();
 	}
 
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
@@ -109,7 +109,7 @@ int main(void) {
 
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
-		prefill_2px_ticks += time_prefill_horLine_2px();
+		render_2px_ticks += time_render_horLine_2px();
 	}
 
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
@@ -120,12 +120,12 @@ int main(void) {
 	printf("SSD1306 horizontal-line benchmark\n");
 	printf("%u runs/round, %u rounds, %u pixels/line\n",
 		(unsigned)BENCH_RUNS, (unsigned)BENCH_ROUNDS, (unsigned)LINE_WIDTH);
-	printf("1px prefill_horLine:              %lu ticks/line\n",
-		(unsigned long)(prefill_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
+	printf("1px render_horLine:              %lu ticks/line\n",
+		(unsigned long)(render_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 	printf("one drawFastHLine call:          %lu ticks/line\n",
 		(unsigned long)(draw_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
-	printf("2px prefill_horLine:             %lu ticks/2px line\n",
-		(unsigned long)(prefill_2px_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
+	printf("2px render_horLine:             %lu ticks/2px line\n",
+		(unsigned long)(render_2px_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 	printf("2px two drawFastHLine calls:     %lu ticks/2px line\n",
 		(unsigned long)(draw_2px_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 

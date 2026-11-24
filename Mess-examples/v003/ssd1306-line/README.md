@@ -1,6 +1,6 @@
 # CH32V003 SSD1306 line benchmark
 
-This example compares `prefill_line()` and `ssd1306_drawLine()` using the same
+This example compares `render_line()` and `ssd1306_drawLine()` using the same
 six 1-pixel line segments. It runs 1,000 sets of lines per round for five
 rounds per function, measures each function in a separate phase, and prints
 average SysTick ticks per line to the serial/debug output.

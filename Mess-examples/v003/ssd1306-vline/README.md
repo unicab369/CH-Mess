@@ -1,7 +1,7 @@
 # CH32V003 SSD1306 vertical-line benchmark
 
 This example compares the time to draw the same 56-pixel vertical line using
-`prefill_verLine()` and `ssd1306_drawFastVLine()`. It runs 1,000 lines per
+`render_verLine()` and `ssd1306_drawFastVLine()`. It runs 1,000 lines per
 round for five rounds per function, measuring each function in a separate
 phase, and prints the average SysTick ticks per call over the serial/debug
 output.

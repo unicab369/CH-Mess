@@ -34,12 +34,12 @@ uint8_t ssd1306_data(uint8_t *data, int length) {
 	return i2c_write_raw(&display, packet, (size_t)length + 1);
 }
 
-static uint32_t time_prefill_verLine(void) {
+static uint32_t time_render_verLine(void) {
 	uint32_t start = funSysTick32();
 
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
 		uint8_t x = (uint8_t)((i * 37u) % SSD1306_W);
-		prefill_verLine(x, LINE_Y, LINE_Y + LINE_HEIGHT - 1u, 1);
+		render_verLine(x, LINE_Y, LINE_Y + LINE_HEIGHT - 1u, 1);
 	}
 
 	return (uint32_t)(funSysTick32() - start);
@@ -66,11 +66,11 @@ int main(void) {
 
 	ssd1306_setup();
 
-	uint32_t prefill_ticks = 0;
+	uint32_t render_ticks = 0;
 	uint32_t draw_ticks = 0;
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
-		prefill_ticks += time_prefill_verLine();
+		render_ticks += time_render_verLine();
 	}
 
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
@@ -81,8 +81,8 @@ int main(void) {
 	printf("SSD1306 vertical-line benchmark\n");
 	printf("%u runs/round, %u rounds, %u pixels/line\n",
 		(unsigned)BENCH_RUNS, (unsigned)BENCH_ROUNDS, (unsigned)LINE_HEIGHT);
-	printf("prefill_verLine:       %lu SysTick ticks/call\n",
-		(unsigned long)(prefill_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
+	printf("render_verLine:       %lu SysTick ticks/call\n",
+		(unsigned long)(render_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 	printf("ssd1306_drawFastVLine: %lu SysTick ticks/call\n",
 		(unsigned long)(draw_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 

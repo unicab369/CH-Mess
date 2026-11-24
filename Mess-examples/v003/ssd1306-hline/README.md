@@ -1,8 +1,8 @@
 # CH32V003 SSD1306 horizontal-line benchmark
 
-This example compares a 1-pixel `prefill_horLine()` with one
+This example compares a 1-pixel `render_horLine()` with one
 `ssd1306_drawFastHLine()` call. It also compares a 2-pixel-thick
-`prefill_horLine()` against two `ssd1306_drawFastHLine()` calls on adjacent
+`render_horLine()` against two `ssd1306_drawFastHLine()` calls on adjacent
 rows, so both draw the same thickness. Each case runs 1,000 lines per round
 for five rounds, varies the line's y coordinate, and prints average SysTick
 ticks per line to the serial/debug output.

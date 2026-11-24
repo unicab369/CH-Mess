@@ -44,13 +44,13 @@ static uint8_t rect_y(uint32_t i) {
 	return (uint8_t)(2u + ((i * 7u) % (SSD1306_H - RECT_HEIGHT - 4u)));
 }
 
-static uint32_t time_prefill_rect(void) {
+static uint32_t time_render_rect(void) {
 	Area area = { RECT_AREA_WIDTH, RECT_AREA_HEIGHT };
 	uint32_t start = funSysTick32();
 
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
 		M_Point p0 = { rect_x(i), rect_y(i) };
-		prefill_rect(p0, area, 0, 0);
+		render_rect(p0, area, 0, 0);
 	}
 
 	return (uint32_t)(funSysTick32() - start);
@@ -75,11 +75,11 @@ int main(void) {
 
 	ssd1306_setup();
 
-	uint32_t prefill_ticks = 0;
+	uint32_t render_ticks = 0;
 	uint32_t draw_ticks = 0;
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
-		prefill_ticks += time_prefill_rect();
+		render_ticks += time_render_rect();
 	}
 
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
@@ -91,8 +91,8 @@ int main(void) {
 	printf("%u runs/round, %u rounds, %ux%u outline\n",
 		(unsigned)BENCH_RUNS, (unsigned)BENCH_ROUNDS,
 		(unsigned)RECT_WIDTH, (unsigned)RECT_HEIGHT);
-	printf("prefill_rect:       %lu SysTick ticks/rectangle\n",
-		(unsigned long)(prefill_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
+	printf("render_rect:       %lu SysTick ticks/rectangle\n",
+		(unsigned long)(render_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 	printf("ssd1306_drawRect:   %lu SysTick ticks/rectangle\n",
 		(unsigned long)(draw_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 

@@ -44,14 +44,14 @@ static const M_Point line_points[] = {
 
 #define LINE_COUNT (sizeof(line_points) / (2u * sizeof(line_points[0])))
 
-static uint32_t time_prefill_line(void) {
+static uint32_t time_render_line(void) {
 	uint32_t start = funSysTick32();
 
 	for (uint32_t run = 0; run < BENCH_RUNS; ++run) {
 		for (uint8_t line = 0; line < LINE_COUNT; ++line) {
 			M_Point p0 = line_points[line * 2u];
 			M_Point p1 = line_points[line * 2u + 1u];
-			prefill_line(p0, p1, 1);
+			render_line(p0, p1, 1);
 		}
 	}
 
@@ -82,11 +82,11 @@ int main(void) {
 
 	ssd1306_setup();
 
-	uint32_t prefill_ticks = 0;
+	uint32_t render_ticks = 0;
 	uint32_t draw_ticks = 0;
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
-		prefill_ticks += time_prefill_line();
+		render_ticks += time_render_line();
 	}
 
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
@@ -97,8 +97,8 @@ int main(void) {
 	printf("SSD1306 line benchmark\n");
 	printf("%u lines/set, %u sets/round, %u rounds\n",
 		(unsigned)LINE_COUNT, (unsigned)BENCH_RUNS, (unsigned)BENCH_ROUNDS);
-	printf("prefill_line:       %lu SysTick ticks/line\n",
-		(unsigned long)(prefill_ticks / (LINE_COUNT * BENCH_RUNS * BENCH_ROUNDS)));
+	printf("render_line:       %lu SysTick ticks/line\n",
+		(unsigned long)(render_ticks / (LINE_COUNT * BENCH_RUNS * BENCH_ROUNDS)));
 	printf("ssd1306_drawLine:   %lu SysTick ticks/line\n",
 		(unsigned long)(draw_ticks / (LINE_COUNT * BENCH_RUNS * BENCH_ROUNDS)));
 
