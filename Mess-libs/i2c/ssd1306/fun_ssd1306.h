@@ -187,8 +187,8 @@ static void _render_page_span(
 	for (uint8_t page = first_page; page <= last_page; ++page) {
 		uint8_t page_first_bit = (page == first_page) ? first_bit : 0;
 		uint8_t page_last_bit = (page == last_page) ? last_bit : 7;
-	uint8_t page_mask = (uint8_t)(0xFFu << page_first_bit)
-		                & (uint8_t)(0xFFu >> (7u - page_last_bit));
+	    uint8_t page_mask = (uint8_t)(0xFFu << page_first_bit)
+		                    & (uint8_t)(0xFFu >> (7u - page_last_bit));
 		uint8_t *row_start = &frame_buffer[page][x];
 
 		for (uint8_t i = 0; i < x_len; ++i)
@@ -528,8 +528,13 @@ void test_polys() {
 void render_circle(
 	M_Point p0, uint8_t radius, uint8_t fill
 ) {
-	// Validate center coordinates
-	if (p0.x >= SSD1306_W || p0.y >= SSD1306_H) return;
+	if (fill) {
+		if (p0.x >= SSD1306_W || p0.y >= SSD1306_H) return;
+	} else {
+		if (p0.x < radius || p0.y < radius
+			|| (uint16_t)p0.x + radius >= SSD1306_W
+			|| (uint16_t)p0.y + radius >= SSD1306_H) return;
+	}
 
     int16_t x = -radius;
     int16_t y = 0;
@@ -548,20 +553,13 @@ void render_circle(
             render_horLine(y_top, x_start, x_end, 1);     // Top half
             render_horLine(y_bottom, x_start, x_end, 1);  // Bottom half
 		} else {
-			uint8_t xy_start 	= p0.x + y;
-			uint8_t xy_end   	= p0.x - y;
-			uint8_t yx_start 	= p0.y + x;
-			uint8_t yx_end   	= p0.y - x;
-
-			// Draw all 8 symmetric points (using precomputed page_masks)
-			render_pixel(x_end		, y_bottom); 	// Octant 1
-			render_pixel(x_start	, y_bottom); 	// Octant 2
-			render_pixel(x_start	, y_top); 		// Octant 3
-			render_pixel(x_end		, y_top); 		// Octant 4
-			render_pixel(xy_end	, yx_start); 	// Octant 5
-			render_pixel(xy_start	, yx_start); 	// Octant 6
-			render_pixel(xy_start	, yx_end); 		// Octant 7
-			render_pixel(xy_end	, yx_end); 		// Octant 8
+			// Plot the two endpoints of each horizontal span.
+			M_Page_Mask top = page_masks[y_top];
+			M_Page_Mask bottom = page_masks[y_bottom];
+			frame_buffer[top.page][x_start] |= top.bitmask;
+			frame_buffer[top.page][x_end] |= top.bitmask;
+			frame_buffer[bottom.page][x_start] |= bottom.bitmask;
+			frame_buffer[bottom.page][x_end] |= bottom.bitmask;
 		}
 
         // Update Bresenham error
@@ -578,7 +576,7 @@ void render_circle(
 
 // Helper function to get circle point using SIN_LUT
 static void get_circle_point(
-	M_Point center, uint8_t radius, int16_t angle, 
+	M_Point center, uint8_t radius, int16_t angle,
 	int16_t *x, int16_t *y
 ) {
     uint8_t quadrant = angle / 90;

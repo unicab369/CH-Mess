@@ -128,9 +128,12 @@ int main(void) {
 	printf("filled ssd1306_fillCircle:  %lu SysTick ticks/circle\n",
 		(unsigned long)(fill_circle_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
-	// Display one circle centered on the screen.
+	// Show the outline methods above the filled methods.
 	memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
-	render_circle((M_Point){ SSD1306_W / 2, SSD1306_H / 2 }, CIRCLE_RADIUS, 0);
+	render_circle((M_Point){ 32, 16 }, CIRCLE_RADIUS, 0);
+	ssd1306_drawCircle(96, 16, CIRCLE_RADIUS, 1);
+	render_circle((M_Point){ 32, 48 }, CIRCLE_RADIUS, 1);
+	ssd1306_fillCircle(96, 48, CIRCLE_RADIUS, 1);
 	ssd1306_displayFrame();
 
 	while (1) { }

@@ -6,7 +6,8 @@ This example compares outline circles using `render_circle()` and
 centers. It runs 500 circles per round for five rounds per function and prints
 average SysTick ticks per circle to the serial/debug output.
 
-All methods use the same frame buffer. After timing, the example displays one
-`render_circle()` outline centered on the screen. The OLED uses I2C address
-`0x3C` and the library's default pins: PC2 for SCL and PC1 for SDA. Build and
-flash from this directory with `make flash`.
+All methods use the same frame buffer. After timing, the display shows two
+outlines on the top row and two filled circles on the bottom row. The left
+column uses `render_circle()`; the right uses the `ssd1306_` methods. The OLED
+uses I2C address `0x3C` and the library's default pins: PC2 for SCL and PC1
+for SDA. Build and flash from this directory with `make flash`.
