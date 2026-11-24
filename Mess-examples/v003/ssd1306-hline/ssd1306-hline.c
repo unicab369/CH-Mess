@@ -130,7 +130,7 @@ int main(void) {
 		(unsigned long)(draw_2px_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
 	// Send the benchmark's final buffer contents to the OLED.
-	ssd1306_renderFrame();
+	ssd1306_displayFrame();
 
 	while (1) { }
 }

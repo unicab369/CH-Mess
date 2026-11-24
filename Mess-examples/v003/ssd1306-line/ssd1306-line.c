@@ -103,7 +103,7 @@ int main(void) {
 		(unsigned long)(draw_ticks / (LINE_COUNT * BENCH_RUNS * BENCH_ROUNDS)));
 
 	// Send the final benchmark frame to the OLED.
-	ssd1306_renderFrame();
+	ssd1306_displayFrame();
 
 	while (1) { }
 }

@@ -97,7 +97,7 @@ int main(void) {
 		(unsigned long)(draw_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
 	// Display the rectangles left in the shared frame buffer.
-	ssd1306_renderFrame();
+	ssd1306_displayFrame();
 
 	while (1) { }
 }

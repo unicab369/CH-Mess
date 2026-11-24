@@ -115,8 +115,8 @@ void ssd1306_print_str_at(
 	}
 }
 
-//! render area
-void ssd1306_renderArea(
+//! display area
+void ssd1306_displayArea(
 	uint8_t start_page, uint8_t end_page,
 	uint8_t col_start, uint8_t col_end
 ) {
@@ -132,9 +132,9 @@ void ssd1306_renderArea(
     }
 }
 
-//! render the entire screen
-void ssd1306_renderFrame() {
-	ssd1306_renderArea(0, 7, 0, SSD1306_W);
+//! display the entire screen
+void ssd1306_displayFrame() {
+	ssd1306_displayArea(0, 7, 0, SSD1306_W);
 }
 
 //! compute pixel
@@ -158,7 +158,7 @@ void ssd1306_setup() {
 
 	//# Clear the frame buffer
 	memset(frame_buffer, 0, SSD1306_PAGES * SSD1306_W);
-	ssd1306_renderFrame();
+	ssd1306_displayFrame();
 }
 
 
@@ -252,6 +252,11 @@ void prefill_verLine(
 	_prefill_page_span(y_min, y_max, x, x_len);
 }
 
+
+// |---|---:|---:|---:|
+// | prefill_line() | 426 bytes |
+// | ssd1306_drawLine() | 300 bytes |
+
 //! compute line (Bresenham's algorithm)
 void prefill_line(M_Point p0, M_Point p1, uint8_t thickness) {
     // Bresenham's line algorithm
@@ -270,42 +275,28 @@ void prefill_line(M_Point p0, M_Point p1, uint8_t thickness) {
 		// Draw the pixel(s)
 		if (thickness == 1) {
 			// Fast path for single-pixel
-			if (p0.x < SSD1306_W && p0.y < SSD1306_H) {
-                M_Page_Mask mask = page_masks[p0.y];
-                frame_buffer[mask.page][p0.x] |= mask.bitmask;
-			}
+            M_Page_Mask mask = page_masks[p0.y];
+            frame_buffer[mask.page][p0.x] |= mask.bitmask;
 		} else {
-			uint8_t x_end = p0.x + radius;
-			uint8_t y_end = p0.y + radius;
-
 			// Calculate bounds (branchless min/max)
 			uint8_t x_start = p0.x > radius ? p0.x - radius : 0;
 			uint8_t y_start = p0.y > radius ? p0.y - radius : 0;
+			uint16_t x_stop = (uint16_t)p0.x + radius + 1u;
+			uint16_t y_stop = (uint16_t)p0.y + radius + 1u;
 
-			if (x_end > SSD1306_W_LIMIT) x_end = SSD1306_W_LIMIT;
-			if (y_end > SSD1306_H_LIMIT) y_end = SSD1306_H_LIMIT;
-			uint8_t width = x_end - x_start + 1;
+			if (x_stop > SSD1306_W) x_stop = SSD1306_W;
+			if (y_stop > SSD1306_H) y_stop = SSD1306_H;
+			uint8_t width = x_stop - x_start;
+			uint8_t *row_start = fb_base + x_start;
 
 			// Optimized row filling
-			for (uint8_t y = y_start; y <= y_end; y++) {
+			for (uint8_t y = y_start; y < y_stop; y++) {
 				// Look up the precomputed page and bit mask that correspond to this y coordinate.
 				M_Page_Mask mask = page_masks[y];
-				uint8_t *row = fb_base + (mask.page * SSD1306_W) + x_start;
+				uint8_t *row = row_start + (mask.page * SSD1306_W);
 
-				// Optimized filling based on width
-				if (width <= 4) {
-					// Fully unrolled for common cases
-					if (width > 0) row[0] |= mask.bitmask;
-					if (width > 1) row[1] |= mask.bitmask;
-					if (width > 2) row[2] |= mask.bitmask;
-					if (width > 3) row[3] |= mask.bitmask;
-				} else {
-					// For larger widths, use memset-style optimization
-					uint8_t pattern = mask.bitmask;
-					for (uint8_t i = 0; i < width; i++) {
-						row[i] |= pattern;
-					}
-				}
+				for (uint8_t i = 0; i < width; ++i)
+					row[i] |= mask.bitmask;
 			}
 		}
 
@@ -327,36 +318,6 @@ void prefill_lines(M_Point *pts, uint8_t num_pts, uint8_t thickness) {
         prefill_line(pts[i], pts[i+1], thickness);
     }
 }
-
-// #include "lib_rand.h"
-
-uint8_t myvalues[16] = { 30, 50, 60, 40, 20, 50, 30, 10, 35, 10, 20, 30, 40, 50, 60, 20 };
-
-void test_lines() {
-	// seed(0x12345678);
-	int y = 0;
-
-    //! hor-ver lines
-	for(int8_t i = 0; i<sizeof(myvalues); i++) {
-		// uint8_t rand_byte_low = rand() & 0xFF;
-		// prefill_horLine(y, 0, myvalues[i], 3);
-		prefill_verLine(y, 0, myvalues[i], 3);
-		y += 4;
-	}
-
-    //! line
-    for(uint8_t x=0;x<SSD1306_W;x+=16) {
-		M_Point point_a0 = { x: x, y: 0 };
-		M_Point point_a1 = { x: SSD1306_W, y: y };
-		M_Point point_b0 = { x: SSD1306_W-x, y: SSD1306_H };
-		M_Point point_b1 = { x: 0, y: SSD1306_H-y };
-		prefill_line(point_a0, point_a1, 1);
-		prefill_line(point_b0, point_b1, 1);
-		y+= SSD1306_H/8;
-	}
-}
-
-
 
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 //! ***** Polygon Methods *****
@@ -786,8 +747,6 @@ void test_circles() {
 void ssd1306_draw_test() {
 	test_polys();
 	test_circles();
-	test_lines();
-
 	// ssd1306_vertical_line(&line, 2, 0);
 
 	// line.pos = 20;
@@ -802,7 +761,7 @@ void ssd1306_draw_test() {
 	// ssd1306_print_str_at("testing 77774fdafadfafa", 6, 0);
 	// ssd1306_print_str_at("testing 88884fdafadfafa", 7, 0);
 
-	ssd1306_renderFrame();
+	ssd1306_displayFrame();
 }
 
 int ssd1306_test2() {
