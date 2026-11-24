@@ -54,11 +54,6 @@ typedef struct {
 } M_Point;
 
 typedef struct {
-	uint8_t w;
-	uint8_t h;
-} Area;
-
-typedef struct {
 	uint8_t page;
 	uint8_t bitmask;
 } M_Page_Mask;
@@ -400,19 +395,13 @@ void render_solid_poly(M_Point *pts, uint8_t num_pts) {
 }
 
 void render_rect(
-	M_Point p0, Area area, uint8_t fill, uint8_t mirror
+	M_Point p0, uint8_t width, uint8_t height, uint8_t fill
 ) {
 	// Validate coordinates
 	if (p0.x >= SSD1306_W || p0.y >= SSD1306_H) return;
 
-	uint16_t x_end = p0.x + area.w;
-	uint16_t y_end = p0.y + area.h;
-
-	// Handle mirroring
-	if (mirror) {
-		p0.x = SSD1306_W_LIMIT - p0.x;
-		area.w = SSD1306_W_LIMIT - area.w;
-	}
+	uint16_t x_end = p0.x + width;
+	uint16_t y_end = p0.y + height;
 
 	// Draw rectangle with optional fill
 
@@ -437,7 +426,7 @@ void test_polys() {
     //! rectangles
     for (int8_t i = 0; i<4; i++) {
 		uint8_t should_fill = i > 1 ? 1 : 0;
-		render_rect((M_Point){ 84, y }, (Area) { 15, 5 }, should_fill, 0);
+		render_rect((M_Point){ 84, y }, 15, 5, should_fill);
 		y += 7;
 	}
 
