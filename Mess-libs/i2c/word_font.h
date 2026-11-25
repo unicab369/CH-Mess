@@ -2673,6 +2673,13 @@ typedef struct {
 	unsigned char spacing;
 } font_t;
 
+typedef enum {
+	TEXT_ORIENTATION_0 = 0,
+	TEXT_ORIENTATION_90 = 1,
+	TEXT_ORIENTATION_180 = 2,
+	TEXT_ORIENTATION_270 = 3,
+} orientation_t;
+
 const static font_t font_8x8 = {
 	.width = 8,
 	.height = 8,

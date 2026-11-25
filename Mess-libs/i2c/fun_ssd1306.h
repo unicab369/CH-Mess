@@ -297,19 +297,12 @@ void ssd1306_render_str_line(const char *str, uint8_t page, uint8_t column) {
 
 // SSD1306 8x8 build flash: ssd1306_drawstr 2816 bytes.
 // SSD1306 8x8 build flash: ssd1306_render_str 2812 bytes.
-typedef enum {
-	SSD1306_TEXT_ORIENTATION_0 = 0,
-	SSD1306_TEXT_ORIENTATION_90 = 1,
-	SSD1306_TEXT_ORIENTATION_180 = 2,
-	SSD1306_TEXT_ORIENTATION_270 = 3,
-} orientation_t;
-
 //! Draw text using one of the four clockwise orientations.
 void ssd1306_render_str(
 	const char *str, uint8_t x, uint8_t y,
 	const font_t *font, uint8_t spacing, orientation_t orientation
 ) {
-	if (!str || !font || orientation > SSD1306_TEXT_ORIENTATION_270) return;
+	if (!str || !font || orientation > TEXT_ORIENTATION_270) return;
 	uint8_t glyph_stride = font->row_major ? font->height : font->width;
 	uint32_t text_width = 0;
 	for (const char *c = str; *c; ++c)
@@ -330,15 +323,15 @@ void ssd1306_render_str(
 
 				uint32_t px, py;
 				switch (orientation) {
-					case SSD1306_TEXT_ORIENTATION_90:
+					case TEXT_ORIENTATION_90:
 						px = (uint16_t)x + font->height - 1u - row;
 						py = (uint16_t)y + cursor + column;
 						break;
-					case SSD1306_TEXT_ORIENTATION_180:
+					case TEXT_ORIENTATION_180:
 						px = (uint16_t)x + cursor + font->width - 1u - column;
 						py = (uint16_t)y + font->height - 1u - row;
 						break;
-					case SSD1306_TEXT_ORIENTATION_270:
+					case TEXT_ORIENTATION_270:
 						px = (uint16_t)x + row;
 						py = (uint16_t)y + text_width - 1u - cursor - column;
 						break;

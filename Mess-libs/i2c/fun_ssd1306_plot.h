@@ -11,6 +11,7 @@ typedef struct {
 	uint8_t y_max;
 	uint8_t x_tick_interval;
 	uint8_t y_tick_interval;
+	uint8_t swap_axes;
 } T_SSD1306_Plot;
 
 // Draw the same clipped 3x3 marker using the filled rectangle renderer.
@@ -37,12 +38,18 @@ static inline uint8_t ssd1306_plot_to_screen(
 	if (!plot || !screen_point || plot->x_max <= plot->origin.x
 		|| plot->y_max <= plot->origin.y
 		|| plot->x_max >= SSD1306_W || plot->y_max >= SSD1306_H
-		|| value.x > plot->x_max - plot->origin.x
-		|| value.y > plot->y_max - plot->origin.y
+		|| (plot->swap_axes
+			? (value.y > plot->x_max - plot->origin.x || value.x > plot->y_max - plot->origin.y)
+			: (value.x > plot->x_max - plot->origin.x || value.y > plot->y_max - plot->origin.y))
 	) return 0;
 
-	screen_point->x = plot->origin.x + value.x;
-	screen_point->y = plot->y_max - value.y;
+	if (plot->swap_axes) {
+		screen_point->x = plot->origin.x + value.y;
+		screen_point->y = plot->y_max - value.x;
+	} else {
+		screen_point->x = plot->origin.x + value.x;
+		screen_point->y = plot->y_max - value.y;
+	}
 	return 1;
 }
 
@@ -87,16 +94,31 @@ static inline void ssd1306_render_graph_bars(
 ) {
 	if (!plot || !points || !bar_width) return;
 
-	for (uint8_t i = 0; i < length; ++i) {
-		T_Point screen_point;
-		if (!ssd1306_plot_to_screen(plot, points[i], &screen_point))
-			continue;
+	if (plot->swap_axes) {
+		for (uint8_t i = 0; i < length; ++i) {
+			T_Point screen_point;
+			if (!ssd1306_plot_to_screen(plot, points[i], &screen_point))
+				continue;
 
-		uint16_t width = bar_width;
-		uint16_t plot_width = (uint16_t)plot->x_max - screen_point.x + 1u;
-		if (width > plot_width) width = plot_width;
-		uint8_t height = plot->y_max - screen_point.y + 1u;
-		ssd1306_render_rect(screen_point, (uint8_t)(width - 1u), (uint8_t)(height - 1u), 1);
+			uint16_t width = screen_point.x - plot->origin.x + 1u;
+			uint16_t height = bar_width;
+			uint16_t plot_height = (uint16_t)plot->y_max - screen_point.y + 1u;
+			if (height > plot_height) height = plot_height;
+			T_Point bar_origin = { plot->origin.x, screen_point.y };
+			ssd1306_render_rect(bar_origin, (uint8_t)(width - 1u), (uint8_t)(height - 1u), 1);
+		}
+	} else {
+		for (uint8_t i = 0; i < length; ++i) {
+			T_Point screen_point;
+			if (!ssd1306_plot_to_screen(plot, points[i], &screen_point))
+				continue;
+
+			uint16_t width = bar_width;
+			uint16_t plot_width = (uint16_t)plot->x_max - screen_point.x + 1u;
+			if (width > plot_width) width = plot_width;
+			uint8_t height = plot->y_max - screen_point.y + 1u;
+			ssd1306_render_rect(screen_point, (uint8_t)(width - 1u), (uint8_t)(height - 1u), 1);
+		}
 	}
 }
 
@@ -123,25 +145,27 @@ static inline void ssd1306_render_graph_fill(
 // Render plot axes and tick marks. x_max and y_max are inclusive endpoint coordinates.
 static inline uint8_t ssd1306_render_plot_layout(T_SSD1306_Plot *plot) {
 	if (!plot || plot->x_max <= plot->origin.x || plot->y_max <= plot->origin.y) return 0;
+	const char *h_label = plot->swap_axes ? plot->y_label : plot->x_label;
+	const char *v_label = plot->swap_axes ? plot->x_label : plot->y_label;
 
 	uint8_t right = plot->x_max;
 	uint8_t bottom = plot->y_max;
 
-	if (plot->x_label) {
+	if (h_label) {
 		uint16_t label_width = 0;
-		for (const char *c = plot->x_label; *c; ++c)
+		for (const char *c = h_label; *c; ++c)
 			label_width += font_7x5.width + 1u;
 		if (label_width) label_width--;
 
 		uint16_t label_x = right + 1u > label_width ? right + 1u - label_width : 0;
 		uint8_t label_y = bottom > font_7x5.height ? bottom - font_7x5.height - 1u : 0;
-		ssd1306_render_str(plot->x_label, (uint8_t)label_x, label_y, &font_7x5, 1,
-							SSD1306_TEXT_ORIENTATION_0);
+		ssd1306_render_str(h_label, (uint8_t)label_x, label_y, &font_7x5, 1,
+							TEXT_ORIENTATION_0);
 	}
 
-	if (plot->y_label) {
+	if (v_label) {
 		uint16_t label_height = 0;
-		for (const char *c = plot->y_label; *c; ++c)
+		for (const char *c = v_label; *c; ++c)
 			label_height += font_7x5.width + 1u;
 		if (label_height) label_height--;
 		uint16_t label_x = (uint16_t)plot->origin.x + 2u;
@@ -149,21 +173,23 @@ static inline uint8_t ssd1306_render_plot_layout(T_SSD1306_Plot *plot) {
 
 		if (label_height && label_x + font_7x5.height <= SSD1306_W
 			&& label_y + label_height <= SSD1306_H) {
-			ssd1306_render_str(plot->y_label, (uint8_t)label_x, (uint8_t)label_y,
-								&font_7x5, 1, SSD1306_TEXT_ORIENTATION_90);
+			ssd1306_render_str(v_label, (uint8_t)label_x, (uint8_t)label_y,
+								&font_7x5, 1, TEXT_ORIENTATION_90);
 		}
 	}
 	ssd1306_render_horLine(bottom, plot->origin.x, right, 1);
 	ssd1306_render_verLine(plot->origin.x, plot->origin.y, bottom, 1);
 
-	if (plot->x_tick_interval)
-		for (uint16_t x = (uint16_t)plot->origin.x + plot->x_tick_interval;
-			x < right; x += plot->x_tick_interval) {
+	uint8_t h_tick = plot->swap_axes ? plot->y_tick_interval : plot->x_tick_interval;
+	uint8_t v_tick = plot->swap_axes ? plot->x_tick_interval : plot->y_tick_interval;
+	if (h_tick)
+		for (uint16_t x = (uint16_t)plot->origin.x + h_tick;
+			x < right; x += h_tick) {
 			ssd1306_render_point((T_Point){ (uint8_t)x, (uint8_t)(bottom + 1u) });
 			ssd1306_render_point((T_Point){ (uint8_t)x, (uint8_t)(bottom + 2u) });
 		}
-	if (plot->y_tick_interval) {
-		for (uint16_t y = plot->origin.y; y <= bottom; y += plot->y_tick_interval) {
+	if (v_tick) {
+		for (uint16_t y = plot->origin.y; y <= bottom; y += v_tick) {
 			ssd1306_render_point((T_Point){ (uint8_t)(plot->origin.x - 1u), (uint8_t)y });
 			ssd1306_render_point((T_Point){ (uint8_t)(plot->origin.x - 2u), (uint8_t)y });
 		}
