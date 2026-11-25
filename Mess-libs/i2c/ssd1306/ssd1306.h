@@ -336,66 +336,6 @@ void ssd1306_drawImage(uint32_t x, uint32_t y, const unsigned char* input, uint3
 	}
 }
 
-/* abs() helper function for line drawing */
-int gfx_abs(int x) {
-	return (x<0) ? -x : x;
-}
-
-/* swap() helper function for line drawing */
-void gfx_swap(int *z0, int *z1) {
-	uint16_t temp = *z0;
-	*z0 = *z1;
-	*z1 = temp;
-}
-
-/* Bresenham line draw routine swiped from Wikipedia */
-void ssd1306_drawLine(int x0, int y0, int x1, int y1, uint32_t color) {
-	int32_t steep;
-	int32_t deltax, deltay, error, ystep, x, y;
-
-	/* flip sense 45deg to keep error calc in range */
-	steep = (gfx_abs(y1 - y0) > gfx_abs(x1 - x0));
-
-	if(steep) {
-		gfx_swap(&x0, &y0);
-		gfx_swap(&x1, &y1);
-	}
-
-	/* run low->high */
-	if(x0 > x1) {
-		gfx_swap(&x0, &x1);
-		gfx_swap(&y0, &y1);
-	}
-
-	/* set up loop initial conditions */
-	deltax = x1 - x0;
-	deltay = gfx_abs(y1 - y0);
-	error = deltax/2;
-	y = y0;
-	if(y0 < y1)
-		ystep = 1;
-	else
-		ystep = -1;
-
-	/* loop x */
-	for(x=x0;x<=x1;x++) {
-		/* plot point */
-		if(steep)
-			ssd1306_drawPixel(y, x, color);		/* flip point & plot */
-		else
-			ssd1306_drawPixel(x, y, color);		/* just plot */
-
-		/* update error */
-		error = error - deltay;
-
-		/* update y */
-		if(error < 0) {
-			y = y + ystep;
-			error = error + deltax;
-		}
-	}
-}
-
 /* invert a rectangle in the buffer */
 void ssd1306_xorrect(uint8_t x, uint8_t y, uint8_t w, uint8_t h) {
 	uint8_t m, n=y, iw = w;

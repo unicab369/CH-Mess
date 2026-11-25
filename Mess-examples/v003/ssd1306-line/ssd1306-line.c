@@ -6,8 +6,9 @@
 #include "ch32fun.h"
 #include "../../../Mess-libs/i2c/lib/lib_i2c.h"
 
-#define BENCH_RUNS 1000u
+#define BENCH_RUNS 100
 #define BENCH_ROUNDS 5u
+#define THICK_LINE_WIDTH 3u
 #define SSD1306_SHARED_FRAME_BUFFER
 
 i2c_device_t display = {
@@ -58,14 +59,14 @@ static uint32_t time_render_line(void) {
 	return (uint32_t)(funSysTick32() - start);
 }
 
-static uint32_t time_ssd1306_drawLine(void) {
+static uint32_t time_render_thick_line(void) {
 	uint32_t start = funSysTick32();
 
 	for (uint32_t run = 0; run < BENCH_RUNS; ++run) {
 		for (uint8_t line = 0; line < LINE_COUNT; ++line) {
 			M_Point p0 = line_points[line * 2u];
 			M_Point p1 = line_points[line * 2u + 1u];
-			ssd1306_drawLine(p0.x, p0.y, p1.x, p1.y, 1);
+			render_line(p0, p1, THICK_LINE_WIDTH);
 		}
 	}
 
@@ -83,7 +84,7 @@ int main(void) {
 	ssd1306_setup();
 
 	uint32_t render_ticks = 0;
-	uint32_t draw_ticks = 0;
+	uint32_t render_thick_ticks = 0;
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
 		render_ticks += time_render_line();
@@ -91,7 +92,7 @@ int main(void) {
 
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
-		draw_ticks += time_ssd1306_drawLine();
+		render_thick_ticks += time_render_thick_line();
 	}
 
 	printf("SSD1306 line benchmark\n");
@@ -99,10 +100,18 @@ int main(void) {
 		(unsigned)LINE_COUNT, (unsigned)BENCH_RUNS, (unsigned)BENCH_ROUNDS);
 	printf("render_line:       %lu SysTick ticks/line\n",
 		(unsigned long)(render_ticks / (LINE_COUNT * BENCH_RUNS * BENCH_ROUNDS)));
-	printf("ssd1306_drawLine:   %lu SysTick ticks/line\n",
-		(unsigned long)(draw_ticks / (LINE_COUNT * BENCH_RUNS * BENCH_ROUNDS)));
+	printf("render_line width %u: %lu SysTick ticks/line\n",
+		(unsigned)THICK_LINE_WIDTH,
+		(unsigned long)(render_thick_ticks / (LINE_COUNT * BENCH_RUNS * BENCH_ROUNDS)));
 
-	// Send the final benchmark frame to the OLED.
+	// Show a thin line set and a separate thick render_line sample.
+	memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
+	for (uint8_t line = 0; line < LINE_COUNT; ++line) {
+		M_Point p0 = line_points[line * 2u];
+		M_Point p1 = line_points[line * 2u + 1u];
+		render_line(p0, p1, 1);
+	}
+	render_line((M_Point){ 8, 42 }, (M_Point){ 120, 58 }, THICK_LINE_WIDTH);
 	ssd1306_displayFrame();
 
 	while (1) { }

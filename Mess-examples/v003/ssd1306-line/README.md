@@ -1,9 +1,8 @@
 # CH32V003 SSD1306 line benchmark
 
-This example compares `render_line()` and `ssd1306_drawLine()` using the same
-six 1-pixel line segments. It runs 1,000 sets of lines per round for five
-rounds per function, measures each function in a separate phase, and prints
-average SysTick ticks per line to the serial/debug output.
+This example benchmarks `render_line()` with six 1-pixel line segments and
+with a 3-pixel diagonal. Each case runs 100 sets per round for five rounds and
+prints average SysTick ticks per line to the serial/debug output.
 
 Both functions draw into the same frame buffer. After timing, the example
 sends the frame to the SSD1306 display. The module uses I2C address `0x3C` and

@@ -242,7 +242,7 @@ void render_verLine(
 
 
 // |---|---:|---:|---:|
-// | render_line() | 426 bytes |
+// | render_line() | 410 bytes |
 // | ssd1306_drawLine() | 300 bytes |
 
 //! (Bresenham's algorithm)
@@ -619,8 +619,6 @@ int ssd1306_test2() {
 				// uint8_t y= 0;
 				// for(uint8_t x=0;x<SSD1306_W;x+=16)
 				// {
-				// 	ssd1306_drawLine(x, 0, SSD1306_W, y, 1);
-				// 	ssd1306_drawLine(SSD1306_W-x, SSD1306_H, 0, SSD1306_H-y, 1);
 				// 	y+= SSD1306_H/8;
 				// }
 		//       }
