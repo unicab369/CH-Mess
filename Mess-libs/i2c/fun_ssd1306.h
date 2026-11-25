@@ -439,6 +439,18 @@ void ssd1306_setup() {
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 }
 
+void ssd1306_render_pixel(T_Point point) {
+	uint8_t *pixel = &frame_buffer[point.y >> 3][point.x];
+	uint8_t mask = (uint8_t)(1u << (point.y & 7u));
+	if (_render_invert) *pixel ^= mask;
+	else *pixel |= mask;
+}
+
+void ssd1306_render_point(T_Point point) {
+	if (point.x >= SSD1306_W || point.y >= SSD1306_H) return;
+	ssd1306_render_pixel(point);
+}
+
 
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 //! ***** Line Methods *****
