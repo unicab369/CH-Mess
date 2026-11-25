@@ -198,12 +198,11 @@ void render_horLine(
 ) {
     // Validate coordinates
     if (y >= SSD1306_H) return;
+	if (thickness == 0) return;
 
 	// Clamp inclusive x bounds to the display.
 	if (x_min >= SSD1306_W) x_min = SSD1306_W - 1;
 	uint16_t x_end = (x_max >= SSD1306_W) ? SSD1306_W : (uint16_t)x_max + 1u;
-
-	if (thickness == 0) return;
 	uint8_t x_len = x_end > x_min ? x_end - x_min : 0;
 
 	if (thickness == 1) {
@@ -387,17 +386,14 @@ void render_rect(
 ) {
 	// Validate coordinates
 	if (p0.x >= SSD1306_W || p0.y >= SSD1306_H) return;
-
 	uint16_t x_end = p0.x + width;
 	uint16_t y_end = p0.y + height;
 
 	// Draw rectangle with optional fill
 
     if (fill) {
-		// Filled rectangle using horizontal lines (faster for row-major displays)
-		for (uint8_t y_pos = p0.y; y_pos <= y_end; y_pos++) {
-			render_horLine(y_pos, p0.x, x_end, 1);
-		}
+		for (uint16_t x_pos = p0.x; x_pos <= x_end; ++x_pos)
+			render_verLine(x_pos, p0.y, y_end, 1);
     } else {
         // Outline only
         render_horLine(p0.y, p0.x, x_end, 1);     	// Top edge

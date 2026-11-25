@@ -417,29 +417,6 @@ void ssd1306_drawLine(int x0, int y0, int x1, int y1, uint32_t color) {
 	}
 }
 
-/* draw a rectangle */
-void ssd1306_drawRect(int32_t x, int32_t y, uint32_t w, uint32_t h, uint32_t color) {
-	ssd1306_drawFastVLine(x, y, h, color);
-	ssd1306_drawFastVLine(x+w-1, y, h, color);
-	ssd1306_drawFastHLine(x, y, w, color);
-	ssd1306_drawFastHLine(x, y+h-1, w, color);
-}
-
-/* fill a rectangle */
-void ssd1306_fillRect(uint32_t x, uint32_t y, uint8_t w, uint32_t h, uint32_t color) {
-	uint32_t m, n=y, iw = w;
-
-	while(h--) {			/* scan vertical */
-		m=x;
-		w=iw;
-
-		while(w--) {								/* scan horizontal */
-			ssd1306_drawPixel(m++, n, color);		/* invert pixels */
-		}
-		n++;
-	}
-}
-
 /* invert a rectangle in the buffer */
 void ssd1306_xorrect(uint8_t x, uint8_t y, uint8_t w, uint8_t h) {
 	uint8_t m, n=y, iw = w;

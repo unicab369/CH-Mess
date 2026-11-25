@@ -55,15 +55,6 @@ static uint32_t time_render_rect(void) {
 	return (uint32_t)(funSysTick32() - start);
 }
 
-static uint32_t time_drawRect(void) {
-	uint32_t start = funSysTick32();
-
-	for (uint32_t i = 0; i < BENCH_RUNS; ++i)
-		ssd1306_drawRect(rect_x(i), rect_y(i), RECT_WIDTH, RECT_HEIGHT, 1);
-
-	return (uint32_t)(funSysTick32() - start);
-}
-
 static uint32_t time_render_filled_rect(void) {
 	uint32_t start = funSysTick32();
 
@@ -71,15 +62,6 @@ static uint32_t time_render_filled_rect(void) {
 		M_Point p0 = { rect_x(i), rect_y(i) };
 		render_rect(p0, RECT_AREA_WIDTH, RECT_AREA_HEIGHT, 1);
 	}
-
-	return (uint32_t)(funSysTick32() - start);
-}
-
-static uint32_t time_ssd1306_fillRect(void) {
-	uint32_t start = funSysTick32();
-
-	for (uint32_t i = 0; i < BENCH_RUNS; ++i)
-		ssd1306_fillRect(rect_x(i), rect_y(i), RECT_WIDTH, RECT_HEIGHT, 1);
 
 	return (uint32_t)(funSysTick32() - start);
 }
@@ -95,9 +77,7 @@ int main(void) {
 	ssd1306_setup();
 
 	uint32_t render_ticks = 0;
-	uint32_t draw_ticks = 0;
 	uint32_t render_filled_ticks = 0;
-	uint32_t fillRect_ticks = 0;
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
 		render_ticks += time_render_rect();
@@ -105,16 +85,7 @@ int main(void) {
 
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
-		draw_ticks += time_drawRect();
-	}
-	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
-		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
 		render_filled_ticks += time_render_filled_rect();
-	}
-
-	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
-		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
-		fillRect_ticks += time_ssd1306_fillRect();
 	}
 
 	printf("SSD1306 rectangle benchmark\n");
@@ -123,12 +94,8 @@ int main(void) {
 		(unsigned)RECT_WIDTH, (unsigned)RECT_HEIGHT);
 	printf("outline render_rect:      %lu SysTick ticks/rectangle\n",
 		(unsigned long)(render_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
-	printf("outline ssd1306_drawRect: %lu SysTick ticks/rectangle\n",
-		(unsigned long)(draw_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 	printf("filled render_rect:       %lu SysTick ticks/rectangle\n",
 		(unsigned long)(render_filled_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
-	printf("filled ssd1306_fillRect:  %lu SysTick ticks/rectangle\n",
-		(unsigned long)(fillRect_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
 	// Display the rectangles left in the shared frame buffer.
 	ssd1306_displayFrame();
