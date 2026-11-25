@@ -52,7 +52,7 @@ static uint32_t time_render_line(void) {
 		for (uint8_t line = 0; line < LINE_COUNT; ++line) {
 			T_Point p0 = line_points[line * 2u];
 			T_Point p1 = line_points[line * 2u + 1u];
-			render_line(p0, p1, 1);
+			ssd1306_render_line(p0, p1, 1);
 		}
 	}
 
@@ -66,7 +66,7 @@ static uint32_t time_render_thick_line(void) {
 		for (uint8_t line = 0; line < LINE_COUNT; ++line) {
 			T_Point p0 = line_points[line * 2u];
 			T_Point p1 = line_points[line * 2u + 1u];
-			render_line(p0, p1, THICK_LINE_WIDTH);
+			ssd1306_render_line(p0, p1, THICK_LINE_WIDTH);
 		}
 	}
 
@@ -98,20 +98,20 @@ int main(void) {
 	printf("SSD1306 line benchmark\n");
 	printf("%u lines/set, %u sets/round, %u rounds\n",
 		(unsigned)LINE_COUNT, (unsigned)BENCH_RUNS, (unsigned)BENCH_ROUNDS);
-	printf("render_line:       %lu SysTick ticks/line\n",
+	printf("ssd1306_render_line:       %lu SysTick ticks/line\n",
 		(unsigned long)(render_ticks / (LINE_COUNT * BENCH_RUNS * BENCH_ROUNDS)));
-	printf("render_line width %u: %lu SysTick ticks/line\n",
+	printf("ssd1306_render_line width %u: %lu SysTick ticks/line\n",
 		(unsigned)THICK_LINE_WIDTH,
 		(unsigned long)(render_thick_ticks / (LINE_COUNT * BENCH_RUNS * BENCH_ROUNDS)));
 
-	// Show a thin line set and a separate thick render_line sample.
+	// Show a thin line set and a separate thick ssd1306_render_line sample.
 	memset(frame_buffer, 0, sizeof(frame_buffer));
 	for (uint8_t line = 0; line < LINE_COUNT; ++line) {
 		T_Point p0 = line_points[line * 2u];
 		T_Point p1 = line_points[line * 2u + 1u];
-		render_line(p0, p1, 1);
+		ssd1306_render_line(p0, p1, 1);
 	}
-	render_line((T_Point){ 8, 42 }, (T_Point){ 120, 58 }, THICK_LINE_WIDTH);
+	ssd1306_render_line((T_Point){ 8, 42 }, (T_Point){ 120, 58 }, THICK_LINE_WIDTH);
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 
 	while (1) { }

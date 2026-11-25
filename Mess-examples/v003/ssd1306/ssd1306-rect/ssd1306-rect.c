@@ -49,7 +49,7 @@ static uint32_t time_render_rect(void) {
 
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
 		T_Point p0 = { rect_x(i), rect_y(i) };
-		render_rect(p0, RECT_AREA_WIDTH, RECT_AREA_HEIGHT, 0);
+		ssd1306_render_rect(p0, RECT_AREA_WIDTH, RECT_AREA_HEIGHT, 0);
 	}
 
 	return (uint32_t)(funSysTick32() - start);
@@ -60,7 +60,7 @@ static uint32_t time_render_filled_rect(void) {
 
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
 		T_Point p0 = { rect_x(i), rect_y(i) };
-		render_rect(p0, RECT_AREA_WIDTH, RECT_AREA_HEIGHT, 1);
+		ssd1306_render_rect(p0, RECT_AREA_WIDTH, RECT_AREA_HEIGHT, 1);
 	}
 
 	return (uint32_t)(funSysTick32() - start);
@@ -92,17 +92,17 @@ int main(void) {
 	printf("%u rectangles/round, %u rounds, %ux%u\n",
 		(unsigned)BENCH_RUNS, (unsigned)BENCH_ROUNDS,
 		(unsigned)RECT_WIDTH, (unsigned)RECT_HEIGHT);
-	printf("outline render_rect:      %lu SysTick ticks/rectangle\n",
+	printf("outline ssd1306_render_rect:      %lu SysTick ticks/rectangle\n",
 		(unsigned long)(render_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
-	printf("filled render_rect:       %lu SysTick ticks/rectangle\n",
+	printf("filled ssd1306_render_rect:       %lu SysTick ticks/rectangle\n",
 		(unsigned long)(render_filled_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
 	// Show an XOR rectangle cutting across the filled rectangle's lower-right corner.
 	memset(frame_buffer, 0, sizeof(frame_buffer));
-	render_rect((T_Point){ 38, 14 }, 48, 34, 1);
-	render_toggle_invert();
-	render_rect((T_Point){ 70, 30 }, 24, 20, 1);
-	render_toggle_invert();
+	ssd1306_render_rect((T_Point){ 38, 14 }, 48, 34, 1);
+	ssd1306_toggle_invert();
+	ssd1306_render_rect((T_Point){ 70, 30 }, 24, 20, 1);
+	ssd1306_toggle_invert();
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 
 	while (1) { }

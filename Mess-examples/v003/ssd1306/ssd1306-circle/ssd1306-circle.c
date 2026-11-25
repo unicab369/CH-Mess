@@ -45,7 +45,7 @@ static uint32_t time_render_circle(void) {
 	uint32_t start = funSysTick32();
 
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i)
-		render_circle(circle_center(i), CIRCLE_RADIUS, 0);
+		ssd1306_render_circle(circle_center(i), CIRCLE_RADIUS, 0);
 
 	return (uint32_t)(funSysTick32() - start);
 }
@@ -54,7 +54,7 @@ static uint32_t time_render_filled_circle(void) {
 	uint32_t start = funSysTick32();
 
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i)
-		render_circle(circle_center(i), CIRCLE_RADIUS, 1);
+		ssd1306_render_circle(circle_center(i), CIRCLE_RADIUS, 1);
 
 	return (uint32_t)(funSysTick32() - start);
 }
@@ -85,15 +85,15 @@ int main(void) {
 	printf("%u calls/round, %u rounds, radius %u\n",
 		(unsigned)BENCH_RUNS, (unsigned)BENCH_ROUNDS,
 		(unsigned)CIRCLE_RADIUS);
-	printf("outline render_circle:      %lu SysTick ticks/circle\n",
+	printf("outline ssd1306_render_circle:      %lu SysTick ticks/circle\n",
 		(unsigned long)(render_outline_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
-	printf("filled render_circle:       %lu SysTick ticks/circle\n",
+	printf("filled ssd1306_render_circle:       %lu SysTick ticks/circle\n",
 		(unsigned long)(render_filled_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
 	// Show an outline above a filled circle.
 	memset(frame_buffer, 0, sizeof(frame_buffer));
-	render_circle((T_Point){ 64, 16 }, CIRCLE_RADIUS, 0);
-	render_circle((T_Point){ 64, 48 }, CIRCLE_RADIUS, 1);
+	ssd1306_render_circle((T_Point){ 64, 16 }, CIRCLE_RADIUS, 0);
+	ssd1306_render_circle((T_Point){ 64, 48 }, CIRCLE_RADIUS, 1);
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 
 	while (1) { }

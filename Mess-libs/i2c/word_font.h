@@ -2676,7 +2676,7 @@ typedef struct {
 const static font_t font_8x8 = {
 	.width = 8,
 	.height = 8,
-	.data = &FONT_8x8[32 * 8], // Start at ASCII space, matching render_str's character range.
+	.data = &FONT_8x8[32 * 8], // Start at ASCII space, matching ssd1306_render_str's character range.
 	.row_major = 1,
 	.spacing = 0,
 };

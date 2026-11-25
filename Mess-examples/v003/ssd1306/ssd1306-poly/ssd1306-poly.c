@@ -36,7 +36,7 @@ static void test_polys(void) {
     //! rectangles
     for (int8_t i = 0; i<4; i++) {
 		uint8_t should_fill = i > 1 ? 1 : 0;
-		render_rect((T_Point){ 84, y }, 15, 5, should_fill);
+		ssd1306_render_rect((T_Point){ 84, y }, 15, 5, should_fill);
 		y += 7;
 	}
 
@@ -50,7 +50,7 @@ static void test_polys(void) {
     };
 
     uint8_t pt_count = sizeof(zigzag)/sizeof(T_Point);
-    render_solid_poly(zigzag, pt_count);
+    ssd1306_render_solid_poly(zigzag, pt_count);
 
     T_Point zigzag2[5];
     memcpy(zigzag2, zigzag, sizeof(zigzag));  // Fast copy
@@ -58,7 +58,7 @@ static void test_polys(void) {
     for (int i = 0; i < sizeof(zigzag)/sizeof(T_Point); i++) {
         zigzag2[i].y += 24;  // Add 20 to each x-coordinate
     }
-    render_poly(zigzag2, pt_count, 1);
+    ssd1306_render_poly(zigzag2, pt_count, 1);
 
 
     // Concave polygon: Star (22px tall)
@@ -93,17 +93,17 @@ static void test_polys(void) {
 
     //! star
     pt_count = sizeof(star)/sizeof(T_Point);
-    render_solid_poly(star, pt_count);
+    ssd1306_render_solid_poly(star, pt_count);
 
     // Shift star right by 25px
     for (int i = 0; i < sizeof(star)/sizeof(T_Point); i++) {
         star[i].x += 25;  // Add 20 to each x-coordinate
     }
-    render_poly(star, pt_count, 1);
+    ssd1306_render_poly(star, pt_count, 1);
 
     //! quad
     pt_count = sizeof(quad)/sizeof(T_Point);
-    render_solid_poly(quad, pt_count);
+    ssd1306_render_solid_poly(quad, pt_count);
 
     // Shift quad right by 25px
     T_Point quad2[4];
@@ -112,11 +112,11 @@ static void test_polys(void) {
     for (int i = 0; i < sizeof(quad)/sizeof(T_Point); i++) {
         quad2[i].x += 25;  // Add 20 to each x-coordinate
     }
-    render_poly(quad2, pt_count, 1);
+    ssd1306_render_poly(quad2, pt_count, 1);
 
     //! hourglass
     pt_count = sizeof(hourglass)/sizeof(T_Point);
-    render_solid_poly(hourglass, pt_count);
+    ssd1306_render_solid_poly(hourglass, pt_count);
 
     // Shift hourglass right by 25px
     T_Point hourglass2[4];
@@ -125,7 +125,7 @@ static void test_polys(void) {
     for (int i = 0; i < sizeof(hourglass)/sizeof(T_Point); i++) {
         hourglass2[i].x += 25;  // Add 20 to each x-coordinate
     }
-    render_poly(hourglass2, pt_count, 1);
+    ssd1306_render_poly(hourglass2, pt_count, 1);
 }
 
 

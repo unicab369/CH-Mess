@@ -272,12 +272,12 @@ static inline void ssd1306_displayPages(uint8_t start_page, uint8_t end_page) {
 
 static uint8_t _render_invert = 0;
 
-static inline void render_toggle_invert(void) {
+static inline void ssd1306_toggle_invert(void) {
 	_render_invert ^= 1u;
 }
 
 // Copy up to SSD1306_STR_SIZE five-column glyphs into one framebuffer page.
-void render_str_line(const char *str, uint8_t page, uint8_t column) {
+void ssd1306_render_str_line(const char *str, uint8_t page, uint8_t column) {
 	if (page >= SSD1306_PAGES) return;
 
 	for (uint16_t i = 0; i < SSD1306_STR_SIZE; ++i) {
@@ -295,9 +295,9 @@ void render_str_line(const char *str, uint8_t page, uint8_t column) {
 }
 
 // SSD1306 8x8 build flash: ssd1306_drawstr 2816 bytes.
-// SSD1306 8x8 build flash: render_str 2812 bytes.
+// SSD1306 8x8 build flash: ssd1306_render_str 2812 bytes.
 //! Draw text into the frame buffer at pixel coordinates using the font's stored orientation.
-void render_str(const char *str, uint8_t x, uint8_t y, const font_t *font) {
+void ssd1306_render_str(const char *str, uint8_t x, uint8_t y, const font_t *font) {
 	uint8_t glyph_stride = font->row_major ? font->height : font->width;
 
 	while (*str && x < SSD1306_W) {
@@ -351,9 +351,9 @@ void render_str(const char *str, uint8_t x, uint8_t y, const font_t *font) {
 //! Draw text with each font pixel expanded to a scale-by-scale square.
 // |---|---:|
 // | ssd1306_drawstr_sz | 2,844 bytes |
-// | render_str_scaled | 2,872 bytes |
+// | ssd1306_render_str_scaled | 2,872 bytes |
 
-void render_str_scaled(const char *str, uint8_t x, uint8_t y,
+void ssd1306_render_str_scaled(const char *str, uint8_t x, uint8_t y,
 	const font_t *font, uint8_t scale) {
 	if (!scale || y >= SSD1306_H) return;
 	uint8_t stride = font->row_major ? font->height : font->width;
@@ -402,7 +402,7 @@ void render_str_scaled(const char *str, uint8_t x, uint8_t y,
 // Blit row-major, MSB-first monochrome image data into the framebuffer.
 // |---|---:|
 
-void render_image(const uint8_t *image, uint8_t x, uint8_t y,
+void ssd1306_render_image(const uint8_t *image, uint8_t x, uint8_t y,
 	uint8_t width, uint8_t height) {
 	// Reject an empty destination, then clip the image to the screen once.
 	if (!image || x >= SSD1306_W || y >= SSD1306_H) return;
@@ -468,8 +468,8 @@ void ssd1306_setup() {
 // | ssd1306_drawFastHLine | 84 bytes |
 // | Drawing total | 226 bytes |
 // | _render_page_span | 134 bytes |
-// | render_horLine | 160 bytes |
-// | render_verLine | 78 bytes |
+// | ssd1306_render_horLine | 160 bytes |
+// | ssd1306_render_verLine | 78 bytes |
 // | Prefill total | 372 bytes |
 
 
@@ -501,7 +501,7 @@ static void _render_page_span(
 }
 
 
-void render_horLine(
+void ssd1306_render_horLine(
 	uint8_t y, uint8_t x_min, uint8_t x_max, uint8_t thickness
 ) {
     // Validate coordinates
@@ -534,7 +534,7 @@ void render_horLine(
 	_render_page_span(y, y_end, x_min, x_len);
 }
 
-void render_verLine(
+void ssd1306_render_verLine(
 	uint8_t x, uint8_t y_min, uint8_t y_max, uint8_t thickness
 ) {
     // Validate coordinates
@@ -553,7 +553,7 @@ void render_verLine(
 	_render_page_span(y_min, y_max, x, x_len);
 }
 
-void render_rect(
+void ssd1306_render_rect(
 	T_Point p0, uint8_t width, uint8_t height, uint8_t fill
 ) {
 	// Validate coordinates
@@ -565,22 +565,22 @@ void render_rect(
 
     if (fill) {
 		for (uint16_t x_pos = p0.x; x_pos <= x_end; ++x_pos)
-			render_verLine(x_pos, p0.y, y_end, 1);
+			ssd1306_render_verLine(x_pos, p0.y, y_end, 1);
     } else {
         // Outline only
-        render_horLine(p0.y, p0.x, x_end, 1);     	// Top edge
-        render_horLine(y_end, p0.x, x_end, 1);    	// Bottom edge
-        render_verLine(p0.x, p0.y + 1, y_end - 1, 1); 		// Left edge
-        render_verLine(x_end, p0.y + 1, y_end - 1, 1); 		// Right edge
+        ssd1306_render_horLine(p0.y, p0.x, x_end, 1);     	// Top edge
+        ssd1306_render_horLine(y_end, p0.x, x_end, 1);    	// Bottom edge
+        ssd1306_render_verLine(p0.x, p0.y + 1, y_end - 1, 1); 		// Left edge
+        ssd1306_render_verLine(x_end, p0.y + 1, y_end - 1, 1); 		// Right edge
     }
 }
 
 // |---|---:|---:|---:|
-// | render_line() | 410 bytes |
+// | ssd1306_render_line() | 410 bytes |
 // | ssd1306_drawLine() | 300 bytes |
 
 //! (Bresenham's algorithm)
-void render_line(T_Point p0, T_Point p1, uint8_t thickness) {
+void ssd1306_render_line(T_Point p0, T_Point p1, uint8_t thickness) {
     // Bresenham's line algorithm
     int16_t dx = abs(p1.x - p0.x);
     int16_t dy = -abs(p1.y - p0.y);
@@ -642,16 +642,16 @@ void render_line(T_Point p0, T_Point p1, uint8_t thickness) {
 //! ***** Polygon Methods *****
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-void render_poly(T_Point *pts, uint8_t num_pts, uint8_t thickness) {
+void ssd1306_render_poly(T_Point *pts, uint8_t num_pts, uint8_t thickness) {
     if (num_pts < 3) return;  // Need at least 3 points for a polygon
     for (uint8_t i = 0; i < num_pts - 1; i++) {
-        render_line(pts[i], pts[i+1], thickness);
+        ssd1306_render_line(pts[i], pts[i+1], thickness);
     }
-    render_line(pts[num_pts-1], pts[0], thickness);
+    ssd1306_render_line(pts[num_pts-1], pts[0], thickness);
 }
 
 //! optimized: compute filled polygon
-void render_solid_poly(T_Point *pts, uint8_t num_pts) {
+void ssd1306_render_solid_poly(T_Point *pts, uint8_t num_pts) {
     // ===== [1] EDGE EXTRACTION =====
     struct Edge {
         uint8_t y_start, y_end;
@@ -718,7 +718,7 @@ void render_solid_poly(T_Point *pts, uint8_t num_pts) {
         for (uint8_t i = 0; i+1 < x_count; i += 2) {
             uint8_t x1 = x_list[i] < SSD1306_W ? x_list[i] : SSD1306_W-1;
             uint8_t x2 = x_list[i+1] < SSD1306_W ? x_list[i+1] : SSD1306_W-1;
-            if (x1 < x2) render_horLine(y, x1, x2, 1);
+            if (x1 < x2) ssd1306_render_horLine(y, x1, x2, 1);
         }
     }
 }
@@ -728,11 +728,11 @@ void render_solid_poly(T_Point *pts, uint8_t num_pts) {
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 // |---|---|---:|
-// | render_circle() | render_circle + render_horLine | 438 B |
+// | ssd1306_render_circle() | ssd1306_render_circle + ssd1306_render_horLine | 438 B |
 // | SSD1306 circles | drawCircle + fillCircle + drawPixel + drawFastHLine | 430 B |
 
 //! compute circle (Bresenham's algorithm)
-void render_circle(
+void ssd1306_render_circle(
 	T_Point p0, uint8_t radius, uint8_t fill
 ) {
 	if (fill) {
@@ -757,8 +757,8 @@ void render_circle(
 
 		if (fill) {
             // Draw filled horizontal lines (top and bottom halves)
-            render_horLine(y_top, x_start, x_end, 1);     // Top half
-            render_horLine(y_bottom, x_start, x_end, 1);  // Bottom half
+            ssd1306_render_horLine(y_top, x_start, x_end, 1);     // Top half
+            ssd1306_render_horLine(y_bottom, x_start, x_end, 1);  // Bottom half
 		} else {
 			// Plot the two endpoints of each horizontal span.
 			T_Page_Mask top = page_masks[y_top];
@@ -817,7 +817,7 @@ static void get_circle_point(
 }
 
 
-void render_ring(
+void ssd1306_render_ring(
 	T_Point p0, uint8_t radius, uint8_t thickness,
 	int16_t start_angle, int16_t end_angle
 ) {
@@ -881,10 +881,10 @@ void render_ring(
 
 // | Renderer | Renderer function | Helpers | Total |
 // |---|---:|---|---:|
-// | render_pie | 636 B | get_circle_point 266 B, SIN_LUT 167 B, render_horLine 100 B | 1,169 B |
-// | render_pie_fast | 740 B | Shared helpers above, _pie_edge_init 168 B, _pie_fast_span 116 B | 1,557 B |
+// | ssd1306_render_pie | 636 B | get_circle_point 266 B, SIN_LUT 167 B, ssd1306_render_horLine 100 B | 1,169 B |
+// | ssd1306_render_pie_fast | 740 B | Shared helpers above, _pie_edge_init 168 B, _pie_fast_span 116 B | 1,557 B |
 
-void render_pie(T_Point center, uint8_t radius, int16_t start_angle, int16_t end_angle) {
+void ssd1306_render_pie(T_Point center, uint8_t radius, int16_t start_angle, int16_t end_angle) {
     // Draw center point directly in the framebuffer.
     if (center.x < SSD1306_W && center.y < SSD1306_H) {
         uint8_t page = center.y >> 3;
@@ -897,7 +897,7 @@ void render_pie(T_Point center, uint8_t radius, int16_t start_angle, int16_t end
 
     // Special case: full circle
     if (start_angle == end_angle) {
-        render_circle(center, radius, 1); // Fill entire circle
+        ssd1306_render_circle(center, radius, 1); // Fill entire circle
         return;
     }
 
@@ -919,7 +919,7 @@ void render_pie(T_Point center, uint8_t radius, int16_t start_angle, int16_t end
 		if (!skip_duplicates || !have_last || x != last_x || y != last_y) {
 			T_Point p0 = { x: center.x, y: center.y };
 			T_Point p1 = { x: x, y: y };
-			render_line(p0, p1, 1);
+			ssd1306_render_line(p0, p1, 1);
 			last_x = x;
 			last_y = y;
 			have_last = 1;
@@ -1024,7 +1024,7 @@ static inline void _pie_fast_span(uint8_t x, uint8_t lo, uint8_t hi) {
     }
 }
 
-void render_pie_fast(T_Point center, uint8_t radius, int16_t start_angle, int16_t end_angle) {
+void ssd1306_render_pie_fast(T_Point center, uint8_t radius, int16_t start_angle, int16_t end_angle) {
     if (radius == 0) return;
     if (start_angle < 0 || start_angle > 360
         || end_angle < 0 || end_angle > 360) return;
