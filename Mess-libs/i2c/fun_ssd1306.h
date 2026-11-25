@@ -930,11 +930,15 @@ void render_pie(M_Point center, uint8_t radius, int16_t start_angle, int16_t end
     }
 }
 
+// Tracks a slanted pie edge's crossing as the renderer advances column by column.
+// The remainder carries fractional movement so each column update avoids division.
 typedef struct {
-    int16_t a, numerator, denominator, step, remainder, error;
+    int16_t a, numerator, denominator;
+	int16_t step, remainder, error;
     int32_t position;
 } M_Pie_Edge;
 
+// Set up a pie edge's starting position, whole-number step, and fractional remainder.
 static M_Pie_Edge _pie_edge_init(int16_t a, int16_t numerator) {
     M_Pie_Edge edge = { .a = a, .numerator = numerator };
     if (a != 0) {
@@ -942,6 +946,7 @@ static M_Pie_Edge _pie_edge_init(int16_t a, int16_t numerator) {
         int16_t n = a > 0 ? numerator : -numerator;
         edge.step = n / edge.denominator;
         edge.remainder = n - edge.step * edge.denominator;
+
         if (edge.remainder < 0) {
             --edge.step;
             edge.remainder += edge.denominator;
@@ -951,22 +956,31 @@ static M_Pie_Edge _pie_edge_init(int16_t a, int16_t numerator) {
 }
 
 static void _pie_edge_advance(M_Pie_Edge *edge) {
+    // Move the edge one column: add its whole-number step, then use the remainder
+    // to decide whether the crossing also advances by one pixel.
     if (edge->a == 0) return;
     edge->position += edge->step;
     edge->error += edge->remainder;
+
     if (edge->error >= edge->denominator) {
         edge->error -= edge->denominator;
         ++edge->position;
     }
 }
 
-static uint8_t _pie_clip_edge(int16_t *lo, int16_t *hi,
-                             const M_Pie_Edge *edge, int16_t up, uint8_t center_x) {
-    if (edge->a == 0) return -(int32_t)edge->numerator * up >= 0;
+// Cut off the part of this circle column outside one slanted pie side.
+// Return false if the cut leaves no pixels in the pie.
+static uint8_t _pie_clip_edge(
+	int16_t *lo, int16_t *hi,
+	const M_Pie_Edge *edge, int16_t up, uint8_t center_x
+) {
+    if (edge->a == 0)
+		return -(int32_t)edge->numerator * up >= 0;
+
     // Mirror the accumulated boundary for the bottom half, preserving exact rounding.
-    int32_t floor_x = up < 0
-        ? -edge->position - (edge->error != 0) : edge->position;
+    int32_t floor_x = up < 0 ? -edge->position - (edge->error != 0) : edge->position;
     int32_t bound = center_x + floor_x;
+
     if (edge->a > 0) {
         bound += edge->error != 0; // ceil for the inclusive lower bound
         if (bound > *hi) return 0;
@@ -979,7 +993,9 @@ static uint8_t _pie_clip_edge(int16_t *lo, int16_t *hi,
 }
 
 // Clip a row to a*x + b >= 0 with inclusive integer boundaries.
-static inline void _pie7_span(uint8_t x, uint8_t lo, uint8_t hi) {
+// Write one vertical pixel span as masked page bytes in the framebuffer.
+static inline void _pie_fast_span(uint8_t x, uint8_t lo, uint8_t hi) {
+    // SSD1306 pages store 8 vertical pixels per byte; mask partial end pages.
     uint8_t first = lo >> 3, last = hi >> 3;
     uint8_t first_mask = (uint8_t)(0xFFu << (lo & 7u));
     uint8_t last_mask = (uint8_t)(0xFFu >> (7u - (hi & 7u)));
@@ -988,12 +1004,15 @@ static inline void _pie7_span(uint8_t x, uint8_t lo, uint8_t hi) {
         uint8_t mask = first_mask & last_mask;
         if (_render_invert) frame_buffer[first][x] ^= mask;
         else frame_buffer[first][x] |= mask;
+    // Edge masks preserve pixels outside the span; middle pages are fully covered.
     } else if (_render_invert) {
+        // XOR toggles covered pixels for invert mode.
         frame_buffer[first][x] ^= first_mask;
         for (uint8_t page = first + 1; page < last; ++page)
-			frame_buffer[page][x] ^= 0xFFu;
+			frame_buffer[page][x] ^= 0xFFu; // Toggle all 8 pixels in this page.
         frame_buffer[last][x] ^= last_mask;
     } else {
+        // OR turns covered pixels on without changing pixels outside the masks.
         frame_buffer[first][x] |= first_mask;
         for (uint8_t page = first + 1; page < last; ++page)
 			frame_buffer[page][x] = 0xFFu;
@@ -1001,7 +1020,7 @@ static inline void _pie7_span(uint8_t x, uint8_t lo, uint8_t hi) {
     }
 }
 
-void render_pie7(M_Point center, uint8_t radius, int16_t start_angle, int16_t end_angle) {
+void render_pie_fast(M_Point center, uint8_t radius, int16_t start_angle, int16_t end_angle) {
     if (radius == 0) return;
     if (start_angle < 0 || start_angle > 360
         || end_angle < 0 || end_angle > 360) return;
@@ -1026,15 +1045,16 @@ void render_pie7(M_Point center, uint8_t radius, int16_t start_angle, int16_t en
             --extent;
         }
 
+        int16_t y_min = (int16_t)center.y - extent;
+        int16_t y_max = (int16_t)center.y + extent;
+        if (y_min < 0) y_min = 0;
+        if (y_max >= SSD1306_H) y_max = SSD1306_H - 1;
+        if (y_min > y_max) continue;
+
         for (uint8_t half = 0; half < (dx == 0 ? 1 : 2); ++half) {
-            int16_t x = (int16_t)center.x + (half == 0 ? dx : -dx);
+            int16_t right = half == 0 ? dx : -dx;
+            int16_t x = (int16_t)center.x + right;
             if (x < 0 || x >= SSD1306_W) continue;
-            int16_t right = x - (int16_t)center.x;
-            int16_t y_min = (int16_t)center.y - extent;
-            int16_t y_max = (int16_t)center.y + extent;
-            if (y_min < 0) y_min = 0;
-            if (y_max >= SSD1306_H) y_max = SSD1306_H - 1;
-            if (y_min > y_max) continue;
 
             // Clip to the incrementally tracked angle boundaries.
             int16_t lo1 = y_min, hi1 = y_max;
@@ -1042,7 +1062,7 @@ void render_pie7(M_Point center, uint8_t radius, int16_t start_angle, int16_t en
 
             if (sweep <= 180) {
                 if (first && _pie_clip_edge(&lo1, &hi1, &end_edge, right, center.y))
-                    _pie7_span((uint8_t)x, (uint8_t)lo1, (uint8_t)hi1);
+                    _pie_fast_span((uint8_t)x, (uint8_t)lo1, (uint8_t)hi1);
             } else {
                 int16_t lo2 = y_min, hi2 = y_max;
                 uint8_t second = _pie_clip_edge(&lo2, &hi2, &end_edge, right, center.y);
@@ -1051,8 +1071,8 @@ void render_pie7(M_Point center, uint8_t radius, int16_t start_angle, int16_t en
                     if (hi2 > hi1) hi1 = hi2;
                     second = 0;
                 }
-                if (first) _pie7_span((uint8_t)x, (uint8_t)lo1, (uint8_t)hi1);
-                if (second) _pie7_span((uint8_t)x, (uint8_t)lo2, (uint8_t)hi2);
+                if (first) _pie_fast_span((uint8_t)x, (uint8_t)lo1, (uint8_t)hi1);
+                if (second) _pie_fast_span((uint8_t)x, (uint8_t)lo2, (uint8_t)hi2);
             }
         }
         // Advancing dx changes its square by 2*dx + 1.

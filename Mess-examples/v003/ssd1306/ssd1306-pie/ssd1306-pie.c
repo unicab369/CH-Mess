@@ -69,7 +69,7 @@ int main(void) {
 		memset(frame_buffer, 0, sizeof(frame_buffer));
 		render_ticks += time_render_pie(render_pie);
 		memset(frame_buffer, 0, sizeof(frame_buffer));
-		render7_ticks += time_render_pie(render_pie7);
+		render7_ticks += time_render_pie(render_pie_fast);
 	}
 
 	printf("SSD1306 pie renderer benchmark\n");
@@ -83,7 +83,7 @@ int main(void) {
 
 
 
-	printf("render_pie7: %lu SysTick ticks/pie\n",
+	printf("render_pie_fast: %lu SysTick ticks/pie\n",
 		(unsigned long)(render7_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
 
@@ -93,8 +93,8 @@ int main(void) {
 
 	memset(frame_buffer, 0, sizeof(frame_buffer));
 	// Show two filled 230-degree pies side by side.
-	render_pie7((M_Point){ 32, 32 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
-	render_pie7((M_Point){ 96, 32 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
+	render_pie_fast((M_Point){ 32, 32 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
+	render_pie_fast((M_Point){ 96, 32 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 
 	while (1) { }
