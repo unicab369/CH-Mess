@@ -23,28 +23,27 @@ static inline uint8_t ssd1306_plot_render_layout(T_SSD1306_Plot *plot) {
 	if (plot->x_label) {
 		uint16_t label_width = 0;
 		for (const char *c = plot->x_label; *c; ++c)
-			label_width += font_7x5.width + font_7x5.spacing;
-		if (label_width) label_width -= font_7x5.spacing;
+			label_width += font_7x5.width + 1u;
+		if (label_width) label_width--;
 
 		uint16_t label_x = right + 1u > label_width ? right + 1u - label_width : 0;
 		uint8_t label_y = bottom > font_7x5.height ? bottom - font_7x5.height - 1u : 0;
-		ssd1306_render_str(plot->x_label, (uint8_t)label_x, label_y, &font_7x5, 1);
+		ssd1306_render_str(plot->x_label, (uint8_t)label_x, label_y, &font_7x5, 1,
+			SSD1306_TEXT_ORIENTATION_0);
 	}
 
 	if (plot->y_label) {
 		uint16_t label_height = 0;
 		for (const char *c = plot->y_label; *c; ++c)
-			label_height += font_7x5.height;
+			label_height += font_7x5.width + 1u;
+		if (label_height) label_height--;
 		uint16_t label_x = (uint16_t)plot->origin.x + 2u;
 		uint16_t label_y = plot->origin.y;
 
-		if (label_height && label_x + font_7x5.width <= SSD1306_W
+		if (label_height && label_x + font_7x5.height <= SSD1306_W
 			&& label_y + label_height <= SSD1306_H) {
-			for (const char *c = plot->y_label; *c; ++c) {
-				char glyph[2] = { *c, '\0' };
-				ssd1306_render_str(glyph, (uint8_t)label_x, (uint8_t)label_y, &font_7x5, 0);
-				label_y += font_7x5.height;
-			}
+			ssd1306_render_str(plot->y_label, (uint8_t)label_x, (uint8_t)label_y,
+				&font_7x5, 1, SSD1306_TEXT_ORIENTATION_90);
 		}
 	}
 	ssd1306_render_horLine(bottom, plot->origin.x, right, 1);

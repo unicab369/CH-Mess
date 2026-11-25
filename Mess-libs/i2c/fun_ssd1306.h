@@ -297,46 +297,61 @@ void ssd1306_render_str_line(const char *str, uint8_t page, uint8_t column) {
 
 // SSD1306 8x8 build flash: ssd1306_drawstr 2816 bytes.
 // SSD1306 8x8 build flash: ssd1306_render_str 2812 bytes.
-//! Draw text into the frame buffer at pixel coordinates using the font's stored orientation.
+typedef enum {
+	SSD1306_TEXT_ORIENTATION_0 = 0,
+	SSD1306_TEXT_ORIENTATION_90 = 1,
+	SSD1306_TEXT_ORIENTATION_180 = 2,
+	SSD1306_TEXT_ORIENTATION_270 = 3,
+} orientation_t;
+
+//! Draw text using one of the four clockwise orientations.
 void ssd1306_render_str(
 	const char *str, uint8_t x, uint8_t y,
-	const font_t *font, uint8_t spacing
+	const font_t *font, uint8_t spacing, orientation_t orientation
 ) {
+	if (!str || !font || orientation > SSD1306_TEXT_ORIENTATION_270) return;
 	uint8_t glyph_stride = font->row_major ? font->height : font->width;
+	uint32_t text_width = 0;
+	for (const char *c = str; *c; ++c)
+		text_width += font->width + spacing;
+	if (text_width) text_width -= spacing;
+	uint32_t cursor = 0;
 
-	while (*str && x < SSD1306_W) {
+	while (*str) {
 		uint8_t c = (uint8_t)*str++;
 		if (c < 32 || c > 126) c = ' ';
 		const uint8_t *glyph = font->data + (uint16_t)(c - 32) * glyph_stride;
 
-		if (font->row_major) {
-			for (uint8_t row = 0; row < font->height; ++row) {
-				uint16_t py = (uint16_t)y + row;
-				if (py >= SSD1306_H) continue;
-				uint8_t bits = glyph[row];
-
-				for (uint8_t column = 0; column < font->width; ++column) {
-					if (!(bits & (0x80u >> column))) continue;
-					uint16_t px = (uint16_t)x + column;
-					if (px >= SSD1306_W) continue;
-					ssd1306_render_pixel((T_Point){ (uint8_t)px, (uint8_t)py });
-				}
-			}
-		} else {
+		for (uint8_t row = 0; row < font->height; ++row) {
 			for (uint8_t column = 0; column < font->width; ++column) {
-				uint16_t px = (uint16_t)x + column;
-				if (px >= SSD1306_W) continue;
-				uint8_t bits = glyph[column];
+				uint8_t bit = font->row_major ? (glyph[row] & (0x80u >> column))
+											: (glyph[column] & (1u << row));
+				if (!bit) continue;
 
-				for (uint8_t row = 0; row < font->height; ++row) {
-					if (!(bits & (1u << row))) continue;
-					uint16_t py = (uint16_t)y + row;
-					if (py >= SSD1306_H) continue;
-					ssd1306_render_pixel((T_Point){ (uint8_t)px, (uint8_t)py });
+				uint32_t px, py;
+				switch (orientation) {
+					case SSD1306_TEXT_ORIENTATION_90:
+						px = (uint16_t)x + font->height - 1u - row;
+						py = (uint16_t)y + cursor + column;
+						break;
+					case SSD1306_TEXT_ORIENTATION_180:
+						px = (uint16_t)x + cursor + font->width - 1u - column;
+						py = (uint16_t)y + font->height - 1u - row;
+						break;
+					case SSD1306_TEXT_ORIENTATION_270:
+						px = (uint16_t)x + row;
+						py = (uint16_t)y + text_width - 1u - cursor - column;
+						break;
+					default:
+						px = (uint16_t)x + cursor + column;
+						py = (uint16_t)y + row;
+						break;
 				}
+				if (px < SSD1306_W && py < SSD1306_H)
+					ssd1306_render_pixel((T_Point){ (uint8_t)px, (uint8_t)py });
 			}
 		}
-		x += font->width + spacing;
+		cursor += font->width + spacing;
 	}
 }
 

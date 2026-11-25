@@ -38,7 +38,8 @@ uint8_t SSD1306_DATA(uint8_t *data, int sz) {
 void modI2C_display(const char *str, uint8_t line) {
 	//! validate device before print
 	if (i2c_ping(0x3C) != I2C_OK) return;
-	ssd1306_render_str(str, 0, line * font_8x8.height, &font_8x8, 0);
+	ssd1306_render_str(str, 0, line * font_8x8.height, &font_8x8, 0,
+		SSD1306_TEXT_ORIENTATION_0);
 }
 
 void i2c_scan_callback(const uint8_t addr) {
@@ -59,7 +60,8 @@ void modI2C_setup(uint16_t counter) {
 			ssd1306_setup();
 
 			sprintf(str_output, "Hello Bee %ld", counter);
-			ssd1306_render_str(str_output, 0, 0, &font_8x8, 0);
+			ssd1306_render_str(str_output, 0, 0, &font_8x8, 0,
+				SSD1306_TEXT_ORIENTATION_0);
 		}
 
 		// Scan the I2C Bus, prints any devices that respond
