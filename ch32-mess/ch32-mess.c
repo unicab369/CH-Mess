@@ -321,9 +321,6 @@ int main1() {
 
 					mngI2c_loadCounter(session.cycle_count, session.fullCycle_time);
 
-					uint32_t runtime_i2c = SysTick_getRunTime(ssd1306_draw_test);
-					sprintf(str_output, "I2C runtime: %lu us", runtime_i2c);
-					ssd1306_print_str_at(str_output, 0, 0);
 				// }
 			#endif
 			

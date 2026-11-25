@@ -94,7 +94,7 @@ void ssd1306_setWindow_pages(uint8_t start_page, uint8_t end_page) {
 	ssd1306_setwindow(start_page, end_page, 0, SSD1306_W_LIMIT); // Set the window to the current page
 }
 
-void ssd1306_print_str_at(
+void render_str(
   const char *str, uint8_t page, uint8_t column
 ) {
 	ssd1306_setWindow_pages(page, page); // Set the window to the current page
@@ -411,10 +411,6 @@ void render_rect(
     }
 }
 
-
-
-
-
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 //! ***** Circle Methods *****
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -603,25 +599,6 @@ void render_pie(M_Point center, uint8_t radius, int16_t start_angle, int16_t end
 //! ***** Tests *****
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-
-void ssd1306_draw_test() {
-	// test_circles();
-	// ssd1306_vertical_line(&line, 2, 0);
-
-	// line.pos = 20;
-	// ssd1306_vertical_line(&line, 3, 0);
-
-	// ssd1306_print_str_at("sz 8x8 testing", 0, 0);
-	// ssd1306_print_str_at("testing 22222234fdafadfafa", 1, 0);
-	// ssd1306_print_str_at("testing 33334fdafadfafa", 2, 0);
-	// ssd1306_print_str_at("testing 44444fdafadfafa", 3, 0);
-	// ssd1306_print_str_at("testing 55554fdafadfafa", 4, 0);
-	// ssd1306_print_str_at("testing 66664fdafadfafa", 5, 0);
-	// ssd1306_print_str_at("testing 77774fdafadfafa", 6, 0);
-	// ssd1306_print_str_at("testing 88884fdafadfafa", 7, 0);
-
-	ssd1306_displayFrame();
-}
 
 int ssd1306_test2() {
 	for(uint8_t mode=0; mode<(SSD1306_H>32?9:8); mode++) {

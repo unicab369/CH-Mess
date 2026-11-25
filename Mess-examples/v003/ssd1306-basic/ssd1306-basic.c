@@ -6,6 +6,8 @@
 #include "ch32fun.h"
 #include "../../../Mess-libs/i2c/lib/lib_i2c.h"
 
+#define SSD1306_SHARED_FRAME_BUFFER
+
 i2c_device_t display = {
 	.clkr = I2C_CLK_100KHZ,
 	.type = I2C_ADDR_7BIT,
@@ -37,7 +39,13 @@ int main(void) {
 	}
 
 	ssd1306_setup();
-	ssd1306_print_str_at("CH32V003 I2C", 0, 0);
-	ssd1306_print_str_at("SSD1306 basic", 1, 0);
+	render_str("sz 8x8 testing", 0, 0);
+	render_str("testing 22222234fdafadfafa", 1, 0);
+	render_str("testing 33334fdafadfafa", 2, 0);
+	render_str("testing 44444fdafadfafa", 3, 0);
+	render_str("testing 55554fdafadfafa", 4, 0);
+	render_str("testing 66664fdafadfafa", 5, 0);
+	render_str("testing 77774fdafadfafa", 6, 0);
+	render_str("testing 88884fdafadfafa", 7, 0);
 	while (1) { }
 }
