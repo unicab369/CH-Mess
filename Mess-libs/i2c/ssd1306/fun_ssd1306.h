@@ -256,6 +256,46 @@ void render_str_scaled(const char *str, uint8_t x, uint8_t y,
 	}
 }
 
+// Blit row-major, MSB-first monochrome image data into the framebuffer.
+// |---|---:|
+// | render_image() | 880 bytes |
+// | ssd1306_drawImage() | 800 bytes |
+
+void render_image(const uint8_t *image, uint8_t x, uint8_t y,
+	uint8_t width, uint8_t height) {
+	// Reject an empty destination, then clip the image to the screen once.
+	if (!image || x >= SSD1306_W || y >= SSD1306_H) return;
+	// Each source row stores one bit per pixel, rounded up to whole bytes.
+	uint16_t stride = ((uint16_t)width + 7u) >> 3;
+	uint16_t visible_width = SSD1306_W - x;
+	if (visible_width > width) visible_width = width;
+	uint16_t visible_height = SSD1306_H - y;
+	if (visible_height > height) visible_height = height;
+
+	for (uint16_t row = 0; row < visible_height; ++row) {
+		uint8_t screen_y = y + row;
+		// Framebuffer bytes hold 8 vertical pixels, so select the page and bit.
+		uint8_t mask = 1u << (screen_y & 7u);
+		uint8_t *dst = &frame_buffer[screen_y >> 3][x];
+		const uint8_t *src = image + row * stride;
+
+		// Read each packed source byte once and check its 8 MSB-first pixels.
+		for (uint16_t byte = 0; byte < stride && byte * 8u < visible_width; ++byte) {
+			uint8_t bits = src[byte];
+			uint16_t col = byte * 8u;
+			// Skip pixels beyond the clipped right edge; set lit pixels in the buffer.
+			if (bits & 0x80u) dst[col] |= mask;
+			if (visible_width > col + 1u && (bits & 0x40u)) dst[col + 1u] |= mask;
+			if (visible_width > col + 2u && (bits & 0x20u)) dst[col + 2u] |= mask;
+			if (visible_width > col + 3u && (bits & 0x10u)) dst[col + 3u] |= mask;
+			if (visible_width > col + 4u && (bits & 0x08u)) dst[col + 4u] |= mask;
+			if (visible_width > col + 5u && (bits & 0x04u)) dst[col + 5u] |= mask;
+			if (visible_width > col + 6u && (bits & 0x02u)) dst[col + 6u] |= mask;
+			if (visible_width > col + 7u && (bits & 0x01u)) dst[col + 7u] |= mask;
+		}
+	}
+}
+
 void ssd1306_setup() {
 	precompute_page_masks();
 	ssd1306_init();
