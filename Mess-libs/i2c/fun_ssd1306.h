@@ -965,6 +965,7 @@ static uint8_t _pie_clip_edge(
     return *lo <= *hi;
 }
 
+
 // Clip a row to a*x + b >= 0 with inclusive integer boundaries.
 // Write one vertical pixel span as masked page bytes in the framebuffer.
 static inline void _pie_fast_span(uint8_t x, uint8_t lo, uint8_t hi) {
