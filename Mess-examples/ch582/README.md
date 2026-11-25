@@ -16,6 +16,11 @@ WCH-Link connected, build MiniCHLink from the repository root:
 make -C ch32fun/minichlink
 ```
 
+window
+```sh
+make ch32fun/minichlink.exe
+```
+
 Then enable the reset input using MiniCHLink from its directory:
 ```sh
 ./minichlink -B -d

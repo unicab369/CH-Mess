@@ -6,11 +6,11 @@
 #include "ch32fun.h"
 #include "../../../../Mess-libs/i2c/lib_i2c.h"
 
-#define BENCH_RUNS 20u
+#define BENCH_RUNS 10
 #define BENCH_ROUNDS 5u
 #define PIE_RADIUS 28u
 #define PIE_START_ANGLE 0
-#define PIE_END_ANGLE 100
+#define PIE_END_ANGLE 230
 #define SSD1306_SHARED_FRAME_BUFFER
 
 i2c_device_t display = {
@@ -73,7 +73,6 @@ int main(void) {
 	uint32_t render9_ticks = 0;
 	uint32_t render10_ticks = 0;
 	uint32_t render11_ticks = 0;
-	uint32_t render12_ticks = 0;
 
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(frame_buffer, 0, sizeof(frame_buffer));
@@ -98,8 +97,6 @@ int main(void) {
 		render10_ticks += time_render_pie(render_pie10);
 		memset(frame_buffer, 0, sizeof(frame_buffer));
 		render11_ticks += time_render_pie(render_pie11);
-		memset(frame_buffer, 0, sizeof(frame_buffer));
-		render12_ticks += time_render_pie(render_pie12);
 	}
 
 	printf("SSD1306 pie renderer benchmark\n");
@@ -138,15 +135,11 @@ int main(void) {
 	printf("render_pie11: %lu SysTick ticks/pie\n",
 		(unsigned long)(render11_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
-	printf("render_pie12: %lu SysTick ticks/pie\n",
-		(unsigned long)(render12_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
 	memset(frame_buffer, 0, sizeof(frame_buffer));
-	// The 100-degree pies occupy the space above their centers.
-	render_pie((M_Point){ 32, 29 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
-	render_pie2((M_Point){ 96, 29 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
-	render_pie11((M_Point){ 32, 63 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
-	render_pie12((M_Point){ 96, 63 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
+	// Show two filled 230-degree pies side by side.
+	render_pie10((M_Point){ 32, 32 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
+	render_pie11((M_Point){ 96, 32 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 
 	while (1) { }
