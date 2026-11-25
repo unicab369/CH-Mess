@@ -88,7 +88,6 @@ void i2c_getReadings(struct SensorData* data) {
 	// char strOut[32];
 	// mini_snprintf(strOut, sizeof(strOut), "\nlux=%lu", lux);
 	// printf(strOut);
-	// ssd1306_drawstr_sz(0, 16, strOut, 1, fontsize_8x8);
 
 	// //! SHT31 Reading
 	// int check2 = I2CTest(SHT3_ADDR);

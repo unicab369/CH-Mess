@@ -122,6 +122,17 @@ static inline void render_toggle_invert(void) {
 	_render_invert ^= 1u;
 }
 
+void render_pixel(uint8_t x, uint8_t y) {
+    if (x >= SSD1306_W || y >= SSD1306_H) return; // Skip if out of bounds
+    // Look up the precomputed page and bit mask that correspond to this y coordinate.
+    M_Page_Mask mask = page_masks[y];
+    // mask.page selects the 8-pixel vertical page for y; mask.bitmask selects y's bit within it.
+    if (_render_invert)
+        frame_buffer[mask.page][x] ^= mask.bitmask;
+    else
+        frame_buffer[mask.page][x] |= mask.bitmask;
+}
+
 // Copy up to SSD1306_STR_SIZE five-column glyphs into one framebuffer page.
 void render_str_line(const char *str, uint8_t page, uint8_t column) {
 	if (page >= SSD1306_PAGES) return;
@@ -194,16 +205,55 @@ void render_str(const char *str, uint8_t x, uint8_t y, const font_t *font) {
 	}
 }
 
-//! compute pixel
-void render_pixel(uint8_t x, uint8_t y) {
-    if (x >= SSD1306_W || y >= SSD1306_H) return; // Skip if out of bounds
-    // Look up the precomputed page and bit mask that correspond to this y coordinate.
-    M_Page_Mask mask = page_masks[y];
-    // mask.page selects the 8-pixel vertical page for y; mask.bitmask selects y's bit within it.
-    if (_render_invert)
-        frame_buffer[mask.page][x] ^= mask.bitmask;
-    else
-        frame_buffer[mask.page][x] |= mask.bitmask;
+//! Draw text with each font pixel expanded to a scale-by-scale square.
+// |---|---:|
+// | ssd1306_drawstr_sz | 2,844 bytes |
+// | render_str_scaled | 2,872 bytes |
+
+void render_str_scaled(const char *str, uint8_t x, uint8_t y,
+	const font_t *font, uint8_t scale) {
+	if (!scale || y >= SSD1306_H) return;
+	uint8_t stride = font->row_major ? font->height : font->width;
+	uint32_t cursor = x;
+
+	while (*str && cursor < SSD1306_W) {
+		uint8_t c = (uint8_t)*str++;
+		if (c < 32 || c > 126) c = ' ';
+		// Each character occupies one row block or one column block in the font.
+		const uint8_t *glyph = font->data + (uint16_t)(c - 32) * stride;
+
+		for (uint16_t row = 0; row < font->height; ++row) {
+			// Scale the source row and stop once its first screen pixel is off-screen.
+			uint32_t py = (uint32_t)y + row * scale;
+			if (py >= SSD1306_H) break;
+
+			for (uint16_t column = 0; column < font->width; ++column) {
+				uint32_t px = cursor + column * scale;
+				if (px >= SSD1306_W) break;
+				// Row-major fonts store horizontal bits; column-major fonts store vertical bits.
+				uint8_t bit = font->row_major ? (glyph[row] & (0x80u >> column))
+												: (glyph[column] & (1u << row));
+				if (!bit) continue;
+
+				// Fill the scaled square, clipping its right and bottom edges.
+				for (uint16_t dy = 0; dy < scale && py + dy < SSD1306_H; ++dy) {
+					uint16_t screen_y = py + dy;
+					// One framebuffer byte holds eight vertical pixels at this x position.
+					uint8_t mask = 1u << (screen_y & 7u);
+					uint8_t *pixels = &frame_buffer[screen_y >> 3][px];
+
+					for (uint16_t dx = 0; dx < scale && px + dx < SSD1306_W; ++dx) {
+						if (_render_invert)
+							pixels[dx] ^= mask;
+						else
+							pixels[dx] |= mask;
+					}
+				}
+			}
+		}
+		// Include the font's spacing when moving to the next character.
+		cursor += (uint32_t)(font->width + font->spacing) * scale;
+	}
 }
 
 void ssd1306_setup() {
@@ -214,7 +264,6 @@ void ssd1306_setup() {
 	memset(frame_buffer, 0, SSD1306_PAGES * SSD1306_W);
 	ssd1306_displayFrame();
 }
-
 
 
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -730,22 +779,6 @@ int ssd1306_test2() {
 				}
 		//       break;
 				
-		//    case 6:
-		//       printf("Scaled Text 1, 2\n\r");
-				// ssd1306_drawstr_sz(0,0, "sz 8x8", 1, fontsize_8x8);
-				// ssd1306_drawstr_sz(0,16, "16x16", 1, fontsize_16x16);
-		//       break;
-			
-		//    case 7:
-		//       printf("Scaled Text 4\n\r");
-		//       ssd1306_drawstr_sz(0,0, "32x32", 1, fontsize_32x32);
-		//       break;
-			
-		//    case 8:
-		//       // printf("Scaled Text 8\n\r");
-		//       ssd1306_drawstr_sz(0,0, "64", 1, fontsize_64x64);
-		//       break;
-
 		//    default:
 		//       break;
 		// }

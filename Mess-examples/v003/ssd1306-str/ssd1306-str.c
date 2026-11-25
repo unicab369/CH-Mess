@@ -11,6 +11,7 @@
 #define SSD1306_SHARED_FRAME_BUFFER
 
 static char text_line[] = "0123456789ABCDEF";
+static char scaled_text[] = "01234567";
 
 i2c_device_t display = {
 	.clkr = I2C_CLK_100KHZ,
@@ -52,6 +53,15 @@ static uint32_t time_render_str_8x8(void) {
 	return (uint32_t)(funSysTick32() - start);
 }
 
+static uint32_t time_render_str_scaled(const font_t *font) {
+	uint32_t start = funSysTick32();
+	for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
+		render_str_scaled(scaled_text, 0, 0, font, 2);
+		__asm__ volatile("" ::: "memory");
+	}
+	return (uint32_t)(funSysTick32() - start);
+}
+
 static uint32_t time_render_str_line(void) {
 	uint32_t start = funSysTick32();
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
@@ -72,6 +82,8 @@ int main(void) {
 
 	uint32_t render_ticks = 0;
 	uint32_t render_8x8_ticks = 0;
+	uint32_t scaled_7x5_ticks = 0;
+	uint32_t scaled_8x8_ticks = 0;
 	uint32_t line_ticks = 0;
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
@@ -80,6 +92,14 @@ int main(void) {
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
 		render_8x8_ticks += time_render_str_8x8();
+	}
+	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
+		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
+		scaled_7x5_ticks += time_render_str_scaled(&font_7x5);
+	}
+	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
+		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
+		scaled_8x8_ticks += time_render_str_scaled(&font_8x8);
 	}
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
@@ -92,12 +112,18 @@ int main(void) {
 		(unsigned long)(render_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 	printf("render_str (FONT_8x8):   %lu ticks/string\n",
 		(unsigned long)(render_8x8_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
+	printf("scaled 2x (7x5, 8 chars): %lu ticks/string\n",
+		(unsigned long)(scaled_7x5_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
+	printf("scaled 2x (8x8, 8 chars): %lu ticks/string\n",
+		(unsigned long)(scaled_8x8_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 	printf("render_str_line + area:  %lu ticks/string\n",
 		(unsigned long)(line_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
 	memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
 	render_str(text_line, 0, 0, &font_7x5);
 	render_str(text_line, 0, 16, &font_8x8);
+	render_str_scaled(scaled_text, 0, 32, &font_7x5, 2);
+	render_str_scaled(scaled_text, 0, 48, &font_8x8, 2);
 	ssd1306_refresh();
 	while (1) { }
 }
