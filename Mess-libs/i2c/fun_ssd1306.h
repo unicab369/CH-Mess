@@ -265,6 +265,18 @@ static inline void ssd1306_toggle_invert(void) {
 	_render_invert ^= 1u;
 }
 
+void ssd1306_render_pixel(T_Point point) {
+	uint8_t *pixel = &frame_buffer[point.y >> 3][point.x];
+	uint8_t mask = (uint8_t)(1u << (point.y & 7u));
+	if (_render_invert) *pixel ^= mask;
+	else *pixel |= mask;
+}
+
+void ssd1306_render_point(T_Point point) {
+	if (point.x >= SSD1306_W || point.y >= SSD1306_H) return;
+	ssd1306_render_pixel(point);
+}
+
 // Copy up to SSD1306_STR_SIZE five-column glyphs into one framebuffer page.
 void ssd1306_render_str_line(const char *str, uint8_t page, uint8_t column) {
 	if (page >= SSD1306_PAGES) return;
@@ -286,7 +298,10 @@ void ssd1306_render_str_line(const char *str, uint8_t page, uint8_t column) {
 // SSD1306 8x8 build flash: ssd1306_drawstr 2816 bytes.
 // SSD1306 8x8 build flash: ssd1306_render_str 2812 bytes.
 //! Draw text into the frame buffer at pixel coordinates using the font's stored orientation.
-void ssd1306_render_str(const char *str, uint8_t x, uint8_t y, const font_t *font) {
+void ssd1306_render_str(
+	const char *str, uint8_t x, uint8_t y,
+	const font_t *font, uint8_t spacing
+) {
 	uint8_t glyph_stride = font->row_major ? font->height : font->width;
 
 	while (*str && x < SSD1306_W) {
@@ -303,14 +318,8 @@ void ssd1306_render_str(const char *str, uint8_t x, uint8_t y, const font_t *fon
 				for (uint8_t column = 0; column < font->width; ++column) {
 					if (!(bits & (0x80u >> column))) continue;
 					uint16_t px = (uint16_t)x + column;
-					// if (px >= SSD1306_W) continue;
-
-					uint8_t bitmask = 1u << (py & 0x07u);
-					uint8_t *pixel = &frame_buffer[py >> 3][px];
-					if (_render_invert)
-						*pixel ^= bitmask;
-					else
-						*pixel |= bitmask;
+					if (px >= SSD1306_W) continue;
+					ssd1306_render_pixel((T_Point){ (uint8_t)px, (uint8_t)py });
 				}
 			}
 		} else {
@@ -322,18 +331,12 @@ void ssd1306_render_str(const char *str, uint8_t x, uint8_t y, const font_t *fon
 				for (uint8_t row = 0; row < font->height; ++row) {
 					if (!(bits & (1u << row))) continue;
 					uint16_t py = (uint16_t)y + row;
-					// if (py >= SSD1306_H) continue;
-
-					uint8_t bitmask = 1u << (py & 0x07u);
-					uint8_t *pixel = &frame_buffer[py >> 3][px];
-					if (_render_invert)
-						*pixel ^= bitmask;
-					else
-						*pixel |= bitmask;
+					if (py >= SSD1306_H) continue;
+					ssd1306_render_pixel((T_Point){ (uint8_t)px, (uint8_t)py });
 				}
 			}
 		}
-		x += font->width + font->spacing;
+		x += font->width + spacing;
 	}
 }
 
@@ -342,8 +345,10 @@ void ssd1306_render_str(const char *str, uint8_t x, uint8_t y, const font_t *fon
 // | ssd1306_drawstr_sz | 2,844 bytes |
 // | ssd1306_render_str_scaled | 2,872 bytes |
 
-void ssd1306_render_str_scaled(const char *str, uint8_t x, uint8_t y,
-	const font_t *font, uint8_t scale) {
+void ssd1306_render_str_scaled(
+	const char *str, uint8_t x, uint8_t y,
+	const font_t *font, uint8_t scale, uint8_t spacing
+) {
 	if (!scale || y >= SSD1306_H) return;
 	uint8_t stride = font->row_major ? font->height : font->width;
 	uint32_t cursor = x;
@@ -383,8 +388,7 @@ void ssd1306_render_str_scaled(const char *str, uint8_t x, uint8_t y,
 				}
 			}
 		}
-		// Include the font's spacing when moving to the next character.
-		cursor += (uint32_t)(font->width + font->spacing) * scale;
+		cursor += (uint32_t)(font->width + spacing) * scale;
 	}
 }
 
@@ -438,19 +442,6 @@ void ssd1306_setup() {
 
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 }
-
-void ssd1306_render_pixel(T_Point point) {
-	uint8_t *pixel = &frame_buffer[point.y >> 3][point.x];
-	uint8_t mask = (uint8_t)(1u << (point.y & 7u));
-	if (_render_invert) *pixel ^= mask;
-	else *pixel |= mask;
-}
-
-void ssd1306_render_point(T_Point point) {
-	if (point.x >= SSD1306_W || point.y >= SSD1306_H) return;
-	ssd1306_render_pixel(point);
-}
-
 
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 //! ***** Line Methods *****

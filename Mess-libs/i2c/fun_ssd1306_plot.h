@@ -28,7 +28,7 @@ static inline uint8_t ssd1306_plot_render_layout(T_SSD1306_Plot *plot) {
 
 		uint16_t label_x = right + 1u > label_width ? right + 1u - label_width : 0;
 		uint8_t label_y = bottom > font_7x5.height ? bottom - font_7x5.height - 1u : 0;
-		ssd1306_render_str(plot->x_label, (uint8_t)label_x, label_y, &font_7x5);
+		ssd1306_render_str(plot->x_label, (uint8_t)label_x, label_y, &font_7x5, 1);
 	}
 
 	if (plot->y_label) {
@@ -42,7 +42,7 @@ static inline uint8_t ssd1306_plot_render_layout(T_SSD1306_Plot *plot) {
 			&& label_y + label_height <= SSD1306_H) {
 			for (const char *c = plot->y_label; *c; ++c) {
 				char glyph[2] = { *c, '\0' };
-				ssd1306_render_str(glyph, (uint8_t)label_x, (uint8_t)label_y, &font_7x5);
+				ssd1306_render_str(glyph, (uint8_t)label_x, (uint8_t)label_y, &font_7x5, 0);
 				label_y += font_7x5.height;
 			}
 		}

@@ -38,7 +38,7 @@ uint8_t SSD1306_DATA(uint8_t *data, int length) {
 static uint32_t time_render_str(void) {
 	uint32_t start = funSysTick32();
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
-		ssd1306_render_str(text_line, 0, 0, &font_7x5);
+		ssd1306_render_str(text_line, 0, 0, &font_7x5, 1);
 		__asm__ volatile("" ::: "memory");
 	}
 	return (uint32_t)(funSysTick32() - start);
@@ -47,7 +47,7 @@ static uint32_t time_render_str(void) {
 static uint32_t time_render_str_8x8(void) {
 	uint32_t start = funSysTick32();
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
-		ssd1306_render_str(text_line, 0, 0, &font_8x8);
+		ssd1306_render_str(text_line, 0, 0, &font_8x8, 0);
 		__asm__ volatile("" ::: "memory");
 	}
 	return (uint32_t)(funSysTick32() - start);
@@ -56,7 +56,7 @@ static uint32_t time_render_str_8x8(void) {
 static uint32_t time_render_str_scaled(const font_t *font) {
 	uint32_t start = funSysTick32();
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
-		ssd1306_render_str_scaled(scaled_text, 0, 0, font, 2);
+		ssd1306_render_str_scaled(scaled_text, 0, 0, font, 2, font->spacing);
 		__asm__ volatile("" ::: "memory");
 	}
 	return (uint32_t)(funSysTick32() - start);
@@ -120,10 +120,10 @@ int main(void) {
 		(unsigned long)(line_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
 	memset(frame_buffer, 0, sizeof(frame_buffer));
-	ssd1306_render_str(text_line, 0, 0, &font_7x5);
-	ssd1306_render_str(text_line, 0, 16, &font_8x8);
-	ssd1306_render_str_scaled(scaled_text, 0, 32, &font_7x5, 2);
-	ssd1306_render_str_scaled(scaled_text, 0, 48, &font_8x8, 2);
+	ssd1306_render_str(text_line, 0, 0, &font_7x5, 1);
+	ssd1306_render_str(text_line, 0, 16, &font_8x8, 0);
+	ssd1306_render_str_scaled(scaled_text, 0, 32, &font_7x5, 2, 1);
+	ssd1306_render_str_scaled(scaled_text, 0, 48, &font_8x8, 2, 0);
 	ssd1306_displayArea(0, SSD1306_PAGES - 1, 0, SSD1306_W);
 	while (1) { }
 }
