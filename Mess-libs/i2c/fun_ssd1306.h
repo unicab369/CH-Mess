@@ -589,15 +589,13 @@ void ssd1306_render_line(T_Point p0, T_Point p1, uint8_t thickness) {
     int16_t err = dx + dy;
     int16_t e2;
 
-	// Precompute these before the loop:
-	uint8_t *fb_base = &frame_buffer[0][0];
 	uint8_t radius = thickness >> 1; 		// thickness/2 via bit shift
 
 	while (1) {
 		// Draw the pixel(s)
 		if (thickness == 1) {
 			// Fast path for single-pixel
-            T_Page_Mask mask = page_masks[p0.y];
+			T_Page_Mask mask = page_masks[p0.y];
             if (_render_invert)
 				frame_buffer[mask.page][p0.x] ^= mask.bitmask;
 			else
@@ -611,23 +609,8 @@ void ssd1306_render_line(T_Point p0, T_Point p1, uint8_t thickness) {
 
 			if (x_stop > SSD1306_W) x_stop = SSD1306_W;
 			if (y_stop > SSD1306_H) y_stop = SSD1306_H;
-			uint8_t width = x_stop - x_start;
-			uint8_t *row_start = fb_base + x_start;
-
-			// Optimized row filling
-			for (uint8_t y = y_start; y < y_stop; y++) {
-				// Look up the precomputed page and bit mask that correspond to this y coordinate.
-				T_Page_Mask mask = page_masks[y];
-				uint8_t *row = row_start + (mask.page * SSD1306_W);
-
-				if (_render_invert) {
-					for (uint8_t i = 0; i < width; ++i)
-						row[i] ^= mask.bitmask;
-				} else {
-					for (uint8_t i = 0; i < width; ++i)
-						row[i] |= mask.bitmask;
-				}
-			}
+			_render_page_span(y_start, (uint8_t)(y_stop - 1u),
+			                  x_start, (uint8_t)(x_stop - x_start));
 		}
 
 		// Bresenham Advance
