@@ -9,6 +9,7 @@
 #define BENCH_RUNS 100
 #define BENCH_ROUNDS 5u
 #define THICK_LINE_WIDTH 3u
+#define SPAN_LENGTH 96u
 #define SSD1306_SHARED_FRAME_BUFFER
 
 i2c_device_t display = {
@@ -73,6 +74,20 @@ static uint32_t time_render_thick_line(void) {
 	return (uint32_t)(funSysTick32() - start);
 }
 
+static uint32_t time_render_horLine(void) {
+	uint32_t start = funSysTick32();
+	for (uint32_t run = 0; run < BENCH_RUNS; ++run)
+		ssd1306_render_horLine(32, 16, 16 + SPAN_LENGTH - 1u, THICK_LINE_WIDTH);
+	return (uint32_t)(funSysTick32() - start);
+}
+
+static uint32_t time_render_verLine(void) {
+	uint32_t start = funSysTick32();
+	for (uint32_t run = 0; run < BENCH_RUNS; ++run)
+		ssd1306_render_verLine(64, 8, 8 + SPAN_LENGTH - 1u, THICK_LINE_WIDTH);
+	return (uint32_t)(funSysTick32() - start);
+}
+
 int main(void) {
 	SystemInit();
 
@@ -85,6 +100,8 @@ int main(void) {
 
 	uint32_t render_ticks = 0;
 	uint32_t render_thick_ticks = 0;
+	uint32_t render_hor_ticks = 0;
+	uint32_t render_ver_ticks = 0;
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(frame_buffer, 0, sizeof(frame_buffer));
 		render_ticks += time_render_line();
@@ -95,6 +112,13 @@ int main(void) {
 		render_thick_ticks += time_render_thick_line();
 	}
 
+	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
+		memset(frame_buffer, 0, sizeof(frame_buffer));
+		render_hor_ticks += time_render_horLine();
+		memset(frame_buffer, 0, sizeof(frame_buffer));
+		render_ver_ticks += time_render_verLine();
+	}
+
 	printf("SSD1306 line benchmark\n");
 	printf("%u lines/set, %u sets/round, %u rounds\n",
 		(unsigned)LINE_COUNT, (unsigned)BENCH_RUNS, (unsigned)BENCH_ROUNDS);
@@ -103,6 +127,12 @@ int main(void) {
 	printf("ssd1306_render_line width %u: %lu SysTick ticks/line\n",
 		(unsigned)THICK_LINE_WIDTH,
 		(unsigned long)(render_thick_ticks / (LINE_COUNT * BENCH_RUNS * BENCH_ROUNDS)));
+	printf("ssd1306_render_horLine length %u: %lu SysTick ticks/line\n",
+		(unsigned)SPAN_LENGTH,
+		(unsigned long)(render_hor_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
+	printf("ssd1306_render_verLine length %u: %lu SysTick ticks/line\n",
+		(unsigned)SPAN_LENGTH,
+		(unsigned long)(render_ver_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
 	// Show a thin line set and a separate thick ssd1306_render_line sample.
 	memset(frame_buffer, 0, sizeof(frame_buffer));
@@ -112,6 +142,9 @@ int main(void) {
 		ssd1306_render_line(p0, p1, 1);
 	}
 	ssd1306_render_line((T_Point){ 8, 42 }, (T_Point){ 120, 58 }, THICK_LINE_WIDTH);
+	// Show the span benchmark samples apart from the line set above.
+	ssd1306_render_horLine(24, 16, 16 + SPAN_LENGTH - 1u, THICK_LINE_WIDTH);
+	ssd1306_render_verLine(112, 8, 8 + SPAN_LENGTH - 1u, THICK_LINE_WIDTH);
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 
 	while (1) { }

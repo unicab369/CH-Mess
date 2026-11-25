@@ -514,15 +514,16 @@ void ssd1306_render_horLine(
 	uint8_t x_len = x_end > x_min ? x_end - x_min : 0;
 
 	if (thickness == 1) {
-		T_Page_Mask mask = page_masks[y];
-		uint8_t *row_start = &frame_buffer[mask.page][x_min];
+		uint8_t page = y >> 3;
+		uint8_t mask = (uint8_t)(1u << (y & 7u));
+		uint8_t *row_start = &frame_buffer[page][x_min];
 
 		if (_render_invert) {
 			for (uint8_t i = 0; i < x_len; ++i)
-				row_start[i] ^= mask.bitmask;
+				row_start[i] ^= mask;
 		} else {
 			for (uint8_t i = 0; i < x_len; ++i)
-				row_start[i] |= mask.bitmask;
+				row_start[i] |= mask;
 		}
 		return;
 	}
