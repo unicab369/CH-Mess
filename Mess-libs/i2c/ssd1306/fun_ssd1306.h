@@ -632,26 +632,30 @@ void render_ring(
 			// //! pixel when drawing the circles
 			int16_t x_left  = x_start - 1;
             int16_t x_right = x_end + 1;
+			uint8_t left_valid = x_left >= 0 && x_left < SSD1306_W;
+			uint8_t start_valid = x_start >= 0 && x_start < SSD1306_W;
+			uint8_t end_valid = x_end >= 0 && x_end < SSD1306_W;
+			uint8_t right_valid = x_right >= 0 && x_right < SSD1306_W;
 
             // Skip pixels outside valid screen bounds
             if (y_top >= 0 && y_top < SSD1306_H) {
                 M_Page_Mask mask_t = page_masks[y_top];
                 uint8_t* row_t = frame_base + (mask_t.page * SSD1306_W);
 
-                if (x_left >= 0 && x_left < SSD1306_W) 		row_t[x_left]  |= mask_t.bitmask;
-                if (x_start >= 0 && x_start < SSD1306_W) 	row_t[x_start] |= mask_t.bitmask;
-                if (x_end >= 0 && x_end < SSD1306_W) 		row_t[x_end]   |= mask_t.bitmask;
-                if (x_right >= 0 && x_right < SSD1306_W) 	row_t[x_right] |= mask_t.bitmask;
+                if (left_valid)     row_t[x_left]  |= mask_t.bitmask;
+                if (start_valid)    row_t[x_start] |= mask_t.bitmask;
+                if (end_valid) 	    row_t[x_end]   |= mask_t.bitmask;
+                if (right_valid)    row_t[x_right] |= mask_t.bitmask;
             }
 
             if (y_bottom >= 0 && y_bottom < SSD1306_H) {
                 M_Page_Mask mask_b = page_masks[y_bottom];
                 uint8_t* row_b = frame_base + (mask_b.page * SSD1306_W);
 
-                if (x_left >= 0 && x_left < SSD1306_W) 		row_b[x_left]  |= mask_b.bitmask;
-                if (x_start >= 0 && x_start < SSD1306_W) 	row_b[x_start] |= mask_b.bitmask;
-                if (x_end >= 0 && x_end < SSD1306_W) 		row_b[x_end]   |= mask_b.bitmask;
-                if (x_right >= 0 && x_right < SSD1306_W) 	row_b[x_right] |= mask_b.bitmask;
+                if (left_valid) 	row_b[x_left]  |= mask_b.bitmask;
+                if (start_valid)    row_b[x_start] |= mask_b.bitmask;
+                if (end_valid) 	    row_b[x_end]   |= mask_b.bitmask;
+                if (right_valid)    row_b[x_right] |= mask_b.bitmask;
             }
 
             // Optimized Bresenham step
