@@ -63,40 +63,13 @@ int main(void) {
 	ssd1306_setup();
 
 	uint32_t render_ticks = 0;
-	uint32_t render2_ticks = 0;
-	uint32_t render3_ticks = 0;
-	uint32_t render4_ticks = 0;
-	uint32_t render5_ticks = 0;
-	uint32_t render6_ticks = 0;
 	uint32_t render7_ticks = 0;
-	uint32_t render8_ticks = 0;
-	uint32_t render9_ticks = 0;
-	uint32_t render10_ticks = 0;
-	uint32_t render11_ticks = 0;
 
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(frame_buffer, 0, sizeof(frame_buffer));
 		render_ticks += time_render_pie(render_pie);
 		memset(frame_buffer, 0, sizeof(frame_buffer));
-		render2_ticks += time_render_pie(render_pie2);
-		memset(frame_buffer, 0, sizeof(frame_buffer));
-		render3_ticks += time_render_pie(render_pie3);
-		memset(frame_buffer, 0, sizeof(frame_buffer));
-		render4_ticks += time_render_pie(render_pie4);
-		memset(frame_buffer, 0, sizeof(frame_buffer));
-		render5_ticks += time_render_pie(render_pie5);
-		memset(frame_buffer, 0, sizeof(frame_buffer));
-		render6_ticks += time_render_pie(render_pie6);
-		memset(frame_buffer, 0, sizeof(frame_buffer));
 		render7_ticks += time_render_pie(render_pie7);
-		memset(frame_buffer, 0, sizeof(frame_buffer));
-		render8_ticks += time_render_pie(render_pie8);
-		memset(frame_buffer, 0, sizeof(frame_buffer));
-		render9_ticks += time_render_pie(render_pie9);
-		memset(frame_buffer, 0, sizeof(frame_buffer));
-		render10_ticks += time_render_pie(render_pie10);
-		memset(frame_buffer, 0, sizeof(frame_buffer));
-		render11_ticks += time_render_pie(render_pie11);
 	}
 
 	printf("SSD1306 pie renderer benchmark\n");
@@ -106,40 +79,22 @@ int main(void) {
 		(unsigned)PIE_START_ANGLE, (unsigned)PIE_END_ANGLE);
 	printf("render_pie:  %lu SysTick ticks/pie\n",
 		(unsigned long)(render_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
-	printf("render_pie2: %lu SysTick ticks/pie\n",
-		(unsigned long)(render2_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
-	printf("render_pie3: %lu SysTick ticks/pie\n",
-		(unsigned long)(render3_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
-	printf("render_pie4: %lu SysTick ticks/pie\n",
-		(unsigned long)(render4_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
-	printf("render_pie5: %lu SysTick ticks/pie\n",
-		(unsigned long)(render5_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
-	printf("render_pie6: %lu SysTick ticks/pie\n",
-		(unsigned long)(render6_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
 	printf("render_pie7: %lu SysTick ticks/pie\n",
 		(unsigned long)(render7_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
-	printf("render_pie8: %lu SysTick ticks/pie\n",
-		(unsigned long)(render8_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
-	printf("render_pie9: %lu SysTick ticks/pie\n",
-		(unsigned long)(render9_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
-	printf("render_pie10: %lu SysTick ticks/pie\n",
-		(unsigned long)(render10_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
-	printf("render_pie11: %lu SysTick ticks/pie\n",
-		(unsigned long)(render11_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
 
 	memset(frame_buffer, 0, sizeof(frame_buffer));
 	// Show two filled 230-degree pies side by side.
-	render_pie10((M_Point){ 32, 32 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
-	render_pie11((M_Point){ 96, 32 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
+	render_pie7((M_Point){ 32, 32 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
+	render_pie7((M_Point){ 96, 32 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 
 	while (1) { }
