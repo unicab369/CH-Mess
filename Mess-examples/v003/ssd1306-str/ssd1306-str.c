@@ -22,12 +22,12 @@ i2c_device_t display = {
 
 #include "../../../Mess-libs/i2c/ssd1306/fun_ssd1306.h"
 
-uint8_t ssd1306_cmd(uint8_t command) {
+uint8_t SSD1306_CMD(uint8_t command) {
 	uint8_t packet[] = { 0x00, command };
 	return i2c_write_raw(&display, packet, sizeof(packet));
 }
 
-uint8_t ssd1306_data(uint8_t *data, int length) {
+uint8_t SSD1306_DATA(uint8_t *data, int length) {
 	uint8_t packet[33];
 	if (length < 0 || length > 32) return I2C_ERR_OVR;
 	packet[0] = 0x40;
@@ -86,23 +86,23 @@ int main(void) {
 	uint32_t scaled_8x8_ticks = 0;
 	uint32_t line_ticks = 0;
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
-		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
+		memset(frame_buffer, 0, sizeof(frame_buffer));
 		render_ticks += time_render_str();
 	}
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
-		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
+		memset(frame_buffer, 0, sizeof(frame_buffer));
 		render_8x8_ticks += time_render_str_8x8();
 	}
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
-		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
+		memset(frame_buffer, 0, sizeof(frame_buffer));
 		scaled_7x5_ticks += time_render_str_scaled(&font_7x5);
 	}
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
-		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
+		memset(frame_buffer, 0, sizeof(frame_buffer));
 		scaled_8x8_ticks += time_render_str_scaled(&font_8x8);
 	}
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
-		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
+		memset(frame_buffer, 0, sizeof(frame_buffer));
 		line_ticks += time_render_str_line();
 	}
 
@@ -119,7 +119,7 @@ int main(void) {
 	printf("render_str_line + area:  %lu ticks/string\n",
 		(unsigned long)(line_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
-	memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
+	memset(frame_buffer, 0, sizeof(frame_buffer));
 	render_str(text_line, 0, 0, &font_7x5);
 	render_str(text_line, 0, 16, &font_8x8);
 	render_str_scaled(scaled_text, 0, 32, &font_7x5, 2);

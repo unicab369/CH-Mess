@@ -17,12 +17,12 @@ i2c_device_t display = {
 
 #include "../../../Mess-libs/i2c/ssd1306/fun_ssd1306.h"
 
-uint8_t ssd1306_cmd(uint8_t command) {
+uint8_t SSD1306_CMD(uint8_t command) {
 	uint8_t packet[] = { 0x00, command };
 	return i2c_write_raw(&display, packet, sizeof(packet));
 }
 
-uint8_t ssd1306_data(uint8_t *data, int length) {
+uint8_t SSD1306_DATA(uint8_t *data, int length) {
 	uint8_t packet[33];
 	if (length < 0 || length > 32) return I2C_ERR_OVR;
 	packet[0] = 0x40;
@@ -137,8 +137,8 @@ int main(void) {
 	}
 
 	ssd1306_setup();
-	memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
+	memset(frame_buffer, 0, sizeof(frame_buffer));
 	test_polys();
-	ssd1306_displayFrame();
+	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 	while (1) { }
 }

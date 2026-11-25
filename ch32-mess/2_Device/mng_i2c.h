@@ -19,7 +19,7 @@ i2c_device_t dev_ssd1306 = {
 };
 
 /* send OLED command byte */
-uint8_t ssd1306_cmd(uint8_t cmd) {
+uint8_t SSD1306_CMD(uint8_t cmd) {
 	uint8_t pkt[2];
 	pkt[0] = 0;
 	pkt[1] = cmd;
@@ -27,7 +27,7 @@ uint8_t ssd1306_cmd(uint8_t cmd) {
 }
 
 /* send OLED data packet (up to 32 bytes) */
-uint8_t ssd1306_data(uint8_t *data, int sz) {
+uint8_t SSD1306_DATA(uint8_t *data, int sz) {
 	uint8_t pkt[33];
 	pkt[0] = 0x40;
 	memcpy(&pkt[1], data, sz);

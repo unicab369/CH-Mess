@@ -20,12 +20,12 @@ i2c_device_t display = {
 
 #include "../../../Mess-libs/i2c/ssd1306/fun_ssd1306.h"
 
-uint8_t ssd1306_cmd(uint8_t command) {
+uint8_t SSD1306_CMD(uint8_t command) {
 	uint8_t packet[] = { 0x00, command };
 	return i2c_write_raw(&display, packet, sizeof(packet));
 }
 
-uint8_t ssd1306_data(uint8_t *data, int length) {
+uint8_t SSD1306_DATA(uint8_t *data, int length) {
 	uint8_t packet[33];
 	if (length < 0 || length > 32) return I2C_ERR_OVR;
 	packet[0] = 0x40;
@@ -72,12 +72,12 @@ int main(void) {
 	uint32_t render_outline_ticks = 0;
 	uint32_t render_filled_ticks = 0;
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
-		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
+		memset(frame_buffer, 0, sizeof(frame_buffer));
 		render_outline_ticks += time_render_circle();
 	}
 
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
-		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
+		memset(frame_buffer, 0, sizeof(frame_buffer));
 		render_filled_ticks += time_render_filled_circle();
 	}
 
@@ -91,10 +91,10 @@ int main(void) {
 		(unsigned long)(render_filled_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
 	// Show an outline above a filled circle.
-	memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
+	memset(frame_buffer, 0, sizeof(frame_buffer));
 	render_circle((M_Point){ 64, 16 }, CIRCLE_RADIUS, 0);
 	render_circle((M_Point){ 64, 48 }, CIRCLE_RADIUS, 1);
-	ssd1306_displayFrame();
+	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 
 	while (1) { }
 }
