@@ -524,6 +524,10 @@ void test_polys() {
 //! ***** Circle Methods *****
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+// |---|---|---:|
+// | render_circle() | render_circle + render_horLine | 438 B |
+// | SSD1306 circles | drawCircle + fillCircle + drawPixel + drawFastHLine | 430 B |
+
 //! compute circle (Bresenham's algorithm)
 void render_circle(
 	M_Point p0, uint8_t radius, uint8_t fill
@@ -600,46 +604,7 @@ static void get_circle_point(
     }
 }
 
-//! compute pie
-void render_pie(M_Point center, uint8_t radius, int16_t start_angle, int16_t end_angle) {    
-    // Draw center point
-    render_pixel(center.x, center.y);
 
-    // Special case: full circle
-    if (start_angle == end_angle) {
-        render_circle(center, radius, 1); // Fill entire circle
-        return;
-    }
-
-    // Angle stepping (adaptive based on radius)
-    uint8_t step = (radius > 40) ? 2 : 1;
-
-    // Draw radial lines
-    int16_t angle = start_angle;
-	int16_t x, y;
-
-    while (1) {
-        // Calculate edge point
-        get_circle_point(center, radius, angle, &x, &y);
-
-        // Draw line from center to edge
-		M_Point p0 = { x: center.x, y: center.y };
-		M_Point p1 = { x: x, y: y };
-		render_line(p0, p1, 1);
-
-        // Break conditions
-        if (angle == end_angle) break;
-
-        // Move to next angle
-        angle = (angle + step) % 360;
-
-        // Handle wrap-around
-        if (start_angle > end_angle && angle < start_angle && angle > end_angle) break;
-    }
-}
-
-
-//! compute ring (Bresenham's algorithm)
 void render_ring(
 	M_Point p0, uint8_t radius, uint8_t thickness,
 	int16_t start_angle, int16_t end_angle
@@ -697,23 +662,42 @@ void render_ring(
     }
 }
 
+void render_pie(M_Point center, uint8_t radius, int16_t start_angle, int16_t end_angle) {
+    // Draw center point
+    render_pixel(center.x, center.y);
 
-void test_circles() {
-    int y = 0;
+    // Special case: full circle
+    if (start_angle == end_angle) {
+        render_circle(center, radius, 1); // Fill entire circle
+        return;
+    }
 
-    for (int8_t i = 0; i<4; i++) {
-		uint8_t should_fill = i > 1 ? 1 : 0;
-		render_circle((M_Point){ 110, y }, 5, should_fill);
+    // Angle stepping (adaptive based on radius)
+    uint8_t step = (radius > 40) ? 2 : 1;
 
-        if (i > 1) {
-            render_ring((M_Point){ 90, y + 12 }, 7, 2, 0, 180);
-        }
+    // Draw radial lines
+    int16_t angle = start_angle;
+	int16_t x, y;
 
-		// compute_pie(point, 20, 0, 100);
-		y += 14;
-	}
+    while (1) {
+        // Calculate edge point
+        get_circle_point(center, radius, angle, &x, &y);
+
+        // Draw line from center to edge
+		M_Point p0 = { x: center.x, y: center.y };
+		M_Point p1 = { x: x, y: y };
+		render_line(p0, p1, 1);
+
+        // Break conditions
+        if (angle == end_angle) break;
+
+        // Move to next angle
+        angle = (angle + step) % 360;
+
+        // Handle wrap-around
+        if (start_angle > end_angle && angle < start_angle && angle > end_angle) break;
+    }
 }
-
 
 
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
