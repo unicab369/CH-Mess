@@ -30,28 +30,74 @@ static inline void ssd1306_render_marker2x2(T_Point point) {
 	ssd1306_render_rect(point, width, height, 1);
 }
 
-// Render each graph point with a marker selected by dot size.
-static inline void ssd1306_render_graph_markers(
-	const T_Point *points, uint8_t length, uint8_t dot_size
+// Convert graph values (x from the y-axis, y above the x-axis) to screen pixels.
+static inline uint8_t ssd1306_plot_to_screen(
+	const T_SSD1306_Plot *plot, T_Point value, T_Point *screen_point
 ) {
-	if (!points) return;
+	if (!plot || !screen_point || plot->x_max <= plot->origin.x
+		|| plot->y_max <= plot->origin.y
+		|| plot->x_max >= SSD1306_W || plot->y_max >= SSD1306_H
+		|| value.x > plot->x_max - plot->origin.x
+		|| value.y > plot->y_max - plot->origin.y
+	) return 0;
+
+	screen_point->x = plot->origin.x + value.x;
+	screen_point->y = plot->y_max - value.y;
+	return 1;
+}
+
+// Render each graph value with a marker selected by dot size.
+static inline void ssd1306_render_graph_markers(
+	const T_SSD1306_Plot *plot, const T_Point *points, uint8_t length, uint8_t dot_size
+) {
+	if (!plot || !points) return;
 	for (uint8_t i = 0; i < length; ++i) {
+		T_Point screen_point;
+		if (!ssd1306_plot_to_screen(plot, points[i], &screen_point))
+			continue;
 		if (dot_size <= 1u)
-			ssd1306_render_point(points[i]);
+			ssd1306_render_point(screen_point);
 		else if (dot_size == 2u)
-			ssd1306_render_marker2x2(points[i]);
+			ssd1306_render_marker2x2(screen_point);
 		else
-			ssd1306_render_marker3x3(points[i]);
+			ssd1306_render_marker3x3(screen_point);
 	}
 }
 
 // Render line segments between each consecutive pair of graph points.
 static inline void ssd1306_render_graph_line(
-	const T_Point *points, uint8_t length, uint8_t thickness
+	const T_SSD1306_Plot *plot, const T_Point *points,
+	uint8_t length, uint8_t thickness
 ) {
-	if (!points || length < 2u) return;
-	for (uint8_t i = 1; i < length; ++i)
-		ssd1306_render_line(points[i - 1u], points[i], thickness);
+	if (!plot || !points || length < 2u) return;
+	for (uint8_t i = 1; i < length; ++i) {
+		T_Point screen_p0, screen_p1;
+
+		if (ssd1306_plot_to_screen(plot, points[i - 1u], &screen_p0)
+			&& ssd1306_plot_to_screen(plot, points[i], &screen_p1)
+		) {
+			ssd1306_render_line(screen_p0, screen_p1, thickness);
+		}
+	}
+}
+
+// Draw filled bars from each graph value down to the plot's x-axis.
+static inline void ssd1306_render_graph_bars(
+	const T_SSD1306_Plot *plot, const T_Point *points, uint8_t length, uint8_t bar_width
+) {
+	if (!plot || !points || !bar_width) return;
+
+	for (uint8_t i = 0; i < length; ++i) {
+		T_Point screen_point;
+		if (!ssd1306_plot_to_screen(plot, points[i], &screen_point))
+			continue;
+
+		uint16_t width = bar_width;
+		uint16_t plot_width = (uint16_t)plot->x_max - screen_point.x + 1u;
+		if (width > plot_width) width = plot_width;
+		uint8_t height = plot->y_max - screen_point.y + 1u;
+		ssd1306_render_rect(screen_point, (uint8_t)(width - 1u), (uint8_t)(height - 1u), 1);
+	}
 }
 
 // Render plot axes and tick marks. x_max and y_max are inclusive endpoint coordinates.

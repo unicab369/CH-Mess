@@ -30,14 +30,14 @@ uint8_t SSD1306_DATA(uint8_t *data, int length) {
 }
 
 static const T_Point samples[] = {
-	{ 16, 48 }, { 30, 39 }, { 44, 43 }, { 58, 26 },
-	{ 72, 32 }, { 86, 18 }, { 100, 22 }, { 114, 10 }
+	{ 11, 12 }, { 25, 21 }, { 39, 17 }, { 53, 34 },
+	{ 67, 28 }, { 81, 42 }, { 95, 38 }, { 109, 50 }
 };
 static T_SSD1306_Plot plot = {
 	.x_label = "Sample X",
 	.y_label = "title",
 	.origin = { 5, 5 },
-	.x_max = 105,
+	.x_max = 120,
 	.y_max = 60,
 	.x_tick_interval = 14,
 	.y_tick_interval = 8,
@@ -61,8 +61,9 @@ int main(void) {
 		(unsigned long)layout_ticks);
 	const uint8_t sample_count = sizeof(samples) / sizeof(samples[0]);
 
-	ssd1306_render_graph_line(samples, sample_count, 1);
-	ssd1306_render_graph_markers(samples, sample_count, 2);
+	ssd1306_render_graph_bars(&plot, samples, sample_count, 8);
+	ssd1306_render_graph_line(&plot, samples, sample_count, 1);
+	ssd1306_render_graph_markers(&plot, samples, sample_count, 2);
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 	while (1) { }
 }
