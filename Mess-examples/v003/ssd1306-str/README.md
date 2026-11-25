@@ -1,11 +1,12 @@
 # CH32V003 SSD1306 string benchmark
 
-Measures framebuffer updates only: a local `display_str_buffered()` routine
-that copies the same 25 `FONT_7x5` cells used by `display_str()`, and
-`ssd1306_drawstr()` using its 8×8 font. Each result averages 25 calls per round
-over five rounds. `display_str()` itself sends data over I2C and does not update
-the framebuffer, so it cannot be used for this buffer-only comparison. The
-fonts and character widths differ.
+Compares framebuffer updates with `render_str()` and `ssd1306_drawstr_font()`
+using the same 5×7 and 8×8 fonts. Both draw only lit glyph pixels and use the
+font's spacing. The benchmark also times the original `ssd1306_drawstr()`, which
+writes background pixels, and `display_str()`, which sends text over I2C directly.
+Each result averages 25 calls per round over five rounds. The framebuffer
+methods do not send data over I2C.
 
-The display shows the 7×5 font on the top page and the 8×8 font below it.
+The display shows the 5×7 and 8×8 `render_str()` results above the matching
+`ssd1306_drawstr_font()` results.
 Build and flash from this directory with `make flash`.

@@ -90,6 +90,14 @@ void ssd1306_setwindow(uint8_t start_page, uint8_t end_page, uint8_t start_colum
 	ssd1306_cmd(end_page); 		// Page end address
 }
 
+void render_pixel(uint8_t x, uint8_t y);
+
+static uint8_t _render_invert = 0;
+
+static inline void render_toggle_invert(void) {
+	_render_invert ^= 1u;
+}
+
 void display_str(
   const char *str, uint8_t page, uint8_t column
 ) {
@@ -103,6 +111,60 @@ void display_str(
 		} else {
 			ssd1306_data((uint8_t *)FONT_7x5[0], 5); // Send space character if no more characters
 		}
+	}
+}
+
+// SSD1306 8x8 build flash: ssd1306_drawstr 2816 bytes.
+// SSD1306 8x8 build flash: render_str 2812 bytes.
+//! Draw text into the frame buffer at pixel coordinates using the font's stored orientation.
+void render_str(const char *str, uint8_t x, uint8_t y, const font_t *font) {
+	uint8_t glyph_stride = font->row_major ? font->height : font->width;
+
+	while (*str && x < SSD1306_W) {
+		uint8_t c = (uint8_t)*str++;
+		if (c < 32 || c > 126) c = ' ';
+		const uint8_t *glyph = font->data + (uint16_t)(c - 32) * glyph_stride;
+
+		if (font->row_major) {
+			for (uint8_t row = 0; row < font->height; ++row) {
+				uint16_t py = (uint16_t)y + row;
+				if (py >= SSD1306_H) continue;
+				uint8_t bits = glyph[row];
+
+				for (uint8_t column = 0; column < font->width; ++column) {
+					if (!(bits & (0x80u >> column))) continue;
+					uint16_t px = (uint16_t)x + column;
+					// if (px >= SSD1306_W) continue;
+
+					uint8_t bitmask = 1u << (py & 0x07u);
+					uint8_t *pixel = &frame_buffer[py >> 3][px];
+					if (_render_invert)
+						*pixel ^= bitmask;
+					else
+						*pixel |= bitmask;
+				}
+			}
+		} else {
+			for (uint8_t column = 0; column < font->width; ++column) {
+				uint16_t px = (uint16_t)x + column;
+				if (px >= SSD1306_W) continue;
+				uint8_t bits = glyph[column];
+
+				for (uint8_t row = 0; row < font->height; ++row) {
+					if (!(bits & (1u << row))) continue;
+					uint16_t py = (uint16_t)y + row;
+					// if (py >= SSD1306_H) continue;
+
+					uint8_t bitmask = 1u << (py & 0x07u);
+					uint8_t *pixel = &frame_buffer[py >> 3][px];
+					if (_render_invert)
+						*pixel ^= bitmask;
+					else
+						*pixel |= bitmask;
+				}
+			}
+		}
+		x += font->width + font->spacing;
 	}
 }
 
@@ -126,12 +188,6 @@ void ssd1306_displayArea(
 //! display the entire screen
 void ssd1306_displayFrame() {
 	ssd1306_displayArea(0, 7, 0, SSD1306_W);
-}
-
-static uint8_t _render_invert = 0;
-
-static inline void render_toggle_invert(void) {
-	_render_invert ^= 1u;
 }
 
 //! compute pixel

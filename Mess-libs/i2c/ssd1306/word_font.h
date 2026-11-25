@@ -4,7 +4,7 @@
 /*                                            */
 /**********************************************/
 
-const static unsigned char fontdata[] = {
+const static unsigned char FONT_8x8[] = {
 	/* 0 0x00 '^@' */
 	0x00, /* 00000000 */
 	0x00, /* 00000000 */
@@ -2567,6 +2567,22 @@ const static unsigned char fontdata[] = {
 };
 
 
+typedef struct {
+	unsigned char width;
+	unsigned char height;
+	const unsigned char *data;
+	unsigned char row_major;
+	unsigned char spacing;
+} font_t;
+
+const static font_t font_8x8 = {
+	.width = 8,
+	.height = 8,
+	.data = &FONT_8x8[32 * 8], // Start at ASCII space, matching render_str's character range.
+	.row_major = 1,
+	.spacing = 0,
+};
+
 const static unsigned char FONT_7x5[95][5] = {
     {0x00, 0x00, 0x00, 0x00, 0x00}, // Space
     {0x00, 0x00, 0x5F, 0x00, 0x00}, // !
@@ -2663,4 +2679,12 @@ const static unsigned char FONT_7x5[95][5] = {
     {0x00, 0x00, 0x7F, 0x00, 0x00}, // |
     {0x00, 0x41, 0x36, 0x08, 0x00}, // }
     {0x08, 0x08, 0x2A, 0x1C, 0x08}  // ~
+};
+
+const static font_t font_7x5 = {
+	.width = 5,
+	.height = 7,
+	.data = &FONT_7x5[0][0],
+	.row_major = 0,
+	.spacing = 1,
 };
