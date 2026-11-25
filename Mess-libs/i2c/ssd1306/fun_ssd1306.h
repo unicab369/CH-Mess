@@ -301,23 +301,15 @@ void render_line(M_Point p0, M_Point p1, uint8_t thickness) {
 	}
 }
 
-void render_lines(M_Point *pts, uint8_t num_pts, uint8_t thickness) {
-    // Early exit if not enough points (need at least 2 points for a line)
-    if (num_pts < 2) return;
-
-    // Draw connected lines between all points
-    for (uint8_t i = 0; i < num_pts - 1; i++) {
-        render_line(pts[i], pts[i+1], thickness);
-    }
-}
-
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 //! ***** Polygon Methods *****
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 void render_poly(M_Point *pts, uint8_t num_pts, uint8_t thickness) {
     if (num_pts < 3) return;  // Need at least 3 points for a polygon
-    render_lines(pts, num_pts, thickness);
+    for (uint8_t i = 0; i < num_pts - 1; i++) {
+        render_line(pts[i], pts[i+1], thickness);
+    }
     render_line(pts[num_pts-1], pts[0], thickness);
 }
 
@@ -420,103 +412,6 @@ void render_rect(
 }
 
 
-void test_polys() {
-    int y = 0;
-
-    //! rectangles
-    for (int8_t i = 0; i<4; i++) {
-		uint8_t should_fill = i > 1 ? 1 : 0;
-		render_rect((M_Point){ 84, y }, 15, 5, should_fill);
-		y += 7;
-	}
-
-    //! zigzag
-    M_Point zigzag[] = {
-        (M_Point) { 60, 8 },
-        (M_Point) { 50, 15 },
-        (M_Point) { 80, 8 },
-        (M_Point) { 70, 0 },
-        (M_Point) { 70, 20 }
-    };
-
-    uint8_t pt_count = sizeof(zigzag)/sizeof(M_Point);
-    render_solid_poly(zigzag, pt_count);
-
-    M_Point zigzag2[4];
-    memcpy(zigzag2, zigzag, sizeof(zigzag));  // Fast copy
-
-    for (int i = 0; i < sizeof(zigzag)/sizeof(M_Point); i++) {
-        zigzag2[i].y += 24;  // Add 20 to each x-coordinate
-    }
-    render_poly(zigzag2, pt_count, 1);
-
-
-    // Concave polygon: Star (22px tall)
-    M_Point star[] = {
-        {12 , 0},  // Top point
-        {16 , 8}, // Right upper
-        {24 , 8}, // Right outer
-        {18 , 14}, // Right inner
-        {22 , 22}, // Bottom right
-        {12 , 16}, // Bottom center
-        {2  , 22},  // Bottom left
-        {6  , 14},  // Left inner
-        {0  , 8},  // Left outer
-        {8  , 8}   // Left upper
-    };
-
-    // Convex polygon: Quad (12px tall)
-    static M_Point quad[] = {
-        {6  , 24},  // Bottom-left (aligned with star's left)
-        {18 , 24}, // Bottom-right (centered)
-        {22 , 34}, // Top-right (matches star width - unchanged)
-        {2  , 34}   // Top-left (aligned - unchanged)
-    };
-
-    // Self-intersecting: Hourglass (12px tall)
-    static M_Point hourglass[] = {
-        {6  , 38},   // Top-left (aligned with quad's bottom-left)
-        {18 , 38},  // Top-right (aligned with quad's bottom-right)
-        {6  , 52},   // Bottom-left
-        {18 , 52}   // Bottom-right
-    };
-
-    //! star
-    pt_count = sizeof(star)/sizeof(M_Point);
-    render_solid_poly(star, pt_count);
-
-    // Shift star right by 25px
-    for (int i = 0; i < sizeof(star)/sizeof(M_Point); i++) {
-        star[i].x += 25;  // Add 20 to each x-coordinate
-    }
-    render_poly(star, pt_count, 1);
-
-    //! quad
-    pt_count = sizeof(quad)/sizeof(M_Point);
-    render_solid_poly(quad, pt_count);
-
-    // Shift quad right by 25px
-    M_Point quad2[4];
-    memcpy(quad2, quad, sizeof(quad));  // Fast copy
-
-    for (int i = 0; i < sizeof(quad)/sizeof(M_Point); i++) {
-        quad2[i].x += 25;  // Add 20 to each x-coordinate
-    }
-    render_poly(quad2, pt_count, 1);
-
-    //! hourglass
-    pt_count = sizeof(hourglass)/sizeof(M_Point);
-    render_solid_poly(hourglass, pt_count);
-
-    // Shift hourglass right by 25px
-    M_Point hourglass2[4];
-    memcpy(hourglass2, hourglass, sizeof(hourglass));  // Fast copy
-
-    for (int i = 0; i < sizeof(hourglass)/sizeof(M_Point); i++) {
-        hourglass2[i].x += 25;  // Add 20 to each x-coordinate
-    }
-    render_poly(hourglass2, pt_count, 1);
-}
 
 
 
@@ -710,8 +605,7 @@ void render_pie(M_Point center, uint8_t radius, int16_t start_angle, int16_t end
 
 
 void ssd1306_draw_test() {
-	test_polys();
-	test_circles();
+	// test_circles();
 	// ssd1306_vertical_line(&line, 2, 0);
 
 	// line.pos = 20;
