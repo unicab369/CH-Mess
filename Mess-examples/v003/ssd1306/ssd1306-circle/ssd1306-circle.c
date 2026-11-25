@@ -9,6 +9,7 @@
 #define BENCH_RUNS 500u
 #define BENCH_ROUNDS 5u
 #define CIRCLE_RADIUS 8u
+#define RING_THICKNESS 3u
 #define SSD1306_SHARED_FRAME_BUFFER
 
 i2c_device_t display = {
@@ -59,6 +60,17 @@ static uint32_t time_render_filled_circle(void) {
 	return (uint32_t)(funSysTick32() - start);
 }
 
+static uint32_t time_render_ring(
+	void (*render)(T_Point, uint8_t, uint8_t, int16_t, int16_t)
+) {
+	uint32_t start = funSysTick32();
+
+	for (uint32_t i = 0; i < BENCH_RUNS; ++i)
+		render(circle_center(i), CIRCLE_RADIUS, RING_THICKNESS, 0, 360);
+
+	return (uint32_t)(funSysTick32() - start);
+}
+
 int main(void) {
 	SystemInit();
 
@@ -71,6 +83,7 @@ int main(void) {
 
 	uint32_t render_outline_ticks = 0;
 	uint32_t render_filled_ticks = 0;
+	uint32_t render_ring_ticks = 0;
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(frame_buffer, 0, sizeof(frame_buffer));
 		render_outline_ticks += time_render_circle();
@@ -81,6 +94,11 @@ int main(void) {
 		render_filled_ticks += time_render_filled_circle();
 	}
 
+	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
+		memset(frame_buffer, 0, sizeof(frame_buffer));
+		render_ring_ticks += time_render_ring(ssd1306_render_ring);
+	}
+
 	printf("SSD1306 circle benchmark\n");
 	printf("%u calls/round, %u rounds, radius %u\n",
 		(unsigned)BENCH_RUNS, (unsigned)BENCH_ROUNDS,
@@ -89,11 +107,13 @@ int main(void) {
 		(unsigned long)(render_outline_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 	printf("filled ssd1306_render_circle:       %lu SysTick ticks/circle\n",
 		(unsigned long)(render_filled_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
+	printf("ssd1306_render_ring:  %lu SysTick ticks/ring\n",
+		(unsigned long)(render_ring_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
 	// Show an outline above a filled circle.
 	memset(frame_buffer, 0, sizeof(frame_buffer));
 	ssd1306_render_circle((T_Point){ 64, 16 }, CIRCLE_RADIUS, 0);
-	ssd1306_render_circle((T_Point){ 64, 48 }, CIRCLE_RADIUS, 1);
+	ssd1306_render_ring((T_Point){ 64, 48 }, CIRCLE_RADIUS, RING_THICKNESS, 0, 360);
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 
 	while (1) { }

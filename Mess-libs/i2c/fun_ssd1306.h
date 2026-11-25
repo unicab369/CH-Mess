@@ -878,7 +878,6 @@ void ssd1306_render_ring(
     }
 }
 
-
 // | Renderer | Renderer function | Helpers | Total |
 // |---|---:|---|---:|
 // | ssd1306_render_pie | 636 B | get_circle_point 266 B, SIN_LUT 167 B, ssd1306_render_horLine 100 B | 1,169 B |
