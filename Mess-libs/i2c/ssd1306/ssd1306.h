@@ -324,67 +324,6 @@ void ssd1306_drawImage(uint32_t x, uint32_t y, const unsigned char* input, uint3
 	}
 }
 
-/* Draw character to the display buffer */
-void ssd1306_drawchar(uint8_t x, uint8_t y, uint8_t chr, uint8_t color) {
-	uint16_t i, j, col;
-	uint8_t d;
-
-	for(i=0;i<8;i++) {
-		d = FONT_8x8[(chr<<3)+i];
-
-		for(j=0;j<8;j++){
-			if(d&0x80)
-				col = color;
-			else
-				col = (~color)&1;
-			ssd1306_drawPixel(x+j, y+i, col);
-
-			// next bit
-			d <<= 1;
-		}
-	}
-}
-
-/* draw a string to the display */
-void ssd1306_drawstr(uint8_t x, uint8_t y, char *str, uint8_t color) {
-	uint8_t c;
-
-	while((c=*str++)) {
-		ssd1306_drawchar(x, y, c, color);
-		x += 8;
-		if(x>120) break;
-	}
-}
-
-/* Draw only lit glyph pixels, using the same font layout and spacing as render_str. */
-void ssd1306_drawstr_font(uint8_t x, uint8_t y, const char *str, const font_t *font) {
-	uint8_t stride = font->row_major ? font->height : font->width;
-	uint16_t cursor = x;
-
-	while (*str && cursor < SSD1306_W) {
-		uint8_t c = (uint8_t)*str++;
-		if (c < 32 || c > 126) c = ' ';
-		const uint8_t *glyph = font->data + (uint16_t)(c - 32) * stride;
-
-		if (font->row_major) {
-			for (uint8_t row = 0; row < font->height; ++row) {
-				uint8_t bits = glyph[row];
-				for (uint8_t col = 0; col < font->width; ++col)
-					if (bits & (0x80u >> col))
-						ssd1306_drawPixel(cursor + col, (uint16_t)y + row, 1);
-			}
-		} else {
-			for (uint8_t col = 0; col < font->width; ++col) {
-				uint8_t bits = glyph[col];
-				for (uint8_t row = 0; row < font->height; ++row)
-					if (bits & (1u << row))
-						ssd1306_drawPixel(cursor + col, (uint16_t)y + row, 1);
-			}
-		}
-		cursor += (uint16_t)font->width + font->spacing;
-	}
-}
-
 /* enum for font size */
 typedef enum {
 	fontsize_8x8 = 1,

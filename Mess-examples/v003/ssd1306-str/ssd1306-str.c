@@ -6,7 +6,7 @@
 #include "ch32fun.h"
 #include "../../../Mess-libs/i2c/lib/lib_i2c.h"
 
-#define BENCH_RUNS 25u
+#define BENCH_RUNS 6
 #define BENCH_ROUNDS 5u
 #define SSD1306_SHARED_FRAME_BUFFER
 
@@ -52,28 +52,11 @@ static uint32_t time_render_str_8x8(void) {
 	return (uint32_t)(funSysTick32() - start);
 }
 
-static uint32_t time_display_str(void) {
+static uint32_t time_render_str_line(void) {
 	uint32_t start = funSysTick32();
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
-		display_str(text_line, 0, 0);
-		__asm__ volatile("" ::: "memory");
-	}
-	return (uint32_t)(funSysTick32() - start);
-}
-
-static uint32_t time_drawstr(void) {
-	uint32_t start = funSysTick32();
-	for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
-		ssd1306_drawstr(0, 0, text_line, 1);
-		__asm__ volatile("" ::: "memory");
-	}
-	return (uint32_t)(funSysTick32() - start);
-}
-
-static uint32_t time_drawstr_font(const font_t *font) {
-	uint32_t start = funSysTick32();
-	for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
-		ssd1306_drawstr_font(0, 0, text_line, font);
+		render_str_line(text_line, 0, 0);
+		ssd1306_displayArea(0, 0, 0, SSD1306_STR_SIZE * 5u);
 		__asm__ volatile("" ::: "memory");
 	}
 	return (uint32_t)(funSysTick32() - start);
@@ -89,10 +72,7 @@ int main(void) {
 
 	uint32_t render_ticks = 0;
 	uint32_t render_8x8_ticks = 0;
-	uint32_t display_ticks = 0;
-	uint32_t draw_ticks = 0;
-	uint32_t draw_7x5_ticks = 0;
-	uint32_t draw_8x8_ticks = 0;
+	uint32_t line_ticks = 0;
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
 		render_ticks += time_render_str();
@@ -102,19 +82,8 @@ int main(void) {
 		render_8x8_ticks += time_render_str_8x8();
 	}
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
-		display_ticks += time_display_str();
-	}
-	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
-		draw_ticks += time_drawstr();
-	}
-	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
-		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
-		draw_7x5_ticks += time_drawstr_font(&font_7x5);
-	}
-	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
-		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
-		draw_8x8_ticks += time_drawstr_font(&font_8x8);
+		line_ticks += time_render_str_line();
 	}
 
 	printf("SSD1306 framebuffer string benchmark\n");
@@ -123,20 +92,12 @@ int main(void) {
 		(unsigned long)(render_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 	printf("render_str (FONT_8x8):   %lu ticks/string\n",
 		(unsigned long)(render_8x8_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
-	printf("display_str (I2C):       %lu ticks/string\n",
-		(unsigned long)(display_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
-	printf("ssd1306_drawstr:         %lu ticks/string\n",
-		(unsigned long)(draw_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
-	printf("drawstr_font (FONT_7x5): %lu ticks/string\n",
-		(unsigned long)(draw_7x5_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
-	printf("drawstr_font (FONT_8x8): %lu ticks/string\n",
-		(unsigned long)(draw_8x8_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
+	printf("render_str_line + area:  %lu ticks/string\n",
+		(unsigned long)(line_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
 	memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
 	render_str(text_line, 0, 0, &font_7x5);
 	render_str(text_line, 0, 16, &font_8x8);
-	ssd1306_drawstr_font(0, 32, text_line, &font_7x5);
-	ssd1306_drawstr_font(0, 48, text_line, &font_8x8);
 	ssd1306_refresh();
 	while (1) { }
 }

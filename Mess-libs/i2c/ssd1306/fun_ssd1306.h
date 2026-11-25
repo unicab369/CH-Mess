@@ -2,6 +2,7 @@
 #define _MODSSD1306_H
 
 #include "ch32fun.h"
+#include <stdlib.h>
 
 #define SSD1306_128X64
 #include "ssd1306.h"
@@ -90,7 +91,30 @@ void ssd1306_setwindow(uint8_t start_page, uint8_t end_page, uint8_t start_colum
 	ssd1306_cmd(end_page); 		// Page end address
 }
 
-void render_pixel(uint8_t x, uint8_t y);
+//! display area
+void ssd1306_displayArea(
+	uint8_t start_page, uint8_t end_page,
+	uint8_t col_start, uint8_t col_end
+) {
+	if (start_page >= SSD1306_PAGES || start_page > end_page || col_start >= SSD1306_W) return;
+	if (end_page >= SSD1306_PAGES) end_page = SSD1306_PAGES - 1;
+	if (col_end > SSD1306_W) col_end = SSD1306_W;
+	if (col_start >= col_end) return;
+	ssd1306_setwindow(start_page, end_page, col_start, col_end-1);
+
+	for (uint8_t page = start_page; page <= end_page; ++page) {
+		for (uint16_t chunk = col_start; chunk < col_end; chunk += CHUNK_SIZE) {
+			uint16_t chunk_end = chunk + CHUNK_SIZE;
+			if (chunk_end > col_end) chunk_end = col_end;
+			ssd1306_data(&frame_buffer[page][chunk], chunk_end - chunk);
+		}
+	}
+}
+
+//! display the entire screen
+void ssd1306_displayFrame() {
+	ssd1306_displayArea(0, 7, 0, SSD1306_W);
+}
 
 static uint8_t _render_invert = 0;
 
@@ -98,19 +122,21 @@ static inline void render_toggle_invert(void) {
 	_render_invert ^= 1u;
 }
 
-void display_str(
-  const char *str, uint8_t page, uint8_t column
-) {
-	ssd1306_setwindow(page, page, 0, SSD1306_W_LIMIT); // Set the window to the current page
+// Copy up to SSD1306_STR_SIZE five-column glyphs into one framebuffer page.
+void render_str_line(const char *str, uint8_t page, uint8_t column) {
+	if (page >= SSD1306_PAGES) return;
 
-	for (int i=0; i < SSD1306_STR_SIZE; i++) {
+	for (uint16_t i = 0; i < SSD1306_STR_SIZE; ++i) {
+		uint16_t x = (uint16_t)column + i * 5u;
+		if (x >= SSD1306_W) break;
+		uint8_t char_index = 0;
+
 		if (*str) {
-			uint8_t char_index = *str - 32; // Adjust for ASCII offset
-			ssd1306_data((uint8_t *)FONT_7x5[char_index], 5); // Send font data
-			str++;
-		} else {
-			ssd1306_data((uint8_t *)FONT_7x5[0], 5); // Send space character if no more characters
+			uint8_t c = (uint8_t)*str++;
+			if (c >= 32 && c <= 126) char_index = c - 32;
 		}
+		uint8_t width = SSD1306_W - x < 5u ? SSD1306_W - x : 5u;
+		memcpy(&frame_buffer[page][x], FONT_7x5[char_index], width);
 	}
 }
 
@@ -166,28 +192,6 @@ void render_str(const char *str, uint8_t x, uint8_t y, const font_t *font) {
 		}
 		x += font->width + font->spacing;
 	}
-}
-
-//! display area
-void ssd1306_displayArea(
-	uint8_t start_page, uint8_t end_page,
-	uint8_t col_start, uint8_t col_end
-) {
-	ssd1306_setwindow(start_page, end_page, col_start, col_end-1);
-
-    for (uint8_t page = 0; page < SSD1306_PAGES; page++) {
-        // Send page data in chunks
-        for (uint16_t chunk = 0; chunk < col_end; chunk += CHUNK_SIZE) {
-			uint16_t chunk_end = chunk + CHUNK_SIZE;
-			if (chunk_end > col_end) chunk_end = col_end;
-            ssd1306_data(&frame_buffer[page][chunk], chunk_end - chunk);
-        }
-    }
-}
-
-//! display the entire screen
-void ssd1306_displayFrame() {
-	ssd1306_displayArea(0, 7, 0, SSD1306_W);
 }
 
 //! compute pixel
@@ -714,15 +718,15 @@ int ssd1306_test2() {
 		//       break;
 		//    case 5:
 		//       printf("Unscaled Text\n\r");
-				ssd1306_drawstr(0,0, "This is a test", 1);
-				ssd1306_drawstr(0,8, "of the emergency", 1);
-				ssd1306_drawstr(0,16,"broadcasting", 1);
-				ssd1306_drawstr(0,24,"system.",1);
+				render_str("This is a test", 0, 0, &font_8x8);
+				render_str("of the emergency", 0, 8, &font_8x8);
+				render_str("broadcasting", 0, 16, &font_8x8);
+				render_str("system.", 0, 24, &font_8x8);
 				if(SSD1306_H>32) {
-					ssd1306_drawstr(0,32, "Lorem ipsum", 1);
-					ssd1306_drawstr(0,40, "dolor sit amet,", 1);
-					ssd1306_drawstr(0,48,"consectetur", 1);
-					ssd1306_drawstr(0,56,"adipiscing",1);
+					render_str("Lorem ipsum", 0, 32, &font_8x8);
+					render_str("dolor sit amet,", 0, 40, &font_8x8);
+					render_str("consectetur", 0, 48, &font_8x8);
+					render_str("adipiscing", 0, 56, &font_8x8);
 				}
 		//       break;
 				

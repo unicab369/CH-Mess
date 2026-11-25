@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #include "../lib/lib_i2c.h"
+#define SSD1306_SHARED_FRAME_BUFFER
 #include "../ssd1306/fun_ssd1306.h"
 #include "../../modules/systick_irq.h"
 
@@ -834,7 +835,8 @@ void test_v003Slave() {
 void modI2C_display(const char *str, uint8_t line) {
 	//! validate device before print
 	if (i2c_ping(0x3C) != I2C_OK) return;
-	display_str(str, line, 0);
+	render_str_line(str, line, 0);
+	ssd1306_displayArea(line, line, 0, SSD1306_STR_SIZE * 5u);
 }
 
 char str_output[SSD1306_STR_SIZE];
@@ -890,7 +892,8 @@ int main() {
 			ssd1306_setup();
 
 			sprintf(str_output, "Hello Bee2!");
-			display_str(str_output, 0, 0);
+			render_str_line(str_output, 0, 0);
+			ssd1306_displayArea(0, 0, 0, SSD1306_STR_SIZE * 5u);
 		}
 
 		// Scan the I2C Bus, prints any devices that respond
