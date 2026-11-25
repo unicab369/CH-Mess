@@ -834,23 +834,23 @@ void ssd1306_render_ring(
 
             // Skip pixels outside valid screen bounds
             if (y_top >= 0 && y_top < SSD1306_H) {
-                T_Page_Mask mask_t = page_masks[y_top];
-                uint8_t* row_t = frame_base + (mask_t.page * SSD1306_W);
+                uint8_t* row_t = frame_base + ((y_top >> 3) * SSD1306_W);
+                uint8_t mask_t = (uint8_t)(1u << (y_top & 7));
 
-                if (left_valid)     row_t[x_left]  |= mask_t.bitmask;
-                if (start_valid)    row_t[x_start] |= mask_t.bitmask;
-                if (end_valid) 	    row_t[x_end]   |= mask_t.bitmask;
-                if (right_valid)    row_t[x_right] |= mask_t.bitmask;
+                if (left_valid)     row_t[x_left]  |= mask_t;
+                if (start_valid)    row_t[x_start] |= mask_t;
+                if (end_valid) 	    row_t[x_end]   |= mask_t;
+                if (right_valid)    row_t[x_right] |= mask_t;
             }
 
             if (y_bottom >= 0 && y_bottom < SSD1306_H) {
-                T_Page_Mask mask_b = page_masks[y_bottom];
-                uint8_t* row_b = frame_base + (mask_b.page * SSD1306_W);
+                uint8_t* row_b = frame_base + ((y_bottom >> 3) * SSD1306_W);
+                uint8_t mask_b = (uint8_t)(1u << (y_bottom & 7));
 
-                if (left_valid) 	row_b[x_left]  |= mask_b.bitmask;
-                if (start_valid)    row_b[x_start] |= mask_b.bitmask;
-                if (end_valid) 	    row_b[x_end]   |= mask_b.bitmask;
-                if (right_valid)    row_b[x_right] |= mask_b.bitmask;
+                if (left_valid) 	row_b[x_left]  |= mask_b;
+                if (start_valid)    row_b[x_start] |= mask_b;
+                if (end_valid) 	    row_b[x_end]   |= mask_b;
+                if (right_valid)    row_b[x_right] |= mask_b;
             }
 
             // Optimized Bresenham step
