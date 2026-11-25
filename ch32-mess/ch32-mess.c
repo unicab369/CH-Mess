@@ -20,7 +20,7 @@
 #include "../Mess-libs/usb/fun_usb.h"
 
 #ifdef I2C_SLAVE_ENABLED
-	#include "../Mess-libs/i2c/lib/i2c_slave.h"					// 908 Bytes? + RAM 76 Bytes
+	#include "../Mess-libs/i2c/i2c_slave.h"					// 908 Bytes? + RAM 76 Bytes
 #endif
 
 #ifdef UART_ENABLED

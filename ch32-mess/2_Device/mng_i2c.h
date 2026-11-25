@@ -1,7 +1,7 @@
 #include "ch32fun.h"
 
-#include "../Mess-libs/i2c/lib/lib_i2c.h"
-#include "../Mess-libs/i2c/ssd1306/fun_ssd1306.h"
+#include "../Mess-libs/i2c/lib_i2c.h"
+#include "../Mess-libs/i2c/fun_ssd1306.h"
 
 #ifndef PACKED
 #define PACKED __attribute__((packed))

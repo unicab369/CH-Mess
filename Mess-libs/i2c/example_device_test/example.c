@@ -1,9 +1,9 @@
 #include "ch32fun.h"
 #include <stdio.h>
 
-#include "../lib/lib_i2c.h"
+#include "../lib_i2c.h"
 #define SSD1306_SHARED_FRAME_BUFFER
-#include "../ssd1306/fun_ssd1306.h"
+#include "../fun_ssd1306.h"
 #include "../../modules/systick_irq.h"
 
 #ifndef PACKED

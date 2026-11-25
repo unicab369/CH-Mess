@@ -1,6 +1,6 @@
 #include "ch32fun.h"
 
-#include "../Mess-libs/i2c/lib/lib_i2c.h"
+#include "../Mess-libs/i2c/lib_i2c.h"
 
 i2c_device_t dev_sensor = {
 	.clkr = I2C_CLK_100KHZ,
