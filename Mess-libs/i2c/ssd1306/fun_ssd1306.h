@@ -90,14 +90,10 @@ void ssd1306_setwindow(uint8_t start_page, uint8_t end_page, uint8_t start_colum
 	ssd1306_cmd(end_page); 		// Page end address
 }
 
-void ssd1306_setWindow_pages(uint8_t start_page, uint8_t end_page) {
-	ssd1306_setwindow(start_page, end_page, 0, SSD1306_W_LIMIT); // Set the window to the current page
-}
-
 void render_str(
   const char *str, uint8_t page, uint8_t column
 ) {
-	ssd1306_setWindow_pages(page, page); // Set the window to the current page
+	ssd1306_setwindow(page, page, 0, SSD1306_W_LIMIT); // Set the window to the current page
 
 	for (int i=0; i < SSD1306_STR_SIZE; i++) {
 		if (*str) {
