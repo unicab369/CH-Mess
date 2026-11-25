@@ -13,18 +13,6 @@ typedef struct {
 	uint8_t y_tick_interval;
 } T_SSD1306_Plot;
 
-// Draw a 3x3 point marker centered on the supplied coordinate.
-static inline void ssd1306_plot_render_marker(T_Point point) {
-	for (int8_t dy = -1; dy <= 1; ++dy) {
-		for (int8_t dx = -1; dx <= 1; ++dx) {
-			int16_t x = (int16_t)point.x + dx;
-			int16_t y = (int16_t)point.y + dy;
-			if (x >= 0 && x < SSD1306_W && y >= 0 && y < SSD1306_H)
-				ssd1306_render_point((T_Point){ (uint8_t)x, (uint8_t)y });
-		}
-	}
-}
-
 // Draw the same clipped 3x3 marker using the filled rectangle renderer.
 static inline void ssd1306_render_marker3x3(T_Point point) {
 	uint8_t x_min = point.x ? point.x - 1u : 0;

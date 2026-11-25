@@ -44,12 +44,14 @@ static T_SSD1306_Plot plot = {
 };
 int main(void) {
 	SystemInit();
-	if (i2c_init(&display) != I2C_OK || i2c_ping(display.addr) != I2C_OK) {
-		printf("SSD1306 not found at 0x%02X\n", display.addr);
-		while (1) { }
+	while (i2c_init(&display) != I2C_OK || i2c_ping(display.addr) != I2C_OK) {
+		printf("SSD1306 not responding; retrying\n");
 	}
 
-	ssd1306_setup();
+	while (ssd1306_setup() != 0) {
+		printf("SSD1306 setup failed; retrying\n");
+		while (i2c_ping(display.addr) != I2C_OK) { }
+	}
 	memset(frame_buffer, 0, sizeof(frame_buffer));
 	uint32_t layout_start = funSysTick32();
 	if (!ssd1306_render_plot_layout(&plot)) while (1) { }
@@ -60,7 +62,7 @@ int main(void) {
 	const uint8_t sample_count = sizeof(samples) / sizeof(samples[0]);
 
 	ssd1306_render_graph_line(samples, sample_count, 1);
-	ssd1306_render_graph_markers(samples, sample_count, 3);
+	ssd1306_render_graph_markers(samples, sample_count, 2);
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 	while (1) { }
 }

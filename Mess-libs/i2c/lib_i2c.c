@@ -100,15 +100,37 @@ static inline i2c_err_t i2c_wait()
 }
 
 
-/// @brief Starts the I2C Bus for communications
-/// @param None
-/// @return None
-__attribute__((always_inline))
-static inline void i2c_start()
-{
+static inline void i2c_bus_clear(void) {
+	// Free a slave holding SDA low by clocking it through a pending byte.
+	const uint32_t shift = 4u * I2C_PIN_SCL;
+	const uint32_t mask = 1u << I2C_PIN_SCL;
+	const uint32_t pin_config = I2C_PORT->CFGLR;
+	I2C_PORT->CFGLR = (pin_config & ~(0x0Fu << shift))
+		| ((GPIO_Speed_10MHz | GPIO_CNF_OUT_OD) << shift);
+	I2C_PORT->OUTDR |= mask;
+	for (uint8_t pulse = 0; pulse < 9u; ++pulse) {
+		I2C_PORT->OUTDR &= ~mask;
+		for (volatile uint8_t wait = 0; wait < 100u; ++wait) { }
+		I2C_PORT->OUTDR |= mask;
+		for (volatile uint8_t wait = 0; wait < 100u; ++wait) { }
+	}
+	I2C_PORT->CFGLR = pin_config;
+}
+
+static inline i2c_err_t i2c_start() {
 	// Send a START Signal and wait for it to assert
 	I2C1->CTLR1 |= I2C_CTLR1_START;
-	while(!i2c_status(I2C_EVENT_MASTER_MODE_SELECT));
+	i2c_err_t i2c_ret = I2C_OK;
+	I2C_TIMEOUT_WAIT_FOR(!i2c_status(I2C_EVENT_MASTER_MODE_SELECT), i2c_ret);
+	if (i2c_ret != I2C_OK) {
+		I2C1->CTLR1 &= ~I2C_CTLR1_START;
+		i2c_error();
+		i2c_bus_clear();
+		I2C1->CTLR1 |= I2C_CTLR1_START;
+		i2c_ret = I2C_OK;
+		I2C_TIMEOUT_WAIT_FOR(!i2c_status(I2C_EVENT_MASTER_MODE_SELECT), i2c_ret);
+	}
+	return i2c_ret;
 }
 
 
@@ -213,7 +235,6 @@ i2c_err_t i2c_init(i2c_device_t *dev)
 	// Check error states
 	return i2c_error();
 }
-
 
 i2c_err_t i2c_ping(const uint8_t addr)
 {

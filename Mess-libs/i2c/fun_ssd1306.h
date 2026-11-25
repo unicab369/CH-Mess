@@ -243,7 +243,7 @@ void ssd1306_displayArea(
 	if (end_page >= SSD1306_PAGES) end_page = SSD1306_PAGES - 1;
 	if (col_end > SSD1306_W) col_end = SSD1306_W;
 	if (col_start >= col_end) return;
-	ssd1306_setwindow(start_page, end_page, col_start, col_end-1);
+	ssd1306_setwindow(start_page, end_page, col_start, col_end - 1u);
 
 	for (uint8_t page = start_page; page <= end_page; ++page) {
 		for (uint16_t chunk = col_start; chunk < col_end; chunk += CHUNK_SIZE) {
@@ -445,17 +445,18 @@ void ssd1306_render_image(const uint8_t *image, uint8_t x, uint8_t y,
 	}
 }
 
-void ssd1306_setup() {
+uint8_t ssd1306_setup(void) {
 	memset(frame_buffer, 0, sizeof(frame_buffer));
 
 	#if !defined(SSD1306_CUSTOM_INIT_ARRAY) || !SSD1306_CUSTOM_INIT_ARRAY
 	uint8_t *cmd_list = (uint8_t *)ssd1306_init_array;
 	while (*cmd_list != SSD1306_TERMINATE_CMDS) {
-		if (SSD1306_CMD(*cmd_list++)) return;
+		if (SSD1306_CMD(*cmd_list++)) return 1;
 	}
 	#endif
 
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
+	return 0;
 }
 
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
