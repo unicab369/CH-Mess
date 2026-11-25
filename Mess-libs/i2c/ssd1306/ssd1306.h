@@ -336,27 +336,6 @@ void ssd1306_drawImage(uint32_t x, uint32_t y, const unsigned char* input, uint3
 	}
 }
 
-/* fast vert line */
-void ssd1306_drawFastVLine(int32_t x, int32_t y, int32_t h, uint32_t color) {
-	// clipping
-	if((x >= SSD1306_W) || (y >= SSD1306_H)) return;
-	if((y+h-1) >= SSD1306_H) h = SSD1306_H-y;
-	while(h--) {
-		ssd1306_drawPixel(x, y++, color);
-	}
-}
-
-/* fast horiz line */
-void ssd1306_drawFastHLine(uint32_t x, uint32_t y, uint32_t w, uint32_t color) {
-	// clipping
-	if((x >= SSD1306_W) || (y >= SSD1306_H)) return;
-	if((x+w-1) >= SSD1306_W)  w = SSD1306_W-x;
-
-	while (w--) {
-		ssd1306_drawPixel(x++, y, color);
-	}
-}
-
 /* abs() helper function for line drawing */
 int gfx_abs(int x) {
 	return (x<0) ? -x : x;
