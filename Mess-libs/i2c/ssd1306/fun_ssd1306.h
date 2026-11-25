@@ -128,24 +128,27 @@ void ssd1306_displayFrame() {
 	ssd1306_displayArea(0, 7, 0, SSD1306_W);
 }
 
+static uint8_t _render_invert = 0;
+
+static inline void render_toggle_invert(void) {
+	_render_invert ^= 1u;
+}
+
 //! compute pixel
 void render_pixel(uint8_t x, uint8_t y) {
     if (x >= SSD1306_W || y >= SSD1306_H) return; // Skip if out of bounds
     // Look up the precomputed page and bit mask that correspond to this y coordinate.
     M_Page_Mask mask = page_masks[y];
     // mask.page selects the 8-pixel vertical page for y; mask.bitmask selects y's bit within it.
-    frame_buffer[mask.page][x] |= mask.bitmask;
+    if (_render_invert)
+        frame_buffer[mask.page][x] ^= mask.bitmask;
+    else
+        frame_buffer[mask.page][x] |= mask.bitmask;
 }
 
 void ssd1306_setup() {
 	precompute_page_masks();
 	ssd1306_init();
-
-	// //# SSD1306
-	// if(!ssd1306_i2c_init()) {
-	// 	ssd1306_init();
-	// 	printf("SSD1306 init.\n\r");
-	// }
 
 	//# Clear the frame buffer
 	memset(frame_buffer, 0, SSD1306_PAGES * SSD1306_W);
@@ -187,8 +190,13 @@ static void _render_page_span(
 		                    & (uint8_t)(0xFFu >> (7u - page_last_bit));
 		uint8_t *row_start = &frame_buffer[page][x];
 
-		for (uint8_t i = 0; i < x_len; ++i)
-			row_start[i] |= page_mask;
+		if (_render_invert) {
+			for (uint8_t i = 0; i < x_len; ++i)
+				row_start[i] ^= page_mask;
+		} else {
+			for (uint8_t i = 0; i < x_len; ++i)
+				row_start[i] |= page_mask;
+		}
 	}
 }
 
@@ -209,8 +217,13 @@ void render_horLine(
 		M_Page_Mask mask = page_masks[y];
 		uint8_t *row_start = &frame_buffer[mask.page][x_min];
 
-		for (uint8_t i = 0; i < x_len; ++i)
-			row_start[i] |= mask.bitmask;
+		if (_render_invert) {
+			for (uint8_t i = 0; i < x_len; ++i)
+				row_start[i] ^= mask.bitmask;
+		} else {
+			for (uint8_t i = 0; i < x_len; ++i)
+				row_start[i] |= mask.bitmask;
+		}
 		return;
 	}
 
@@ -240,6 +253,27 @@ void render_verLine(
 	_render_page_span(y_min, y_max, x, x_len);
 }
 
+void render_rect(
+	M_Point p0, uint8_t width, uint8_t height, uint8_t fill
+) {
+	// Validate coordinates
+	if (p0.x >= SSD1306_W || p0.y >= SSD1306_H) return;
+	uint16_t x_end = p0.x + width;
+	uint16_t y_end = p0.y + height;
+
+	// Draw rectangle with optional fill
+
+    if (fill) {
+		for (uint16_t x_pos = p0.x; x_pos <= x_end; ++x_pos)
+			render_verLine(x_pos, p0.y, y_end, 1);
+    } else {
+        // Outline only
+        render_horLine(p0.y, p0.x, x_end, 1);     	// Top edge
+        render_horLine(y_end, p0.x, x_end, 1);    	// Bottom edge
+        render_verLine(p0.x, p0.y + 1, y_end - 1, 1); 		// Left edge
+        render_verLine(x_end, p0.y + 1, y_end - 1, 1); 		// Right edge
+    }
+}
 
 // |---|---:|---:|---:|
 // | render_line() | 410 bytes |
@@ -264,7 +298,10 @@ void render_line(M_Point p0, M_Point p1, uint8_t thickness) {
 		if (thickness == 1) {
 			// Fast path for single-pixel
             M_Page_Mask mask = page_masks[p0.y];
-            frame_buffer[mask.page][p0.x] |= mask.bitmask;
+            if (_render_invert)
+				frame_buffer[mask.page][p0.x] ^= mask.bitmask;
+			else
+				frame_buffer[mask.page][p0.x] |= mask.bitmask;
 		} else {
 			// Calculate bounds (branchless min/max)
 			uint8_t x_start = p0.x > radius ? p0.x - radius : 0;
@@ -283,8 +320,13 @@ void render_line(M_Point p0, M_Point p1, uint8_t thickness) {
 				M_Page_Mask mask = page_masks[y];
 				uint8_t *row = row_start + (mask.page * SSD1306_W);
 
-				for (uint8_t i = 0; i < width; ++i)
-					row[i] |= mask.bitmask;
+				if (_render_invert) {
+					for (uint8_t i = 0; i < width; ++i)
+						row[i] ^= mask.bitmask;
+				} else {
+					for (uint8_t i = 0; i < width; ++i)
+						row[i] |= mask.bitmask;
+				}
 			}
 		}
 
@@ -381,28 +423,6 @@ void render_solid_poly(M_Point *pts, uint8_t num_pts) {
     }
 }
 
-void render_rect(
-	M_Point p0, uint8_t width, uint8_t height, uint8_t fill
-) {
-	// Validate coordinates
-	if (p0.x >= SSD1306_W || p0.y >= SSD1306_H) return;
-	uint16_t x_end = p0.x + width;
-	uint16_t y_end = p0.y + height;
-
-	// Draw rectangle with optional fill
-
-    if (fill) {
-		for (uint16_t x_pos = p0.x; x_pos <= x_end; ++x_pos)
-			render_verLine(x_pos, p0.y, y_end, 1);
-    } else {
-        // Outline only
-        render_horLine(p0.y, p0.x, x_end, 1);     	// Top edge
-        render_horLine(y_end, p0.x, x_end, 1);    	// Bottom edge
-        render_verLine(p0.x, p0.y + 1, y_end - 1, 1); 		// Left edge
-        render_verLine(x_end, p0.y + 1, y_end - 1, 1); 		// Right edge
-    }
-}
-
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 //! ***** Circle Methods *****
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -443,10 +463,18 @@ void render_circle(
 			// Plot the two endpoints of each horizontal span.
 			M_Page_Mask top = page_masks[y_top];
 			M_Page_Mask bottom = page_masks[y_bottom];
-			frame_buffer[top.page][x_start] |= top.bitmask;
-			frame_buffer[top.page][x_end] |= top.bitmask;
-			frame_buffer[bottom.page][x_start] |= bottom.bitmask;
-			frame_buffer[bottom.page][x_end] |= bottom.bitmask;
+
+			if (_render_invert) {
+				frame_buffer[top.page][x_start] ^= top.bitmask;
+				frame_buffer[top.page][x_end] ^= top.bitmask;
+				frame_buffer[bottom.page][x_start] ^= bottom.bitmask;
+				frame_buffer[bottom.page][x_end] ^= bottom.bitmask;
+			} else {
+				frame_buffer[top.page][x_start] |= top.bitmask;
+				frame_buffer[top.page][x_end] |= top.bitmask;
+				frame_buffer[bottom.page][x_start] |= bottom.bitmask;
+				frame_buffer[bottom.page][x_end] |= bottom.bitmask;
+			}
 		}
 
         // Update Bresenham error
