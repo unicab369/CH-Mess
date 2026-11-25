@@ -630,14 +630,6 @@ int ssd1306_test2() {
 		//       }
 		//       break;
 				
-		//    case 3:
-		//       printf("Circles empty and filled\n\r");
-				// for(uint8_t x=0;x<SSD1306_W;x+=16)
-				// 	if(x<64)
-				// 		ssd1306_drawCircle(x, SSD1306_H/2, 15, 1);
-				// 	else
-				// 		ssd1306_fillCircle(x, SSD1306_H/2, 15, 1);
-		//       break;
 		//    case 4:
 		//       printf("Image\n\r");
 		//       ssd1306_drawImage(0, 0, bomb_i_stripped, 32, 32, 0);

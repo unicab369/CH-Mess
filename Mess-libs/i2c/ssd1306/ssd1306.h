@@ -417,60 +417,6 @@ void ssd1306_drawLine(int x0, int y0, int x1, int y1, uint32_t color) {
 	}
 }
 
-/* draws a circle */
-void ssd1306_drawCircle(int x, int y, int radius, int color) {
-	/* Bresenham algorithm */
-	int x_pos = -radius;
-	int y_pos = 0;
-	int err = 2 - 2 * radius;
-	int e2;
-
-	do {
-		ssd1306_drawPixel(x - x_pos, y + y_pos, color);
-		ssd1306_drawPixel(x + x_pos, y + y_pos, color);
-		ssd1306_drawPixel(x + x_pos, y - y_pos, color);
-		ssd1306_drawPixel(x - x_pos, y - y_pos, color);
-		e2 = err;
-		if (e2 <= y_pos) {
-			err += ++y_pos * 2 + 1;
-			if(-x_pos == y_pos && e2 <= x_pos) {
-			e2 = 0;
-			}
-		}
-		if (e2 > x_pos) {
-			err += ++x_pos * 2 + 1;
-		}
-	} while (x_pos <= 0);
-}
-
-/* draws a filled circle */
-void ssd1306_fillCircle(int x, int y, int radius, int color) {
-	/* Bresenham algorithm */
-	int x_pos = -radius;
-	int y_pos = 0;
-	int err = 2 - 2 * radius;
-	int e2;
-
-	do {
-		ssd1306_drawPixel(x - x_pos, y + y_pos, color);
-		ssd1306_drawPixel(x + x_pos, y + y_pos, color);
-		ssd1306_drawPixel(x + x_pos, y - y_pos, color);
-		ssd1306_drawPixel(x - x_pos, y - y_pos, color);
-		ssd1306_drawFastHLine(x + x_pos, y + y_pos, 2 * (-x_pos) + 1, color);
-		ssd1306_drawFastHLine(x + x_pos, y - y_pos, 2 * (-x_pos) + 1, color);
-		e2 = err;
-		if (e2 <= y_pos) {
-			err += ++y_pos * 2 + 1;
-			if(-x_pos == y_pos && e2 <= x_pos) {
-				e2 = 0;
-			}
-		}
-		if(e2 > x_pos) {
-			err += ++x_pos * 2 + 1;
-		}
-	} while(x_pos <= 0);
-}
-
 /* draw a rectangle */
 void ssd1306_drawRect(int32_t x, int32_t y, uint32_t w, uint32_t h, uint32_t color) {
 	ssd1306_drawFastVLine(x, y, h, color);
