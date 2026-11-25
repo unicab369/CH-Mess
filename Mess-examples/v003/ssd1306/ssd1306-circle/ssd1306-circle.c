@@ -33,8 +33,8 @@ uint8_t SSD1306_DATA(uint8_t *data, int length) {
 	return i2c_write_raw(&display, packet, (size_t)length + 1);
 }
 
-static M_Point circle_center(uint32_t i) {
-	M_Point center = {
+static T_Point circle_center(uint32_t i) {
+	T_Point center = {
 		(uint8_t)(12u + ((i * 17u) % 96u)),
 		(uint8_t)(12u + ((i * 7u) % 40u)),
 	};
@@ -92,8 +92,8 @@ int main(void) {
 
 	// Show an outline above a filled circle.
 	memset(frame_buffer, 0, sizeof(frame_buffer));
-	render_circle((M_Point){ 64, 16 }, CIRCLE_RADIUS, 0);
-	render_circle((M_Point){ 64, 48 }, CIRCLE_RADIUS, 1);
+	render_circle((T_Point){ 64, 16 }, CIRCLE_RADIUS, 0);
+	render_circle((T_Point){ 64, 48 }, CIRCLE_RADIUS, 1);
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 
 	while (1) { }

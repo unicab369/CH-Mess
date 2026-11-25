@@ -219,12 +219,12 @@ const uint8_t SIN_LUT[] = {
 typedef struct {
 	uint8_t x;
 	uint8_t y;
-} M_Point;
+} T_Point;
 
 typedef struct {
 	uint8_t page;
 	uint8_t bitmask;
-} M_Page_Mask;
+} T_Page_Mask;
 
 // The SSD1306 frame buffer is divided into pages, each 8 pixels tall.
 // At each x column, one byte stores that page's 8 vertical pixels.
@@ -233,7 +233,7 @@ typedef struct {
 // For each pixel's Y position, page_masks tells the code:
 // - Which page (group of 8 vertical pixels) contains it.
 // - Which bit within that page's byte to set.
-M_Page_Mask page_masks[SSD1306_H];
+T_Page_Mask page_masks[SSD1306_H];
 
 void ssd1306_setwindow(uint8_t start_page, uint8_t end_page, uint8_t start_column, uint8_t end_column) {
 	SSD1306_CMD(SSD1306_COLUMNADDR);
@@ -514,7 +514,7 @@ void render_horLine(
 	uint8_t x_len = x_end > x_min ? x_end - x_min : 0;
 
 	if (thickness == 1) {
-		M_Page_Mask mask = page_masks[y];
+		T_Page_Mask mask = page_masks[y];
 		uint8_t *row_start = &frame_buffer[mask.page][x_min];
 
 		if (_render_invert) {
@@ -554,7 +554,7 @@ void render_verLine(
 }
 
 void render_rect(
-	M_Point p0, uint8_t width, uint8_t height, uint8_t fill
+	T_Point p0, uint8_t width, uint8_t height, uint8_t fill
 ) {
 	// Validate coordinates
 	if (p0.x >= SSD1306_W || p0.y >= SSD1306_H) return;
@@ -580,7 +580,7 @@ void render_rect(
 // | ssd1306_drawLine() | 300 bytes |
 
 //! (Bresenham's algorithm)
-void render_line(M_Point p0, M_Point p1, uint8_t thickness) {
+void render_line(T_Point p0, T_Point p1, uint8_t thickness) {
     // Bresenham's line algorithm
     int16_t dx = abs(p1.x - p0.x);
     int16_t dy = -abs(p1.y - p0.y);
@@ -597,7 +597,7 @@ void render_line(M_Point p0, M_Point p1, uint8_t thickness) {
 		// Draw the pixel(s)
 		if (thickness == 1) {
 			// Fast path for single-pixel
-            M_Page_Mask mask = page_masks[p0.y];
+            T_Page_Mask mask = page_masks[p0.y];
             if (_render_invert)
 				frame_buffer[mask.page][p0.x] ^= mask.bitmask;
 			else
@@ -617,7 +617,7 @@ void render_line(M_Point p0, M_Point p1, uint8_t thickness) {
 			// Optimized row filling
 			for (uint8_t y = y_start; y < y_stop; y++) {
 				// Look up the precomputed page and bit mask that correspond to this y coordinate.
-				M_Page_Mask mask = page_masks[y];
+				T_Page_Mask mask = page_masks[y];
 				uint8_t *row = row_start + (mask.page * SSD1306_W);
 
 				if (_render_invert) {
@@ -642,7 +642,7 @@ void render_line(M_Point p0, M_Point p1, uint8_t thickness) {
 //! ***** Polygon Methods *****
 //! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-void render_poly(M_Point *pts, uint8_t num_pts, uint8_t thickness) {
+void render_poly(T_Point *pts, uint8_t num_pts, uint8_t thickness) {
     if (num_pts < 3) return;  // Need at least 3 points for a polygon
     for (uint8_t i = 0; i < num_pts - 1; i++) {
         render_line(pts[i], pts[i+1], thickness);
@@ -651,7 +651,7 @@ void render_poly(M_Point *pts, uint8_t num_pts, uint8_t thickness) {
 }
 
 //! optimized: compute filled polygon
-void render_solid_poly(M_Point *pts, uint8_t num_pts) {
+void render_solid_poly(T_Point *pts, uint8_t num_pts) {
     // ===== [1] EDGE EXTRACTION =====
     struct Edge {
         uint8_t y_start, y_end;
@@ -733,7 +733,7 @@ void render_solid_poly(M_Point *pts, uint8_t num_pts) {
 
 //! compute circle (Bresenham's algorithm)
 void render_circle(
-	M_Point p0, uint8_t radius, uint8_t fill
+	T_Point p0, uint8_t radius, uint8_t fill
 ) {
 	if (fill) {
 		if (p0.x >= SSD1306_W || p0.y >= SSD1306_H) return;
@@ -761,8 +761,8 @@ void render_circle(
             render_horLine(y_bottom, x_start, x_end, 1);  // Bottom half
 		} else {
 			// Plot the two endpoints of each horizontal span.
-			M_Page_Mask top = page_masks[y_top];
-			M_Page_Mask bottom = page_masks[y_bottom];
+			T_Page_Mask top = page_masks[y_top];
+			T_Page_Mask bottom = page_masks[y_bottom];
 
 			if (_render_invert) {
 				frame_buffer[top.page][x_start] ^= top.bitmask;
@@ -791,7 +791,7 @@ void render_circle(
 
 // Helper function to get circle point using SIN_LUT
 static void get_circle_point(
-	M_Point center, uint8_t radius, int16_t angle,
+	T_Point center, uint8_t radius, int16_t angle,
 	int16_t *x, int16_t *y
 ) {
     if (angle == 360) angle = 0;
@@ -818,7 +818,7 @@ static void get_circle_point(
 
 
 void render_ring(
-	M_Point p0, uint8_t radius, uint8_t thickness,
+	T_Point p0, uint8_t radius, uint8_t thickness,
 	int16_t start_angle, int16_t end_angle
 ) {
     // Early exit if center is off-screen or radius is 0
@@ -851,7 +851,7 @@ void render_ring(
 
             // Skip pixels outside valid screen bounds
             if (y_top >= 0 && y_top < SSD1306_H) {
-                M_Page_Mask mask_t = page_masks[y_top];
+                T_Page_Mask mask_t = page_masks[y_top];
                 uint8_t* row_t = frame_base + (mask_t.page * SSD1306_W);
 
                 if (left_valid)     row_t[x_left]  |= mask_t.bitmask;
@@ -861,7 +861,7 @@ void render_ring(
             }
 
             if (y_bottom >= 0 && y_bottom < SSD1306_H) {
-                M_Page_Mask mask_b = page_masks[y_bottom];
+                T_Page_Mask mask_b = page_masks[y_bottom];
                 uint8_t* row_b = frame_base + (mask_b.page * SSD1306_W);
 
                 if (left_valid) 	row_b[x_left]  |= mask_b.bitmask;
@@ -878,7 +878,13 @@ void render_ring(
     }
 }
 
-void render_pie(M_Point center, uint8_t radius, int16_t start_angle, int16_t end_angle) {
+
+// | Renderer | Renderer function | Helpers | Total |
+// |---|---:|---|---:|
+// | render_pie | 636 B | get_circle_point 266 B, SIN_LUT 167 B, render_horLine 100 B | 1,169 B |
+// | render_pie_fast | 740 B | Shared helpers above, _pie_edge_init 168 B, _pie_fast_span 116 B | 1,557 B |
+
+void render_pie(T_Point center, uint8_t radius, int16_t start_angle, int16_t end_angle) {
     // Draw center point directly in the framebuffer.
     if (center.x < SSD1306_W && center.y < SSD1306_H) {
         uint8_t page = center.y >> 3;
@@ -911,20 +917,18 @@ void render_pie(M_Point center, uint8_t radius, int16_t start_angle, int16_t end
 
         // Adjacent angles can produce the same endpoint and the same line.
 		if (!skip_duplicates || !have_last || x != last_x || y != last_y) {
-			M_Point p0 = { x: center.x, y: center.y };
-			M_Point p1 = { x: x, y: y };
+			T_Point p0 = { x: center.x, y: center.y };
+			T_Point p1 = { x: x, y: y };
 			render_line(p0, p1, 1);
 			last_x = x;
 			last_y = y;
 			have_last = 1;
 		}
 
-        // Break conditions
         if (angle == end_angle) break;
 
         // Move to next angle
         angle = (angle + step) % 360;
-
         // Handle wrap-around
         if (start_angle > end_angle && angle < start_angle && angle > end_angle) break;
     }
@@ -936,11 +940,11 @@ typedef struct {
     int16_t a, numerator, denominator;
 	int16_t step, remainder, error;
     int32_t position;
-} M_Pie_Edge;
+} T_Pie_Edge;
 
 // Set up a pie edge's starting position, whole-number step, and fractional remainder.
-static M_Pie_Edge _pie_edge_init(int16_t a, int16_t numerator) {
-    M_Pie_Edge edge = { .a = a, .numerator = numerator };
+static T_Pie_Edge _pie_edge_init(int16_t a, int16_t numerator) {
+    T_Pie_Edge edge = { .a = a, .numerator = numerator };
     if (a != 0) {
         edge.denominator = a > 0 ? a : -a;
         int16_t n = a > 0 ? numerator : -numerator;
@@ -955,7 +959,7 @@ static M_Pie_Edge _pie_edge_init(int16_t a, int16_t numerator) {
     return edge;
 }
 
-static void _pie_edge_advance(M_Pie_Edge *edge) {
+static void _pie_edge_advance(T_Pie_Edge *edge) {
     // Move the edge one column: add its whole-number step, then use the remainder
     // to decide whether the crossing also advances by one pixel.
     if (edge->a == 0) return;
@@ -972,7 +976,7 @@ static void _pie_edge_advance(M_Pie_Edge *edge) {
 // Return false if the cut leaves no pixels in the pie.
 static uint8_t _pie_clip_edge(
 	int16_t *lo, int16_t *hi,
-	const M_Pie_Edge *edge, int16_t up, uint8_t center_x
+	const T_Pie_Edge *edge, int16_t up, uint8_t center_x
 ) {
     if (edge->a == 0)
 		return -(int32_t)edge->numerator * up >= 0;
@@ -1020,7 +1024,7 @@ static inline void _pie_fast_span(uint8_t x, uint8_t lo, uint8_t hi) {
     }
 }
 
-void render_pie_fast(M_Point center, uint8_t radius, int16_t start_angle, int16_t end_angle) {
+void render_pie_fast(T_Point center, uint8_t radius, int16_t start_angle, int16_t end_angle) {
     if (radius == 0) return;
     if (start_angle < 0 || start_angle > 360
         || end_angle < 0 || end_angle > 360) return;
@@ -1034,8 +1038,8 @@ void render_pie_fast(M_Point center, uint8_t radius, int16_t start_angle, int16_
     get_circle_point(center, radius, end_angle, &end_x, &end_y);
     int32_t circle_error = 0; // extent*extent + dx*dx - radius*radius
     int16_t extent = radius;
-    M_Pie_Edge start_edge = _pie_edge_init(center.x - start_x, center.y - start_y);
-    M_Pie_Edge end_edge = _pie_edge_init(end_x - center.x, end_y - center.y);
+    T_Pie_Edge start_edge = _pie_edge_init(center.x - start_x, center.y - start_y);
+    T_Pie_Edge end_edge = _pie_edge_init(end_x - center.x, end_y - center.y);
 
     // Scan columns outward; each span combines vertical pixels into page bytes.
     for (int16_t dx = 0; dx <= radius; ++dx) {

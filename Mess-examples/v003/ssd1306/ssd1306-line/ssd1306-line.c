@@ -34,7 +34,7 @@ uint8_t SSD1306_DATA(uint8_t *data, int length) {
 }
 
 // A mix of horizontal, vertical, shallow, steep, and diagonal lines.
-static const M_Point line_points[] = {
+static const T_Point line_points[] = {
 	{ 4,  4 }, { 123,  4 },
 	{ 4, 10 }, {   4, 59 },
 	{ 4, 16 }, { 123, 32 },
@@ -50,8 +50,8 @@ static uint32_t time_render_line(void) {
 
 	for (uint32_t run = 0; run < BENCH_RUNS; ++run) {
 		for (uint8_t line = 0; line < LINE_COUNT; ++line) {
-			M_Point p0 = line_points[line * 2u];
-			M_Point p1 = line_points[line * 2u + 1u];
+			T_Point p0 = line_points[line * 2u];
+			T_Point p1 = line_points[line * 2u + 1u];
 			render_line(p0, p1, 1);
 		}
 	}
@@ -64,8 +64,8 @@ static uint32_t time_render_thick_line(void) {
 
 	for (uint32_t run = 0; run < BENCH_RUNS; ++run) {
 		for (uint8_t line = 0; line < LINE_COUNT; ++line) {
-			M_Point p0 = line_points[line * 2u];
-			M_Point p1 = line_points[line * 2u + 1u];
+			T_Point p0 = line_points[line * 2u];
+			T_Point p1 = line_points[line * 2u + 1u];
 			render_line(p0, p1, THICK_LINE_WIDTH);
 		}
 	}
@@ -107,11 +107,11 @@ int main(void) {
 	// Show a thin line set and a separate thick render_line sample.
 	memset(frame_buffer, 0, sizeof(frame_buffer));
 	for (uint8_t line = 0; line < LINE_COUNT; ++line) {
-		M_Point p0 = line_points[line * 2u];
-		M_Point p1 = line_points[line * 2u + 1u];
+		T_Point p0 = line_points[line * 2u];
+		T_Point p1 = line_points[line * 2u + 1u];
 		render_line(p0, p1, 1);
 	}
-	render_line((M_Point){ 8, 42 }, (M_Point){ 120, 58 }, THICK_LINE_WIDTH);
+	render_line((T_Point){ 8, 42 }, (T_Point){ 120, 58 }, THICK_LINE_WIDTH);
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 
 	while (1) { }

@@ -35,16 +35,16 @@ uint8_t SSD1306_DATA(uint8_t *data, int length) {
 	return i2c_write_raw(&display, packet, (size_t)length + 1);
 }
 
-static M_Point pie_center(uint32_t i) {
+static T_Point pie_center(uint32_t i) {
 	// Keep the entire radius inside the 128x64 framebuffer.
-	M_Point center = {
+	T_Point center = {
 		(uint8_t)(32u + ((i * 17u) % 64u)),
 		(uint8_t)(28u + ((i * 7u) % 8u)),
 	};
 	return center;
 }
 
-static uint32_t time_render_pie(void (*render)(M_Point, uint8_t, int16_t, int16_t)) {
+static uint32_t time_render_pie(void (*render)(T_Point, uint8_t, int16_t, int16_t)) {
 	uint32_t start = funSysTick32();
 
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i)
@@ -93,8 +93,8 @@ int main(void) {
 
 	memset(frame_buffer, 0, sizeof(frame_buffer));
 	// Show two filled 230-degree pies side by side.
-	render_pie_fast((M_Point){ 32, 32 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
-	render_pie_fast((M_Point){ 96, 32 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
+	render_pie_fast((T_Point){ 32, 32 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
+	render_pie_fast((T_Point){ 96, 32 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 
 	while (1) { }

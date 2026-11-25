@@ -48,7 +48,7 @@ static uint32_t time_render_rect(void) {
 	uint32_t start = funSysTick32();
 
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
-		M_Point p0 = { rect_x(i), rect_y(i) };
+		T_Point p0 = { rect_x(i), rect_y(i) };
 		render_rect(p0, RECT_AREA_WIDTH, RECT_AREA_HEIGHT, 0);
 	}
 
@@ -59,7 +59,7 @@ static uint32_t time_render_filled_rect(void) {
 	uint32_t start = funSysTick32();
 
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
-		M_Point p0 = { rect_x(i), rect_y(i) };
+		T_Point p0 = { rect_x(i), rect_y(i) };
 		render_rect(p0, RECT_AREA_WIDTH, RECT_AREA_HEIGHT, 1);
 	}
 
@@ -99,9 +99,9 @@ int main(void) {
 
 	// Show an XOR rectangle cutting across the filled rectangle's lower-right corner.
 	memset(frame_buffer, 0, sizeof(frame_buffer));
-	render_rect((M_Point){ 38, 14 }, 48, 34, 1);
+	render_rect((T_Point){ 38, 14 }, 48, 34, 1);
 	render_toggle_invert();
-	render_rect((M_Point){ 70, 30 }, 24, 20, 1);
+	render_rect((T_Point){ 70, 30 }, 24, 20, 1);
 	render_toggle_invert();
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 
