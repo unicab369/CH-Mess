@@ -595,11 +595,12 @@ void ssd1306_render_line(T_Point p0, T_Point p1, uint8_t thickness) {
 		// Draw the pixel(s)
 		if (thickness == 1) {
 			// Fast path for single-pixel
-			T_Page_Mask mask = page_masks[p0.y];
+			uint8_t page = p0.y >> 3;
+			uint8_t mask = (uint8_t)(1u << (p0.y & 7u));
             if (_render_invert)
-				frame_buffer[mask.page][p0.x] ^= mask.bitmask;
+				frame_buffer[page][p0.x] ^= mask;
 			else
-				frame_buffer[mask.page][p0.x] |= mask.bitmask;
+				frame_buffer[page][p0.x] |= mask;
 		} else {
 			// Calculate bounds (branchless min/max)
 			uint8_t x_start = p0.x > radius ? p0.x - radius : 0;
