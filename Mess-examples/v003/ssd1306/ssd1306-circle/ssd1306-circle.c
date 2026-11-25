@@ -110,9 +110,10 @@ int main(void) {
 	printf("ssd1306_render_ring:  %lu SysTick ticks/ring\n",
 		(unsigned long)(render_ring_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
-	// Show an outline above a filled circle.
+	// Show outline and filled circles above the ring.
 	memset(frame_buffer, 0, sizeof(frame_buffer));
-	ssd1306_render_circle((T_Point){ 64, 16 }, CIRCLE_RADIUS, 0);
+	ssd1306_render_circle((T_Point){ 32, 16 }, CIRCLE_RADIUS, 0);
+	ssd1306_render_circle((T_Point){ 96, 16 }, CIRCLE_RADIUS, 1);
 	ssd1306_render_ring((T_Point){ 64, 48 }, CIRCLE_RADIUS, RING_THICKNESS, 0, 360);
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 

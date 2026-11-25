@@ -221,19 +221,8 @@ typedef struct {
 	uint8_t y;
 } T_Point;
 
-typedef struct {
-	uint8_t page;
-	uint8_t bitmask;
-} T_Page_Mask;
-
 // The SSD1306 frame buffer is divided into pages, each 8 pixels tall.
 // At each x column, one byte stores that page's 8 vertical pixels.
-// page_masks acts as a lookup translator from a pixel's y position to its page and bit.
-
-// For each pixel's Y position, page_masks tells the code:
-// - Which page (group of 8 vertical pixels) contains it.
-// - Which bit within that page's byte to set.
-T_Page_Mask page_masks[SSD1306_H];
 
 void ssd1306_setwindow(uint8_t start_page, uint8_t end_page, uint8_t start_column, uint8_t end_column) {
 	SSD1306_CMD(SSD1306_COLUMNADDR);
@@ -446,12 +435,6 @@ void ssd1306_setup() {
 		if (SSD1306_CMD(*cmd_list++)) return;
 	}
 	#endif
-
-	// Cache each y coordinate's framebuffer page and bit mask before drawing.
-	for (uint8_t y = 0; y < SSD1306_H; ++y) {
-		page_masks[y].page = y >> 3;
-		page_masks[y].bitmask = 1u << (y & 0x07u);
-	}
 
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 }
@@ -746,19 +729,21 @@ void ssd1306_render_circle(
             ssd1306_render_horLine(y_bottom, x_start, x_end, 1);  // Bottom half
 		} else {
 			// Plot the two endpoints of each horizontal span.
-			T_Page_Mask top = page_masks[y_top];
-			T_Page_Mask bottom = page_masks[y_bottom];
+			uint8_t top_page = y_top >> 3;
+			uint8_t top_mask = (uint8_t)(1u << (y_top & 7u));
+			uint8_t bottom_page = y_bottom >> 3;
+			uint8_t bottom_mask = (uint8_t)(1u << (y_bottom & 7u));
 
 			if (_render_invert) {
-				frame_buffer[top.page][x_start] ^= top.bitmask;
-				frame_buffer[top.page][x_end] ^= top.bitmask;
-				frame_buffer[bottom.page][x_start] ^= bottom.bitmask;
-				frame_buffer[bottom.page][x_end] ^= bottom.bitmask;
+				frame_buffer[top_page][x_start] ^= top_mask;
+				frame_buffer[top_page][x_end] ^= top_mask;
+				frame_buffer[bottom_page][x_start] ^= bottom_mask;
+				frame_buffer[bottom_page][x_end] ^= bottom_mask;
 			} else {
-				frame_buffer[top.page][x_start] |= top.bitmask;
-				frame_buffer[top.page][x_end] |= top.bitmask;
-				frame_buffer[bottom.page][x_start] |= bottom.bitmask;
-				frame_buffer[bottom.page][x_end] |= bottom.bitmask;
+				frame_buffer[top_page][x_start] |= top_mask;
+				frame_buffer[top_page][x_end] |= top_mask;
+				frame_buffer[bottom_page][x_start] |= bottom_mask;
+				frame_buffer[bottom_page][x_end] |= bottom_mask;
 			}
 		}
 
