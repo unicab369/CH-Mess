@@ -41,14 +41,6 @@ static uint32_t time_render_image(void) {
 	return (uint32_t)(funSysTick32() - start);
 }
 
-static uint32_t time_draw_image(void) {
-	uint32_t start = funSysTick32();
-	for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
-		ssd1306_drawImage(0, 0, bomb_i_stripped, 32, 32, 0);
-		__asm__ volatile("" ::: "memory");
-	}
-	return (uint32_t)(funSysTick32() - start);
-}
 
 int main(void) {
 	SystemInit();
@@ -57,21 +49,17 @@ int main(void) {
 		while (1) { }
 	}
 	ssd1306_setup();
-	uint32_t render_ticks = 0, draw_ticks = 0;
+	uint32_t render_ticks = 0;
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
 		render_ticks += time_render_image();
 	}
-	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
-		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
-		draw_ticks += time_draw_image();
-	}
+
 	printf("SSD1306 image renderer benchmark\n");
 	printf("%u calls/round, %u rounds, 32x32 bitmap\n", (unsigned)BENCH_RUNS, (unsigned)BENCH_ROUNDS);
 	printf("render_image:      %lu ticks/image\n", (unsigned long)(render_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
-	printf("ssd1306_drawImage: %lu ticks/image\n", (unsigned long)(draw_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
-	memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
+		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
 	render_image(bomb_i_stripped, 0, 16, 32, 32);
-	ssd1306_refresh();
+	ssd1306_displayArea(0, SSD1306_PAGES - 1, 0, SSD1306_W);
 	while (1) { }
 }

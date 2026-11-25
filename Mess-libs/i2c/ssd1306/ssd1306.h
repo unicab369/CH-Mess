@@ -56,16 +56,6 @@
 uint8_t ssd1306_cmd(uint8_t cmd);
 uint8_t ssd1306_data(uint8_t *data, int sz);
 
-// /* send OLED command byte */
-// uint8_t ssd1306_cmd(uint8_t cmd) {
-// 	return ssd1306_pkt_send(&cmd, 1, 1);
-// }
-
-// /* send OLED data packet (up to 32 bytes) */
-// uint8_t ssd1306_data(uint8_t *data, int sz) {
-// 	return ssd1306_pkt_send(data, sz, 0);
-// }
-
 #define SSD1306_SETCONTRAST 0x81
 #define SSD1306_SEGREMAP 0xA0
 #define SSD1306_DISPLAYALLON_RESUME 0xA4
@@ -169,160 +159,9 @@ void ssd1306_setbuf(uint8_t color) {
 	memset(ssd1306_buffer, color ? 0xFF : 0x00, sizeof(ssd1306_buffer));
 }
 
-#ifndef SSD1306_FULLUSE
-/* expansion array for OLED with every other row unused */
-const uint8_t expand[16] = {
-	0x00,0x02,0x08,0x0a,
-	0x20,0x22,0x28,0x2a,
-	0x80,0x82,0x88,0x8a,
-	0xa0,0xa2,0xa8,0xaa,
-};
-#endif
-
-/* Send the frame buffer */
-void ssd1306_refresh(void) {
-	uint16_t i;
-
-	#ifdef SH1107
-		ssd1306_cmd(SSD1306_MEMORYMODE); // vertical addressing mode.
-
-		for(i=0;i<SSD1306_H/8;i++)
-		{
-			ssd1306_cmd(0xb0 | i);
-			ssd1306_cmd( 0x00 | (0&0xf) );
-			ssd1306_cmd( 0x10 | (0>>4) );
-			ssd1306_data(&ssd1306_buffer[i*4*SSD1306_PSZ+0*SSD1306_PSZ], SSD1306_PSZ);
-			ssd1306_data(&ssd1306_buffer[i*4*SSD1306_PSZ+1*SSD1306_PSZ], SSD1306_PSZ);
-			ssd1306_data(&ssd1306_buffer[i*4*SSD1306_PSZ+2*SSD1306_PSZ], SSD1306_PSZ);
-			ssd1306_data(&ssd1306_buffer[i*4*SSD1306_PSZ+3*SSD1306_PSZ], SSD1306_PSZ);
-		}
-	#else
-		ssd1306_cmd(SSD1306_COLUMNADDR);
-		ssd1306_cmd(SSD1306_OFFSET);   // Column start address (0 = reset)
-		ssd1306_cmd(SSD1306_OFFSET+SSD1306_W-1); // Column end address (127 = reset)
-
-		ssd1306_cmd(SSD1306_PAGEADDR);
-		ssd1306_cmd(0); // Page start address (0 = reset)
-		ssd1306_cmd(7); // Page end address
-
-		#ifdef SSD1306_FULLUSE
-			/* for fully used rows just plow thru everything */
-			for(i=0;i<sizeof(ssd1306_buffer);i+=SSD1306_PSZ) {
-				/* send PSZ block of data */
-				ssd1306_data(&ssd1306_buffer[i], SSD1306_PSZ);
-			}
-		#else
-			/* for displays with odd rows unused expand bytes */
-			uint8_t tbuf[SSD1306_PSZ], j, k;
-			for(i=0;i<sizeof(ssd1306_buffer);i+=128)
-			{
-				/* low nybble */
-				for(j=0;j<128;j+=SSD1306_PSZ)
-				{
-					for(k=0;k<SSD1306_PSZ;k++)
-						tbuf[k] = expand[ssd1306_buffer[i+j+k]&0xf];
-					/* send PSZ block of data */
-					ssd1306_data(tbuf, SSD1306_PSZ);
-				}
-
-				/* high nybble */
-				for(j=0;j<128;j+=SSD1306_PSZ)
-				{
-					for(k=0;k<SSD1306_PSZ;k++)
-						tbuf[k] = expand[(ssd1306_buffer[i+j+k]>>4)&0xf];
-					/* send PSZ block of data */
-					ssd1306_data(tbuf, SSD1306_PSZ);
-				}
-			}
-		#endif
-	#endif
-}
-
-/* plot a pixel in the buffer */
-void ssd1306_drawPixel(uint32_t x, uint32_t y, int color) {
-	uint32_t addr;
-
-	/* clip */
-	if(x >= SSD1306_W || y >= SSD1306_H) return;
-
-	/* compute buffer address */
-	addr = x + SSD1306_W*(y/8);
-
-	/* set/clear bit in buffer */
-	if(color)
-		ssd1306_buffer[addr] |= (1<<(y&7));
-	else
-		ssd1306_buffer[addr] &= ~(1<<(y&7));
-}
-
-/* draw a an image from an array, directly into to the display buffer
-the color modes allow for overwriting and even layering (sprites!) */
-void ssd1306_drawImage(uint32_t x, uint32_t y, const unsigned char* input, uint32_t width, uint32_t height, uint32_t color_mode) {
-	uint32_t x_absolute;
-	uint32_t y_absolute;
-	uint32_t pixel;
-	uint32_t bytes_to_draw = width / 8;
-	uint32_t buffer_addr;
-
-	for (uint32_t line = 0; line < height; line++) {
-		y_absolute = y + line;
-		if (y_absolute >= SSD1306_H) {
-			break;
-		}
-
-		// SSD1306 is in vertical mode, yet we want to draw horizontally, which necessitates assembling the output bytes from the input data
-		// bitmask for current pixel in vertical (output) byte
-		uint32_t v_mask = 1 << (y_absolute & 7);
-
-		for (uint32_t byte = 0; byte < bytes_to_draw; byte++) {
-			uint32_t input_byte = input[byte + line * bytes_to_draw];
-
-			for (pixel = 0; pixel < 8; pixel++) {
-				x_absolute = x + 8 * (bytes_to_draw - byte) + pixel;
-				if (x_absolute >= SSD1306_W) {
-					break;
-				}
-				// looking at the horizontal display, we're drawing bytes bottom to top, not left to right, hence y / 8
-				buffer_addr = x_absolute + SSD1306_W * (y_absolute / 8);
-				// state of current pixel
-				uint8_t input_pixel = input_byte & (1 << pixel);
-
-				switch (color_mode) {
-					case 0:
-						// write pixels as they are
-						ssd1306_buffer[buffer_addr] = (ssd1306_buffer[buffer_addr] & ~v_mask) | (input_pixel ? v_mask : 0);
-						break;
-					case 1:
-						// write pixels after inversion
-						ssd1306_buffer[buffer_addr] = (ssd1306_buffer[buffer_addr] & ~v_mask) | (!input_pixel ? v_mask : 0);
-						break;
-					case 2:
-						// 0 clears pixel
-						ssd1306_buffer[buffer_addr] &= input_pixel ? 0xFF : ~v_mask;
-						break;
-					case 3:
-						// 1 sets pixel
-						ssd1306_buffer[buffer_addr] |= input_pixel ? v_mask : 0;
-						break;
-					case 4:
-						// 0 sets pixel
-						ssd1306_buffer[buffer_addr] |= !input_pixel ? v_mask : 0;
-						break;
-					case 5:
-						// 1 clears pixel
-						ssd1306_buffer[buffer_addr] &= input_pixel ? ~v_mask : 0xFF;
-						break;
-				}
-			}
-			#if SSD1306_LOG_IMAGE == 1
-			printf("%02x ", input_byte);
-			#endif
-		}
-		#if SSD1306_LOG_IMAGE == 1
-		printf("\n\r");
-		#endif
-	}
-}
+/* Implemented by fun_ssd1306.h; sends only the requested framebuffer area. */
+void ssd1306_displayArea(uint8_t start_page, uint8_t end_page,
+	uint8_t col_start, uint8_t col_end);
 
 /* initialize I2C and OLED  */
 uint8_t ssd1306_init(void) {
@@ -338,7 +177,7 @@ uint8_t ssd1306_init(void) {
 			if(ssd1306_cmd(*cmd_list++)) return 1;
 		}
 
-		ssd1306_refresh();
+		ssd1306_displayArea(0, SSD1306_H / 8 - 1, 0, SSD1306_W);
 	#endif
 
 	return 0;

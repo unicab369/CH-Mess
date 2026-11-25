@@ -91,7 +91,7 @@ void ssd1306_setwindow(uint8_t start_page, uint8_t end_page, uint8_t start_colum
 	ssd1306_cmd(end_page); 		// Page end address
 }
 
-//! display area
+//# display by pages
 void ssd1306_displayArea(
 	uint8_t start_page, uint8_t end_page,
 	uint8_t col_start, uint8_t col_end
@@ -111,7 +111,7 @@ void ssd1306_displayArea(
 	}
 }
 
-//! display the entire screen
+//# display the entire screen
 void ssd1306_displayFrame() {
 	ssd1306_displayArea(0, 7, 0, SSD1306_W);
 }
@@ -258,8 +258,6 @@ void render_str_scaled(const char *str, uint8_t x, uint8_t y,
 
 // Blit row-major, MSB-first monochrome image data into the framebuffer.
 // |---|---:|
-// | render_image() | 880 bytes |
-// | ssd1306_drawImage() | 800 bytes |
 
 void render_image(const uint8_t *image, uint8_t x, uint8_t y,
 	uint8_t width, uint8_t height) {
@@ -761,70 +759,6 @@ void render_pie(M_Point center, uint8_t radius, int16_t start_angle, int16_t end
         // Handle wrap-around
         if (start_angle > end_angle && angle < start_angle && angle > end_angle) break;
     }
-}
-
-
-//! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-//! ***** Tests *****
-//! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-
-int ssd1306_test2() {
-	for(uint8_t mode=0; mode<(SSD1306_H>32?9:8); mode++) {
-		// clear buffer for next mode
-		ssd1306_setbuf(0);
-
-		// switch(mode) {
-		//    case 0:
-		//       printf("buffer fill with binary\n\r");
-		//       for(int i=0;i<sizeof(ssd1306_buffer);i++)
-		//          ssd1306_buffer[i] = i;
-		//       break;
-			
-		//    case 1:
-		//       printf("pixel plots\n\r");
-				// for(int i=0;i<SSD1306_W;i++)
-				// {
-				// 	ssd1306_drawPixel(i, i/(SSD1306_W/SSD1306_H), 1);
-				// 	ssd1306_drawPixel(i, SSD1306_H-1-(i/(SSD1306_W/SSD1306_H)), 1);
-				// }
-		//       break;
-			
-		//    case 2:
-		//       {
-		//          printf("Line plots\n\r");
-				// uint8_t y= 0;
-				// for(uint8_t x=0;x<SSD1306_W;x+=16)
-				// {
-				// 	y+= SSD1306_H/8;
-				// }
-		//       }
-		//       break;
-				
-		//    case 4:
-		//       printf("Image\n\r");
-		//       ssd1306_drawImage(0, 0, bomb_i_stripped, 32, 32, 0);
-		//       break;
-		//    case 5:
-		//       printf("Unscaled Text\n\r");
-				render_str("This is a test", 0, 0, &font_8x8);
-				render_str("of the emergency", 0, 8, &font_8x8);
-				render_str("broadcasting", 0, 16, &font_8x8);
-				render_str("system.", 0, 24, &font_8x8);
-				if(SSD1306_H>32) {
-					render_str("Lorem ipsum", 0, 32, &font_8x8);
-					render_str("dolor sit amet,", 0, 40, &font_8x8);
-					render_str("consectetur", 0, 48, &font_8x8);
-					render_str("adipiscing", 0, 56, &font_8x8);
-				}
-		//       break;
-				
-		//    default:
-		//       break;
-		// }
-
-		ssd1306_refresh();
-	}
 }
 
 
