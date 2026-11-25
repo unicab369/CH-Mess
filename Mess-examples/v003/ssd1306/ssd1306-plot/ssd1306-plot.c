@@ -34,9 +34,11 @@ static const T_Point samples[] = {
 	{ 72, 32 }, { 86, 18 }, { 100, 22 }, { 114, 10 }
 };
 static T_SSD1306_Plot plot = {
+	.x_label = "Sample X",
+	.y_label = "title",
 	.origin = { 5, 5 },
-	.width = 100,
-	.height = 55,
+	.x_max = 105,
+	.y_max = 60,
 	.x_tick = 14,
 	.y_tick = 8,
 };
