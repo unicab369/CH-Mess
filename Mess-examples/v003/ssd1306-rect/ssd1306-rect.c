@@ -97,7 +97,12 @@ int main(void) {
 	printf("filled render_rect:       %lu SysTick ticks/rectangle\n",
 		(unsigned long)(render_filled_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
-	// Display the rectangles left in the shared frame buffer.
+	// Show an XOR rectangle cutting across the filled rectangle's lower-right corner.
+	memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
+	render_rect((M_Point){ 38, 14 }, 48, 34, 1);
+	render_toggle_invert();
+	render_rect((M_Point){ 70, 30 }, 24, 20, 1);
+	render_toggle_invert();
 	ssd1306_displayFrame();
 
 	while (1) { }

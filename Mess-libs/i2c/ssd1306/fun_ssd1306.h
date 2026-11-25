@@ -90,7 +90,7 @@ void ssd1306_setwindow(uint8_t start_page, uint8_t end_page, uint8_t start_colum
 	ssd1306_cmd(end_page); 		// Page end address
 }
 
-void render_str(
+void display_str(
   const char *str, uint8_t page, uint8_t column
 ) {
 	ssd1306_setwindow(page, page, 0, SSD1306_W_LIMIT); // Set the window to the current page
@@ -668,7 +668,6 @@ int ssd1306_test2() {
 					ssd1306_drawstr(0,48,"consectetur", 1);
 					ssd1306_drawstr(0,56,"adipiscing",1);
 				}
-				ssd1306_xorrect(SSD1306_W/2, 0, SSD1306_W/2, SSD1306_W);
 		//       break;
 				
 		//    case 6:

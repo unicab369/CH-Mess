@@ -255,18 +255,6 @@ void ssd1306_drawPixel(uint32_t x, uint32_t y, int color) {
 		ssd1306_buffer[addr] &= ~(1<<(y&7));
 }
 
-/* plot a pixel in the buffer */
-void ssd1306_xorPixel(uint32_t x, uint32_t y) {
-	uint32_t addr;
-
-	/* clip */
-	if(x >= SSD1306_W || y >= SSD1306_H) return;
-
-	/* compute buffer address */
-	addr = x + SSD1306_W*(y/8);
-	ssd1306_buffer[addr] ^= (1<<(y&7));
-}
-
 /* draw a an image from an array, directly into to the display buffer
 the color modes allow for overwriting and even layering (sprites!) */
 void ssd1306_drawImage(uint32_t x, uint32_t y, const unsigned char* input, uint32_t width, uint32_t height, uint32_t color_mode) {
@@ -333,21 +321,6 @@ void ssd1306_drawImage(uint32_t x, uint32_t y, const unsigned char* input, uint3
 		#if SSD1306_LOG_IMAGE == 1
 		printf("\n\r");
 		#endif
-	}
-}
-
-/* invert a rectangle in the buffer */
-void ssd1306_xorrect(uint8_t x, uint8_t y, uint8_t w, uint8_t h) {
-	uint8_t m, n=y, iw = w;
-
-	while(h--) {			/* scan vertical */
-		m=x;
-		w=iw;
-
-		while(w--) {					/* scan horizontal */
-			ssd1306_xorPixel(m++, n);	/* invert pixels */
-		}
-		n++;
 	}
 }
 

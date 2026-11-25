@@ -34,8 +34,8 @@ uint8_t ssd1306_data(uint8_t *data, int length) {
 	return i2c_write_raw(&display, packet, (size_t)length + 1);
 }
 
-// The framebuffer-only equivalent of render_str's 25-cell FONT_7x5 loop.
-static void render_str_buffered(const char *str, uint8_t page) {
+// The framebuffer-only equivalent of display_str's 25-cell FONT_7x5 loop.
+static void display_str_buffered(const char *str, uint8_t page) {
 	uint8_t *row = frame_buffer[page];
 	for (uint8_t i = 0; i < SSD1306_STR_SIZE; ++i) {
 		uint8_t char_index = *str ? (uint8_t)(*str++ - 32) : 0;
@@ -44,10 +44,10 @@ static void render_str_buffered(const char *str, uint8_t page) {
 	}
 }
 
-static uint32_t time_render_str_buffered(void) {
+static uint32_t time_display_str_buffered(void) {
 	uint32_t start = funSysTick32();
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i)
-		render_str_buffered(text_line, 0);
+		display_str_buffered(text_line, 0);
 	return (uint32_t)(funSysTick32() - start);
 }
 
@@ -70,7 +70,7 @@ int main(void) {
 	uint32_t draw_ticks = 0;
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
-		render_ticks += time_render_str_buffered();
+		render_ticks += time_display_str_buffered();
 	}
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
@@ -85,7 +85,7 @@ int main(void) {
 		(unsigned long)(draw_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 
 	memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
-	render_str_buffered(text_line, 0);
+	display_str_buffered(text_line, 0);
 	ssd1306_drawstr(0, 16, text_line, 1);
 	ssd1306_refresh();
 	while (1) { }

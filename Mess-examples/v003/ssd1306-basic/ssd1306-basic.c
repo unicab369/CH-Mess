@@ -39,13 +39,13 @@ int main(void) {
 	}
 
 	ssd1306_setup();
-	render_str("sz 8x8 testing", 0, 0);
-	render_str("testing 22222234fdafadfafa", 1, 0);
-	render_str("testing 33334fdafadfafa", 2, 0);
-	render_str("testing 44444fdafadfafa", 3, 0);
-	render_str("testing 55554fdafadfafa", 4, 0);
-	render_str("testing 66664fdafadfafa", 5, 0);
-	render_str("testing 77774fdafadfafa", 6, 0);
-	render_str("testing 88884fdafadfafa", 7, 0);
+	display_str("sz 8x8 testing", 0, 0);
+	display_str("testing 22222234fdafadfafa", 1, 0);
+	display_str("testing 33334fdafadfafa", 2, 0);
+	display_str("testing 44444fdafadfafa", 3, 0);
+	display_str("testing 55554fdafadfafa", 4, 0);
+	display_str("testing 66664fdafadfafa", 5, 0);
+	display_str("testing 77774fdafadfafa", 6, 0);
+	display_str("testing 88884fdafadfafa", 7, 0);
 	while (1) { }
 }

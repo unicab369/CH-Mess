@@ -834,7 +834,7 @@ void test_v003Slave() {
 void modI2C_display(const char *str, uint8_t line) {
 	//! validate device before print
 	if (i2c_ping(0x3C) != I2C_OK) return;
-	render_str(str, line, 0);
+	display_str(str, line, 0);
 }
 
 char str_output[SSD1306_STR_SIZE];
@@ -890,7 +890,7 @@ int main() {
 			ssd1306_setup();
 
 			sprintf(str_output, "Hello Bee2!");
-			render_str(str_output, 0, 0);
+			display_str(str_output, 0, 0);
 		}
 
 		// Scan the I2C Bus, prints any devices that respond
