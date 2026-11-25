@@ -61,7 +61,15 @@ int main(void) {
 		(unsigned long)layout_ticks);
 	const uint8_t sample_count = sizeof(samples) / sizeof(samples[0]);
 
-	ssd1306_render_graph_bars(&plot, samples, sample_count, 8);
+	ssd1306_render_graph_fill(&plot, samples, sample_count);
+	ssd1306_render_graph_line(&plot, samples, sample_count, 1);
+	ssd1306_render_graph_markers(&plot, samples, sample_count, 2);
+	ssd1306_displayPages(0, SSD1306_PAGES - 1);
+	Delay_Ms(2000);
+
+	memset(frame_buffer, 0, sizeof(frame_buffer));
+	ssd1306_render_plot_layout(&plot);
+	ssd1306_render_graph_bars(&plot, samples, sample_count, 2);
 	ssd1306_render_graph_line(&plot, samples, sample_count, 1);
 	ssd1306_render_graph_markers(&plot, samples, sample_count, 2);
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);

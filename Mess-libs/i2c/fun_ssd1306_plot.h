@@ -100,6 +100,26 @@ static inline void ssd1306_render_graph_bars(
 	}
 }
 
+// Fill the area between consecutive graph points and the plot's x-axis.
+static inline void ssd1306_render_graph_fill(
+	const T_SSD1306_Plot *plot, const T_Point *points, uint8_t length
+) {
+	if (!plot || !points || length < 2u) return;
+	for (uint8_t i = 1; i < length; ++i) {
+		T_Point p0, p1;
+		if (!ssd1306_plot_to_screen(plot, points[i - 1u], &p0)
+			|| !ssd1306_plot_to_screen(plot, points[i], &p1)
+		) continue;
+
+		T_Point segment[4] = {
+			p0, p1,
+			{ p1.x, plot->y_max },
+			{ p0.x, plot->y_max },
+		};
+		ssd1306_render_solid_poly(segment, 4);
+	}
+}
+
 // Render plot axes and tick marks. x_max and y_max are inclusive endpoint coordinates.
 static inline uint8_t ssd1306_render_plot_layout(T_SSD1306_Plot *plot) {
 	if (!plot || plot->x_max <= plot->origin.x || plot->y_max <= plot->origin.y) return 0;
