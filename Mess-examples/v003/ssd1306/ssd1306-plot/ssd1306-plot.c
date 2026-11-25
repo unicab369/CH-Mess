@@ -39,27 +39,9 @@ static T_SSD1306_Plot plot = {
 	.origin = { 5, 5 },
 	.x_max = 105,
 	.y_max = 60,
-	.x_tick = 14,
-	.y_tick = 8,
+	.x_tick_interval = 14,
+	.y_tick_interval = 8,
 };
-static void draw_marker(T_Point point) {
-	for (int8_t dy = -1; dy <= 1; ++dy) {
-		for (int8_t dx = -1; dx <= 1; ++dx) {
-			ssd1306_render_point((T_Point) {
-				(uint8_t)((int16_t)point.x + dx),
-				(uint8_t)((int16_t)point.y + dy)
-			});
-		}
-	}
-}
-
-static void draw_plot(void) {
-	for (uint8_t i = 1; i < sizeof(samples) / sizeof(samples[0]); ++i)
-		ssd1306_render_line(samples[i - 1], samples[i], 1);
-	for (uint8_t i = 0; i < sizeof(samples) / sizeof(samples[0]); ++i)
-		draw_marker(samples[i]);
-}
-
 int main(void) {
 	SystemInit();
 	if (i2c_init(&display) != I2C_OK || i2c_ping(display.addr) != I2C_OK) {
@@ -70,12 +52,15 @@ int main(void) {
 	ssd1306_setup();
 	memset(frame_buffer, 0, sizeof(frame_buffer));
 	uint32_t layout_start = funSysTick32();
-	if (!ssd1306_plot_render_layout(&plot))
-		while (1) { }
+	if (!ssd1306_render_plot_layout(&plot)) while (1) { }
+
 	uint32_t layout_ticks = (uint32_t)(funSysTick32() - layout_start);
-	printf("ssd1306_plot_render_layout: %lu SysTick ticks\n",
+	printf("ssd1306_render_plot_layout: %lu SysTick ticks\n",
 		(unsigned long)layout_ticks);
-	draw_plot();
+	const uint8_t sample_count = sizeof(samples) / sizeof(samples[0]);
+
+	ssd1306_render_graph_line(samples, sample_count, 1);
+	ssd1306_render_graph_markers(samples, sample_count, 3);
 	ssd1306_displayPages(0, SSD1306_PAGES - 1);
 	while (1) { }
 }
