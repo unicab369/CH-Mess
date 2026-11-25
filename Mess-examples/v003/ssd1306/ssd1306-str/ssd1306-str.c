@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "ch32fun.h"
-#include "../../../Mess-libs/i2c/lib/lib_i2c.h"
+#include "../../../../Mess-libs/i2c/lib/lib_i2c.h"
 
 #define BENCH_RUNS 6
 #define BENCH_ROUNDS 5u
@@ -20,7 +20,7 @@ i2c_device_t display = {
 	.regb = 1,
 };
 
-#include "../../../Mess-libs/i2c/ssd1306/fun_ssd1306.h"
+#include "../../../../Mess-libs/i2c/ssd1306/fun_ssd1306.h"
 
 uint8_t SSD1306_CMD(uint8_t command) {
 	uint8_t packet[] = { 0x00, command };

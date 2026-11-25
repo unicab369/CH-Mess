@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "ch32fun.h"
-#include "../../../Mess-libs/i2c/lib/lib_i2c.h"
+#include "../../../../Mess-libs/i2c/lib/lib_i2c.h"
 
 #define SSD1306_SHARED_FRAME_BUFFER
 
@@ -15,7 +15,7 @@ i2c_device_t display = {
 	.regb = 1,
 };
 
-#include "../../../Mess-libs/i2c/ssd1306/fun_ssd1306.h"
+#include "../../../../Mess-libs/i2c/ssd1306/fun_ssd1306.h"
 
 uint8_t SSD1306_CMD(uint8_t command) {
 	uint8_t packet[] = { 0x00, command };
@@ -32,18 +32,21 @@ uint8_t SSD1306_DATA(uint8_t *data, int length) {
 
 int main(void) {
 	SystemInit();
+
 	if (i2c_init(&display) != I2C_OK || i2c_ping(display.addr) != I2C_OK) {
 		printf("SSD1306 not found at 0x%02X\n", display.addr);
 		while (1) { }
 	}
 
 	ssd1306_setup();
-	memset(frame_buffer, 0, sizeof(frame_buffer));
-	render_pie((M_Point){ 32, 16 }, 14, 0, 90);
-	render_pie((M_Point){ 96, 16 }, 14, 90, 180);
-	render_pie((M_Point){ 32, 48 }, 14, 180, 270);
-	render_pie((M_Point){ 96, 48 }, 14, 270, 359);
-	ssd1306_displayPages(0, SSD1306_PAGES - 1);
-
+	render_str_line("sz 8x8 testing", 0, 0);
+	render_str_line("testing 22222234fdafadfafa", 1, 0);
+	render_str_line("testing 33334fdafadfafa", 2, 0);
+	render_str_line("testing 44444fdafadfafa", 3, 0);
+	render_str_line("testing 55554fdafadfafa", 4, 0);
+	render_str_line("testing 66664fdafadfafa", 5, 0);
+	render_str_line("testing 77774fdafadfafa", 6, 0);
+	render_str_line("testing 88884fdafadfafa", 7, 0);
+	ssd1306_displayArea(0, 7, 0, SSD1306_STR_SIZE * 5u);
 	while (1) { }
 }
