@@ -78,7 +78,7 @@ int main(void) {
 		printf("SSD1306 not found at 0x%02X\n", display.addr);
 		while (1) { }
 	}
-	ssd1306_setup();
+	ssd1306_setup(0x8F);
 
 	uint32_t render_ticks = 0;
 	uint32_t render_8x8_ticks = 0;

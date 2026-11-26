@@ -132,7 +132,6 @@ const uint8_t ssd1306_init_array[] = {
 	0x10,                             // High column
 	0xb0,                             // Page address
 	0xdc, 0x00,                       // Set Display Start Line  (Where in memory it reads from)
-	SSD1306_SETCONTRAST, 0x6f,        // Set constrast
 	SSD1306_COLUMNADDR,               // Set memory addressing mode
 	SSD1306_DISPLAYALLON_RESUME,      // normal (as opposed to invert colors, always on or off.)
 	SSD1306_SETMULTIPLEX, (SSD1306_H-1), // Iterate over all 128 rows (Multiplex Ratio)
@@ -144,7 +143,6 @@ const uint8_t ssd1306_init_array[] = {
 	0xad, 0x80,                       // Set Charge pump
 	SSD1306_SEGREMAP, 0x01,           // Default mapping
 	SSD1306_SETPRECHARGE, 0x06,       // ???? No idea what this does, but this looks best.
-	SSD1306_SETCONTRAST, 0xfe,        // Set constrast
 	SSD1306_SETVCOMDETECT, 0xfe,      // Set vcomh
 	SSD1306_SETMULTIPLEX, (SSD1306_H-1), // 128-wide.
 	SSD1306_DISPLAYON, // Display on.
@@ -169,8 +167,6 @@ const uint8_t ssd1306_init_array[] = {
 	SSD1306_COMSCANDEC,
 	SSD1306_SETCOMPINS,                    // 0xDA
 	0x12,                                  //
-	SSD1306_SETCONTRAST,                   // 0x81
-	0x8F,
 	SSD1306_SETPRECHARGE,                  // 0xd9
 	0xF1,
 	SSD1306_SETVCOMDETECT,                 // 0xDB
@@ -441,7 +437,7 @@ void ssd1306_render_image(const uint8_t *image, uint8_t x, uint8_t y,
 	}
 }
 
-uint8_t ssd1306_setup(void) {
+uint8_t ssd1306_setup(uint8_t contrast) {
 	memset(frame_buffer, 0, sizeof(frame_buffer));
 
 	#if !defined(SSD1306_CUSTOM_INIT_ARRAY) || !SSD1306_CUSTOM_INIT_ARRAY
@@ -450,6 +446,8 @@ uint8_t ssd1306_setup(void) {
 		if (SSD1306_CMD(*cmd_list++)) return 1;
 	}
 	#endif
+	if (SSD1306_CMD(SSD1306_SETCONTRAST)) return 1;
+	if (SSD1306_CMD(contrast)) return 1;
 
 	ssd1306_displayPages(0, SSD1306_MAX_PAGE_IDX);
 	return 0;

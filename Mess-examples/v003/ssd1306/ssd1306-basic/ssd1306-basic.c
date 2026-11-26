@@ -38,7 +38,7 @@ int main(void) {
 		while (1) { }
 	}
 
-	ssd1306_setup();
+	ssd1306_setup(0x8F);
 	ssd1306_render_str_line("sz 8x8 testing", 0, 0, 0);
 	ssd1306_render_str_line("testing 22222234fdafadfafa", 1, 0, 0);
 	ssd1306_render_str_line("testing 33334fdafadfafa", 2, 0, 0);

@@ -48,7 +48,7 @@ int main(void) {
 		printf("SSD1306 not found at 0x%02X\n", display.addr);
 		while (1) { }
 	}
-	ssd1306_setup();
+	ssd1306_setup(0x8F);
 	uint32_t render_ticks = 0;
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {
 		memset(frame_buffer, 0, sizeof(frame_buffer));

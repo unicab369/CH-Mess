@@ -54,7 +54,7 @@ int main(void) {
 		printf("SSD1306 not responding; retrying\n");
 	}
 
-	while (ssd1306_setup() != 0) {
+	while (ssd1306_setup(0x8F) != 0) {
 		printf("SSD1306 setup failed; retrying\n");
 		while (i2c_ping(display.addr) != I2C_OK) { }
 	}

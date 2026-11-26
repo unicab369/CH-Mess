@@ -888,7 +888,7 @@ int main() {
 	} 
 	else {
 		if (i2c_ping(0x3C) == I2C_OK) {
-			ssd1306_setup();
+			ssd1306_setup(0x8F);
 
 			sprintf(str_output, "Hello Bee2!");
 			ssd1306_render_str_line(str_output, 0, 0, 0);

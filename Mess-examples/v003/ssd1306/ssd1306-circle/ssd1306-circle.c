@@ -79,7 +79,7 @@ int main(void) {
 		while (1) { }
 	}
 
-	ssd1306_setup();
+	ssd1306_setup(0x8F);
 
 	uint32_t render_outline_ticks = 0;
 	uint32_t render_filled_ticks = 0;

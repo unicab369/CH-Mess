@@ -56,7 +56,7 @@ int main(void) {
 		while (1) { }
 	}
 
-	ssd1306_setup();
+	ssd1306_setup(0x8F);
 	memset(frame_buffer, 0, sizeof(frame_buffer));
 	ssd1306_render_solid_poly(star, (uint8_t)(sizeof(star) / sizeof(star[0])));
 	ssd1306_displayPages(0, SSD1306_MAX_PAGE_IDX);

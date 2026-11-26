@@ -47,7 +47,7 @@ int main(void) {
 		while (1) { }
 	}
 
-	ssd1306_setup();
+	ssd1306_setup(0xFF);
 	ssd1306_display_menu(&menu);
 	for (;;) {
 		Delay_Ms(1000);

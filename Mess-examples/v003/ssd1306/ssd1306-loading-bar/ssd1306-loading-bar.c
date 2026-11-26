@@ -36,7 +36,7 @@ int main(void) {
 		while (1) { }
 	}
 
-	ssd1306_setup();
+	ssd1306_setup(0x8F);
 	const uint8_t x = 12, y = 8, height = 8, width = 104;
 	const uint8_t y_bar_x = 60, y_bar_y = 24, y_bar_height = 32, y_bar_width = 8;
 	uint8_t x_progress = 0, y_progress = 0;

@@ -55,7 +55,7 @@ void modI2C_setup(uint16_t counter) {
 	}
 	else {
 		if (i2c_ping(0x3C) == I2C_OK) {
-			ssd1306_setup();
+			ssd1306_setup(0x8F);
 
 			sprintf(str_output, "Hello Bee %ld", counter);
 			ssd1306_render_str(str_output, 0, 0, &font_8x8, 0, TEXT_ORIENTATION_0);

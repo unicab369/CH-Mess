@@ -96,7 +96,7 @@ int main(void) {
 		while (1) { }
 	}
 
-	ssd1306_setup();
+	ssd1306_setup(0x8F);
 
 	uint32_t render_ticks = 0;
 	uint32_t render_thick_ticks = 0;
