@@ -42,15 +42,18 @@ typedef struct {
 	uint8_t visible_count;
 	uint8_t start_page;
 	uint8_t position;
+	uint8_t scroll_page;
 } T_Menu;
 
 static void _render_menu_window(
-	const T_Menu *menu, uint8_t first_item, uint8_t row_count
+	const T_Menu *menu, uint8_t first_item, uint8_t first_row, uint8_t row_count
 ) {
 	for (uint8_t row = 0; row < row_count; ++row) {
 		char line[SSD1306_STR_SIZE + 1u];
 		uint8_t item_idx = first_item + row;
-		uint8_t page = menu->start_page + row;
+		uint8_t page = menu->scroll_page + first_row + row;
+		if (page >= menu->visible_count) page -= menu->visible_count;
+		page += menu->start_page;
 		uint8_t pos = 2;
 		const char *item = menu->items[item_idx];
 
@@ -93,7 +96,13 @@ void ssd1306_display_menu(T_Menu *menu) {
 	// Keep the selected item within the visible menu window.
 	uint8_t first_item = (menu->position >= menu->visible_count)
 						? menu->position - menu->visible_count + 1u : 0;
-	_render_menu_window(menu, first_item, menu->visible_count);
+	menu->scroll_page = 0;
+	_render_menu_window(menu, first_item, 0, menu->visible_count);
+	// Restrict start-line scrolling to the menu; rows above and below stay fixed.
+	SSD1306_CMD(0xA3u);
+	SSD1306_CMD(menu->start_page << 3);
+	SSD1306_CMD(menu->visible_count << 3);
+	SSD1306_CMD(0x40u);
 	ssd1306_displayPages(menu->start_page, menu->start_page + menu->visible_count - 1u);
 }
 
@@ -101,6 +110,8 @@ void ssd1306_display_menu(T_Menu *menu) {
 void ssd1306_menu_move(T_Menu *menu, int8_t offset) {
 	// Ignore invalid menus and menus that are already at an invalid position.
 	if (!menu || !menu->visible_count) return;
+	uint8_t visible_count = menu->visible_count;
+	uint8_t start_page = menu->start_page;
 
 	// Apply the offset and clamp selection to the first or last item.
 	uint8_t old_position = menu->position;
@@ -109,21 +120,63 @@ void ssd1306_menu_move(T_Menu *menu, int8_t offset) {
 	if (new_position >= menu->total_count)
 		new_position = menu->total_count - 1u;
 	if (new_position == old_position) return;
-	menu->position = (uint8_t)new_position;
+	uint8_t position = (uint8_t)new_position;
+	menu->position = position;
 
-	uint8_t old_first_item = (old_position >= menu->visible_count)
-							? old_position - menu->visible_count + 1u : 0;
-	uint8_t first_item = (menu->position >= menu->visible_count)
-							? menu->position - menu->visible_count + 1u : 0;
+	uint8_t old_first_item = (old_position >= visible_count)
+							? old_position - visible_count + 1u : 0;
+	uint8_t first_item = (position >= visible_count)
+							? position - visible_count + 1u : 0;
+	uint8_t scroll_page = menu->scroll_page;
 
 	if (first_item != old_first_item) {
-		// Redraw only the visible menu window when scrolling to another item range.
-		_render_menu_window(menu, first_item, menu->visible_count);
-		ssd1306_displayPages(menu->start_page, menu->start_page + menu->visible_count - 1u);
+		int16_t window_step = (int16_t)first_item - old_first_item;
+		if (window_step == 1 || window_step == -1) {
+			uint8_t exposed_row = 0;
+			if (window_step > 0) {
+				++scroll_page;
+				if (scroll_page == visible_count) scroll_page = 0;
+				exposed_row = visible_count - 1u;
+			} else {
+				if (!scroll_page) scroll_page = visible_count;
+				--scroll_page;
+			}
+			menu->scroll_page = scroll_page;
+			_render_menu_window(menu, first_item + exposed_row, exposed_row, 1);
+			uint8_t exposed_page = scroll_page + exposed_row;
+			if (exposed_page >= visible_count)
+				exposed_page -= visible_count;
+			exposed_page += start_page;
+			uint8_t old_page = exposed_page;
+			if (old_position >= first_item && old_position < first_item + visible_count) {
+				old_page = scroll_page + old_position - first_item;
+				if (old_page >= visible_count) old_page -= visible_count;
+				old_page += start_page;
+				memcpy(frame_buffer[old_page], FONT_7x5[' ' - 32u], 5u);
+			}
+			uint8_t new_page = scroll_page + position - first_item;
+			if (new_page >= visible_count) new_page -= visible_count;
+			new_page += start_page;
+			memcpy(frame_buffer[new_page], FONT_7x5['>' - 32u], 5u);
+			SSD1306_CMD(0x40u | (scroll_page << 3));
+			ssd1306_displayArea(exposed_page, exposed_page, 0, SSD1306_W);
+			if (old_page != exposed_page)
+				ssd1306_displayArea(old_page, old_page, 0, 5);
+			if (new_page != exposed_page)
+				ssd1306_displayArea(new_page, new_page, 0, 5);
+		} else {
+			menu->scroll_page = 0;
+			_render_menu_window(menu, first_item, 0, visible_count);
+			SSD1306_CMD(0x40u);
+			ssd1306_displayPages(start_page, start_page + visible_count - 1u);
+		}
 	} else {
 		// The item text is already displayed; update only the old and new marker glyphs.
-		_update_menu_cursor(menu->start_page + old_position - first_item,
-			menu->start_page + menu->position - first_item);
+		uint8_t old_page = scroll_page + old_position - first_item;
+		uint8_t new_page = scroll_page + position - first_item;
+		if (old_page >= visible_count) old_page -= visible_count;
+		if (new_page >= visible_count) new_page -= visible_count;
+		_update_menu_cursor(start_page + old_page, start_page + new_page);
 	}
 }
 
