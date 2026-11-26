@@ -14,7 +14,7 @@ i2c_device_t display = {
 	.regb = 1,
 };
 
-#include "../../../../Mess-libs/i2c/fun_ssd1306.h"
+#include "../../../../Mess-libs/i2c/fun_ssd1306_graphic.h"
 
 uint8_t SSD1306_CMD(uint8_t command) {
 	uint8_t packet[] = { 0x00, command };
@@ -31,8 +31,11 @@ uint8_t SSD1306_DATA(uint8_t *data, int length) {
 
 int main(void) {
 	static const char *const items[] = { "START", "SETTINGS", "ABOUT", "EXIT" };
-	const uint8_t item_count = sizeof(items) / sizeof(items[0]);
-	uint8_t selected = 0;
+	T_SSD1306_Menu menu = {
+		.items = items,
+		.count = sizeof(items) / sizeof(items[0]),
+		.position = 0,
+	};
 
 	SystemInit();
 	if (i2c_init(&display) != I2C_OK || i2c_ping(display.addr) != I2C_OK) {
@@ -41,16 +44,14 @@ int main(void) {
 	}
 
 	ssd1306_setup();
+	ssd1306_display_menu(&menu);
 	for (;;) {
-		ssd1306_render_str_line("MAIN MENU", 0, 0, 1);
-		for (uint8_t i = 0; i < item_count; ++i) {
-			char line[SSD1306_STR_SIZE + 1u];
-			snprintf(line, sizeof(line), "%c %s", i == selected ? '>' : ' ', items[i]);
-			ssd1306_render_str_line(line, i + 1u, 0, 1);
-		}
-		ssd1306_displayPages(0, SSD1306_MAX_PAGE_IDX);
-
 		Delay_Ms(1000);
-		selected = (selected + 1u) % item_count;
+		if (menu.position == menu.count - 1u) {
+			menu.position = 0;
+			ssd1306_display_menu(&menu);
+		} else {
+			ssd1306_menu_move(&menu, 1);
+		}
 	}
 }
