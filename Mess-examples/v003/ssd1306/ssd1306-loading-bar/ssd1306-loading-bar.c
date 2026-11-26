@@ -38,11 +38,13 @@ int main(void) {
 
 	ssd1306_setup();
 	for (;;) {
-		for (uint16_t width = 0; width <= 104u; ++width) {
+		uint32_t start_ticks = funSysTick32();
+		for (uint8_t percent = 0; percent <= 100u; ++percent) {
 			memset(frame_buffer, 0, sizeof(frame_buffer));
-			ssd1306_render_loading_progress(12, 28, 8, 104, (uint8_t)width);
-			ssd1306_displayPages(0, SSD1306_MAX_PAGE_IDX);
-			Delay_Ms(25);
+			ssd1306_show_percent(12, 28, 8, 104, percent);
 		}
+		uint32_t elapsed_ticks = (uint32_t)(funSysTick32() - start_ticks);
+		printf("Loading bar 0-100%%: %lu SysTick ticks\n",
+			(unsigned long)elapsed_ticks);
 	}
 }

@@ -36,26 +36,38 @@ typedef struct {
 	uint8_t swap_axes;
 } T_SSD1306_Plot;
 
-// Draw the filled portion of a loading bar; height and progress are in pixels.
-static inline void ssd1306_render_loading_progress(
+// Draw and display a loading bar with progress measured in pixels.
+void ssd1306_show_progress(
 	uint8_t x, uint8_t y, uint8_t height, uint8_t width, uint8_t progress
 ) {
-	if (x >= SSD1306_W || y >= SSD1306_H || !height || !width || !progress)
-		return;
+	if (x >= SSD1306_W || y >= SSD1306_H || !height || !width) return;
 	uint16_t max_width = SSD1306_W - x;
 	uint16_t max_height = SSD1306_H - y;
 	if (width > max_width) width = max_width;
 	if (height > max_height) height = max_height;
 	if (progress > width) progress = width;
+	uint8_t first_page = y >> 3;
+	uint8_t last_page = (y + height - 1u) >> 3;
 	uint16_t x_end = (uint16_t)x + progress;
 	uint8_t y_end = y + height - 1u;
 
 	for (uint16_t x_pos = x; x_pos < x_end; ++x_pos)
 		ssd1306_render_verLine((uint8_t)x_pos, y, y_end, 1);
+	for (uint8_t page = first_page; page <= last_page; ++page)
+		ssd1306_displayPages(page, page);
+}
+
+// Convert a percentage from 0 to 100 into pixel progress for the loading bar.
+void ssd1306_show_percent(
+	uint8_t x, uint8_t y, uint8_t height, uint8_t width, uint8_t percent
+) {
+	if (percent > 100u) percent = 100u;
+	uint8_t progress = (uint16_t)width * percent / 100u;
+	ssd1306_show_progress(x, y, height, width, progress);
 }
 
 // Draw the same clipped 3x3 marker using the filled rectangle renderer.
-static inline void ssd1306_render_marker3x3(uint8_t x, uint8_t y) {
+void ssd1306_render_marker3x3(uint8_t x, uint8_t y) {
 	if (x >= SSD1306_W || y >= SSD1306_H) return;
 	uint8_t x_min = x ? x - 1u : 0;
 	uint8_t y_min = y ? y - 1u : 0;
@@ -69,7 +81,7 @@ static inline void ssd1306_render_marker3x3(uint8_t x, uint8_t y) {
 }
 
 // Draw a clipped 2x2 marker with point as its top-left coordinate.
-static inline void ssd1306_render_marker2x2(uint8_t x, uint8_t y) {
+void ssd1306_render_marker2x2(uint8_t x, uint8_t y) {
 	if (x >= SSD1306_W || y >= SSD1306_H) return;
 	uint16_t x_next = (uint16_t)x + 1u;
 	uint16_t y_next = (uint16_t)y + 1u;
@@ -81,7 +93,7 @@ static inline void ssd1306_render_marker2x2(uint8_t x, uint8_t y) {
 }
 
 // Convert graph values (x from the y-axis, y above the x-axis) to screen pixels.
-static inline uint8_t ssd1306_plot_to_screen(
+uint8_t ssd1306_plot_to_screen(
 	const T_SSD1306_Plot *plot, uint8_t x, uint8_t y, uint8_t *screen_x, uint8_t *screen_y
 ) {
 	if (!plot || !screen_x || !screen_y || plot->x_max <= plot->origin.x
@@ -103,7 +115,7 @@ static inline uint8_t ssd1306_plot_to_screen(
 }
 
 // Render each graph value with a marker selected by dot size.
-static inline void ssd1306_render_graph_markers(
+void ssd1306_render_graph_markers(
 	const T_SSD1306_Plot *plot, const T_Point *points, uint8_t length, uint8_t dot_size
 ) {
 	if (!plot || !points) return;
@@ -121,7 +133,7 @@ static inline void ssd1306_render_graph_markers(
 }
 
 // Render line segments between each consecutive pair of graph points.
-static inline void ssd1306_render_graph_line(
+void ssd1306_render_graph_line(
 	const T_SSD1306_Plot *plot, const T_Point *points,
 	uint8_t length, uint8_t thickness
 ) {
@@ -138,7 +150,7 @@ static inline void ssd1306_render_graph_line(
 }
 
 // Draw filled bars from each graph value down to the plot's x-axis.
-static inline void ssd1306_render_graph_bars(
+void ssd1306_render_graph_bars(
 	const T_SSD1306_Plot *plot, const T_Point *points, uint8_t length, uint8_t bar_width
 ) {
 	if (!plot || !points || !bar_width) return;
@@ -173,7 +185,7 @@ static inline void ssd1306_render_graph_bars(
 }
 
 // Fill the area between consecutive graph points and the plot's x-axis.
-static inline void ssd1306_render_graph_fill(
+void ssd1306_render_graph_fill(
 	const T_SSD1306_Plot *plot, const T_Point *points, uint8_t length
 ) {
 	if (!plot || !points || length < 2u) return;
@@ -193,7 +205,7 @@ static inline void ssd1306_render_graph_fill(
 }
 
 // Render plot axes and tick marks. x_max and y_max are inclusive endpoint coordinates.
-static inline uint8_t ssd1306_render_plot_layout(T_SSD1306_Plot *plot) {
+uint8_t ssd1306_render_plot_layout(T_SSD1306_Plot *plot) {
 	if (!plot || plot->x_max <= plot->origin.x || plot->y_max <= plot->origin.y) return 0;
 	const char *h_label = plot->swap_axes ? plot->y_label : plot->x_label;
 	const char *v_label = plot->swap_axes ? plot->x_label : plot->y_label;
