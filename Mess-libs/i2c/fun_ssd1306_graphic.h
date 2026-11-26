@@ -95,6 +95,7 @@ void ssd1306_display_menu(T_Menu *menu) {
 						? menu->position - menu->visible_count + 1u : 0;
 	uint8_t first_page = first_item % SSD1306_PAGES;
 	_render_menu_window(menu, first_item, first_page, menu->visible_count);
+	// Shift the displayed RAM window by 8 rows per page to show the menu start.
 	SSD1306_CMD(0x40u | (first_page << 3));
 	ssd1306_displayPages(0, menu->visible_count - 1u);
 }
@@ -129,12 +130,14 @@ void ssd1306_menu_move(T_Menu *menu, int8_t offset) {
 			uint8_t exposed_page = exposed_item % SSD1306_PAGES;
 			_render_menu_window(menu, exposed_item, exposed_page, 1);
 
+			// Shift the displayed RAM window to the new first menu page.
 			SSD1306_CMD(0x40u | (first_page << 3));
 			ssd1306_displayArea(exposed_page, exposed_page, 0, SSD1306_W);
 			_update_menu_cursor(old_position, menu->position, exposed_page);
 		} else {
 			// Multi-item jumps need the complete visible window rewritten.
 			_render_menu_window(menu, first_item, first_page, menu->visible_count);
+			// Shift the displayed RAM window to the new first menu page.
 			SSD1306_CMD(0x40u | (first_page << 3));
 			ssd1306_displayPages(0, menu->visible_count - 1u);
 		}
