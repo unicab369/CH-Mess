@@ -36,7 +36,9 @@ typedef struct {
 	uint8_t swap_axes;
 } T_SSD1306_Plot;
 
-// Draw and display a loading bar with progress measured in pixels.
+static uint8_t _loading_progress;
+
+// Draw and display new loading-bar columns only; this tracks one bar.
 void ssd1306_show_progress(
 	uint8_t x, uint8_t y, uint8_t height, uint8_t width, uint8_t progress
 ) {
@@ -46,15 +48,40 @@ void ssd1306_show_progress(
 	if (width > max_width) width = max_width;
 	if (height > max_height) height = max_height;
 	if (progress > width) progress = width;
-	uint8_t first_page = y >> 3;
-	uint8_t last_page = (y + height - 1u) >> 3;
+
+	if (progress < _loading_progress) return;
+
+	uint16_t x_start = (uint16_t)x + _loading_progress;
 	uint16_t x_end = (uint16_t)x + progress;
 	uint8_t y_end = y + height - 1u;
 
-	for (uint16_t x_pos = x; x_pos < x_end; ++x_pos)
+	for (uint16_t x_pos = x_start; x_pos < x_end; ++x_pos)
 		ssd1306_render_verLine((uint8_t)x_pos, y, y_end, 1);
-	for (uint8_t page = first_page; page <= last_page; ++page)
-		ssd1306_displayPages(page, page);
+
+	if (progress > _loading_progress) {
+		uint8_t first_page = y >> 3;
+		uint8_t last_page = (y + height - 1u) >> 3;
+		ssd1306_displayArea(first_page, last_page, (uint8_t)x_start, (uint8_t)x_end);
+	}
+	_loading_progress = progress;
+}
+
+void ssd1306_reset_progress(uint8_t x, uint8_t y, uint8_t height) {
+	if (_loading_progress) {
+		uint16_t x_end = (uint16_t)x + _loading_progress - 1u;
+		uint8_t y_end = y + height - 1u;
+		// Toggle the existing filled columns off in the framebuffer.
+		ssd1306_toggle_invert();
+		for (uint16_t x_pos = x; x_pos <= x_end; ++x_pos)
+			ssd1306_render_verLine((uint8_t)x_pos, y, y_end, 1);
+		ssd1306_toggle_invert();
+
+		uint8_t first_page = y >> 3;
+		uint8_t last_page = (y + height - 1u) >> 3;
+		// Refresh only the cleared columns on the affected pages.
+		ssd1306_displayArea(first_page, last_page, x, (uint8_t)(x_end + 1u));
+	}
+	_loading_progress = 0;
 }
 
 // Convert a percentage from 0 to 100 into pixel progress for the loading bar.
