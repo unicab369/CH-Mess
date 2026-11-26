@@ -36,60 +36,83 @@ typedef struct {
 	uint8_t swap_axes;
 } T_SSD1306_Plot;
 
-static uint8_t _loading_progress;
+typedef enum {
+	DISPLAY_LANDSCAPE = 0,
+	DISPLAY_PORTRAIT = 1,
+} T_Display_Mode;
 
-// Draw and display new loading-bar columns only; this tracks one bar.
-void ssd1306_show_progress(
-	uint8_t x, uint8_t y, uint8_t height, uint8_t width, uint8_t progress
+static uint8_t _loading_progress[2];
+
+void ssd1306_reset_progress(
+	uint8_t x, uint8_t y, uint8_t width, uint8_t height,
+	T_Display_Mode direction
 ) {
-	if (x >= SSD1306_W || y >= SSD1306_H || !height || !width) return;
+	if (direction > DISPLAY_PORTRAIT) return;
+	uint8_t progress = _loading_progress[direction];
+	if (!progress) return;
+	uint8_t last_page, col_end;
+	ssd1306_toggle_invert();
+
+	if (direction == DISPLAY_LANDSCAPE) {
+		uint16_t x_end = (uint16_t)x + progress - 1u;
+		for (uint16_t x_pos = x; x_pos <= x_end; ++x_pos)
+			ssd1306_render_verLine((uint8_t)x_pos, y, y + height - 1u, 1);
+		last_page = (y + height - 1u) >> 3;
+		col_end = (uint8_t)(x_end + 1u);
+	} else {
+		uint16_t y_end = (uint16_t)y + progress - 1u;
+		for (uint16_t y_pos = y; y_pos <= y_end; ++y_pos)
+			ssd1306_render_horLine((uint8_t)y_pos, x, x + width - 1u, 1);
+		last_page = (uint8_t)(y_end >> 3);
+		col_end = x + width;
+	}
+
+	ssd1306_toggle_invert();
+	ssd1306_displayArea(y >> 3, last_page, x, col_end);
+	_loading_progress[direction] = 0;
+}
+
+// Add and display only new pixels along the selected axis.
+void ssd1306_show_progress(
+	uint8_t x, uint8_t y, uint8_t height, uint8_t width, uint8_t progress,
+	T_Display_Mode direction
+) {
+	if (x >= SSD1306_W || y >= SSD1306_H || !height || !width
+		|| direction > DISPLAY_PORTRAIT) return;
 	uint16_t max_width = SSD1306_W - x;
 	uint16_t max_height = SSD1306_H - y;
-	// Clip the bar to the display and skip updates that add no progress.
 	if (width > max_width) width = max_width;
 	if (height > max_height) height = max_height;
-	if (progress > width) progress = width;
-	if (progress <= _loading_progress) return;
+	uint8_t max_progress = direction == DISPLAY_LANDSCAPE ? width : height;
+	if (progress > max_progress) progress = max_progress;
+	uint8_t previous = _loading_progress[direction];
+	if (progress <= previous) return;
+	_loading_progress[direction] = progress;
 
-	uint16_t x_start = (uint16_t)x + _loading_progress;
-	uint16_t x_end = (uint16_t)x + progress;
-	uint8_t y_end = y + height - 1u;
-	// Keep this after x_start, which uses the previous progress value.
-	_loading_progress = progress;
-
-	for (uint16_t x_pos = x_start; x_pos < x_end; ++x_pos)
-		ssd1306_render_verLine((uint8_t)x_pos, y, y_end, 1);
-
-	uint8_t first_page = y >> 3;
-	uint8_t last_page = (y + height - 1u) >> 3;
-	ssd1306_displayArea(first_page, last_page, (uint8_t)x_start, (uint8_t)x_end);
-}
-
-void ssd1306_reset_progress(uint8_t x, uint8_t y, uint8_t height) {
-	if (_loading_progress) {
-		uint16_t x_end = (uint16_t)x + _loading_progress - 1u;
-		uint8_t y_end = y + height - 1u;
-		// Toggle the existing filled columns off in the framebuffer.
-		ssd1306_toggle_invert();
-		for (uint16_t x_pos = x; x_pos <= x_end; ++x_pos)
-			ssd1306_render_verLine((uint8_t)x_pos, y, y_end, 1);
-		ssd1306_toggle_invert();
-
-		uint8_t first_page = y >> 3;
-		uint8_t last_page = (y + height - 1u) >> 3;
-		// Refresh only the cleared columns on the affected pages.
-		ssd1306_displayArea(first_page, last_page, x, (uint8_t)(x_end + 1u));
+	if (direction == DISPLAY_LANDSCAPE) {
+		uint16_t x_start = (uint16_t)x + previous;
+		uint16_t x_end = (uint16_t)x + progress;
+		for (uint16_t x_pos = x_start; x_pos < x_end; ++x_pos)
+			ssd1306_render_verLine((uint8_t)x_pos, y, y + height - 1u, 1);
+		ssd1306_displayArea(y >> 3, (y + height - 1u) >> 3, (uint8_t)x_start, (uint8_t)x_end);
+	} else {
+		uint16_t y_start = (uint16_t)y + previous;
+		uint16_t y_end = (uint16_t)y + progress;
+		for (uint16_t y_pos = y_start; y_pos < y_end; ++y_pos)
+			ssd1306_render_horLine((uint8_t)y_pos, x, x + width - 1u, 1);
+		ssd1306_displayArea((uint8_t)(y_start >> 3), (uint8_t)((y_end - 1u) >> 3), x, x + width);
 	}
-	_loading_progress = 0;
 }
 
-// Convert a percentage from 0 to 100 into pixel progress for the loading bar.
+// Convert a percentage from 0 to 100 into pixel progress on the selected axis.
 void ssd1306_show_percent(
-	uint8_t x, uint8_t y, uint8_t height, uint8_t width, uint8_t percent
+	uint8_t x, uint8_t y, uint8_t height, uint8_t width, uint8_t percent,
+	T_Display_Mode direction
 ) {
 	if (percent > 100u) percent = 100u;
-	uint8_t progress = (uint16_t)width * percent / 100u;
-	ssd1306_show_progress(x, y, height, width, progress);
+	uint8_t span = direction == DISPLAY_LANDSCAPE ? width : height;
+	uint8_t progress = (uint16_t)span * percent / 100u;
+	ssd1306_show_progress(x, y, height, width, progress, direction);
 }
 
 // Draw the same clipped 3x3 marker using the filled rectangle renderer.
