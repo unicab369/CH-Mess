@@ -45,25 +45,24 @@ void ssd1306_show_progress(
 	if (x >= SSD1306_W || y >= SSD1306_H || !height || !width) return;
 	uint16_t max_width = SSD1306_W - x;
 	uint16_t max_height = SSD1306_H - y;
+	// Clip the bar to the display and skip updates that add no progress.
 	if (width > max_width) width = max_width;
 	if (height > max_height) height = max_height;
 	if (progress > width) progress = width;
-
-	if (progress < _loading_progress) return;
+	if (progress <= _loading_progress) return;
 
 	uint16_t x_start = (uint16_t)x + _loading_progress;
 	uint16_t x_end = (uint16_t)x + progress;
 	uint8_t y_end = y + height - 1u;
+	// Keep this after x_start, which uses the previous progress value.
+	_loading_progress = progress;
 
 	for (uint16_t x_pos = x_start; x_pos < x_end; ++x_pos)
 		ssd1306_render_verLine((uint8_t)x_pos, y, y_end, 1);
 
-	if (progress > _loading_progress) {
-		uint8_t first_page = y >> 3;
-		uint8_t last_page = (y + height - 1u) >> 3;
-		ssd1306_displayArea(first_page, last_page, (uint8_t)x_start, (uint8_t)x_end);
-	}
-	_loading_progress = progress;
+	uint8_t first_page = y >> 3;
+	uint8_t last_page = (y + height - 1u) >> 3;
+	ssd1306_displayArea(first_page, last_page, (uint8_t)x_start, (uint8_t)x_end);
 }
 
 void ssd1306_reset_progress(uint8_t x, uint8_t y, uint8_t height) {
