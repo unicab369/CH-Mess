@@ -60,6 +60,6 @@ int main(void) {
 	printf("ssd1306_render_image:      %lu ticks/image\n", (unsigned long)(render_ticks / (BENCH_RUNS * BENCH_ROUNDS)));
 		memset(frame_buffer, 0, sizeof(frame_buffer));
 	ssd1306_render_image(bomb_i_stripped, 0, 16, 32, 32);
-	ssd1306_displayArea(0, SSD1306_PAGES - 1, 0, SSD1306_W);
+	ssd1306_displayArea(0, SSD1306_MAX_PAGE_IDX, 0, SSD1306_W);
 	while (1) { }
 }

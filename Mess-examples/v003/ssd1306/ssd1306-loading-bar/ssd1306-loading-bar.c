@@ -41,7 +41,7 @@ int main(void) {
 		for (uint16_t width = 0; width <= 104u; ++width) {
 			memset(frame_buffer, 0, sizeof(frame_buffer));
 			ssd1306_render_loading_bar(12, 28, 8, 104, (uint8_t)width);
-			ssd1306_displayPages(0, SSD1306_PAGES - 1u);
+			ssd1306_displayPages(0, SSD1306_MAX_PAGE_IDX);
 			Delay_Ms(25);
 		}
 	}

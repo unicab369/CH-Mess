@@ -69,7 +69,7 @@ int main(void) {
 	ssd1306_render_graph_bars(&plot, samples, sample_count, 2);
 	ssd1306_render_graph_line(&plot, samples, sample_count, 1);
 	ssd1306_render_graph_markers(&plot, samples, sample_count, 2);
-	ssd1306_displayPages(0, SSD1306_PAGES - 1);
+	ssd1306_displayPages(0, SSD1306_MAX_PAGE_IDX);
 	Delay_Ms(1000);
 
 	plot.swap_axes = 1;
@@ -79,6 +79,6 @@ int main(void) {
 	ssd1306_render_graph_bars(&plot, swapped_samples, swapped_sample_count, 2);
 	ssd1306_render_graph_line(&plot, swapped_samples, swapped_sample_count, 1);
 	ssd1306_render_graph_markers(&plot, swapped_samples, swapped_sample_count, 2);
-	ssd1306_displayPages(0, SSD1306_PAGES - 1);
+	ssd1306_displayPages(0, SSD1306_MAX_PAGE_IDX);
 	while (1) { }
 }

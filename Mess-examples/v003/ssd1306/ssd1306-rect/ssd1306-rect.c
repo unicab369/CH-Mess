@@ -103,7 +103,7 @@ int main(void) {
 	ssd1306_toggle_invert();
 	ssd1306_render_rect((T_Point){ 70, 30 }, 24, 20, 1);
 	ssd1306_toggle_invert();
-	ssd1306_displayPages(0, SSD1306_PAGES - 1);
+	ssd1306_displayPages(0, SSD1306_MAX_PAGE_IDX);
 
 	while (1) { }
 }

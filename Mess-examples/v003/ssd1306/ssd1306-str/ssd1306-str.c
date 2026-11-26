@@ -124,6 +124,6 @@ int main(void) {
 	ssd1306_render_str(text_line, 0, 16, &font_8x8, 0, TEXT_ORIENTATION_0);
 	ssd1306_render_str_scaled(scaled_text, 0, 32, &font_7x5, 2, 1);
 	ssd1306_render_str_scaled(scaled_text, 0, 48, &font_8x8, 2, 0);
-	ssd1306_displayArea(0, SSD1306_PAGES - 1, 0, SSD1306_W);
+	ssd1306_displayArea(0, SSD1306_MAX_PAGE_IDX, 0, SSD1306_W);
 	while (1) { }
 }

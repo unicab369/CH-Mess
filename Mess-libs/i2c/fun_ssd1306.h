@@ -212,6 +212,7 @@ const uint8_t SIN_LUT[] = {
 
 #define CHUNK_SIZE 32  		// Define your desired chunk size
 #define SSD1306_PAGES       (SSD1306_H / 8) // 8 pages for 64 rows
+#define SSD1306_MAX_PAGE_IDX (SSD1306_PAGES - 1u)
 
 #define SSD1306_W_LIMIT	SSD1306_W - 1
 #define SSD1306_H_LIMIT	SSD1306_H - 1
@@ -240,7 +241,7 @@ void ssd1306_displayArea(
 	uint8_t col_start, uint8_t col_end
 ) {
 	if (start_page >= SSD1306_PAGES || start_page > end_page || col_start >= SSD1306_W) return;
-	if (end_page >= SSD1306_PAGES) end_page = SSD1306_PAGES - 1;
+	if (end_page >= SSD1306_PAGES) end_page = SSD1306_MAX_PAGE_IDX;
 	if (col_end > SSD1306_W) col_end = SSD1306_W;
 	if (col_start >= col_end) return;
 	ssd1306_setwindow(start_page, end_page, col_start, col_end - 1u);
@@ -448,7 +449,7 @@ uint8_t ssd1306_setup(void) {
 	}
 	#endif
 
-	ssd1306_displayPages(0, SSD1306_PAGES - 1);
+	ssd1306_displayPages(0, SSD1306_MAX_PAGE_IDX);
 	return 0;
 }
 

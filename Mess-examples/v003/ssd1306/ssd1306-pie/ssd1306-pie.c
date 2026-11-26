@@ -95,7 +95,7 @@ int main(void) {
 	// Show two filled 230-degree pies side by side.
 	ssd1306_render_pie_fast((T_Point){ 32, 32 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
 	ssd1306_render_pie_fast((T_Point){ 96, 32 }, PIE_RADIUS, PIE_START_ANGLE, PIE_END_ANGLE);
-	ssd1306_displayPages(0, SSD1306_PAGES - 1);
+	ssd1306_displayPages(0, SSD1306_MAX_PAGE_IDX);
 
 	while (1) { }
 }

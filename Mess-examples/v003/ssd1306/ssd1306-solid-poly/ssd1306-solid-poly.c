@@ -59,7 +59,7 @@ int main(void) {
 	ssd1306_setup();
 	memset(frame_buffer, 0, sizeof(frame_buffer));
 	ssd1306_render_solid_poly(star, (uint8_t)(sizeof(star) / sizeof(star[0])));
-	ssd1306_displayPages(0, SSD1306_PAGES - 1);
+	ssd1306_displayPages(0, SSD1306_MAX_PAGE_IDX);
 
 	uint32_t ticks = 0;
 	for (uint32_t round = 0; round < BENCH_ROUNDS; ++round) {

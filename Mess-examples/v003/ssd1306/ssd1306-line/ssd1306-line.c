@@ -145,7 +145,7 @@ int main(void) {
 	// Show the span benchmark samples apart from the line set above.
 	ssd1306_render_horLine(24, 16, 16 + SPAN_LENGTH - 1u, THICK_LINE_WIDTH);
 	ssd1306_render_verLine(112, 8, 8 + SPAN_LENGTH - 1u, THICK_LINE_WIDTH);
-	ssd1306_displayPages(0, SSD1306_PAGES - 1);
+	ssd1306_displayPages(0, SSD1306_MAX_PAGE_IDX);
 
 	while (1) { }
 }

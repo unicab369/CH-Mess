@@ -139,6 +139,6 @@ int main(void) {
 	ssd1306_setup();
 	memset(frame_buffer, 0, sizeof(frame_buffer));
 	test_polys();
-	ssd1306_displayPages(0, SSD1306_PAGES - 1);
+	ssd1306_displayPages(0, SSD1306_MAX_PAGE_IDX);
 	while (1) { }
 }

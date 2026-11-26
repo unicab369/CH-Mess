@@ -115,7 +115,7 @@ int main(void) {
 	ssd1306_render_circle((T_Point){ 32, 16 }, CIRCLE_RADIUS, 0);
 	ssd1306_render_circle((T_Point){ 96, 16 }, CIRCLE_RADIUS, 1);
 	ssd1306_render_ring((T_Point){ 64, 48 }, CIRCLE_RADIUS, RING_THICKNESS, 0, 360);
-	ssd1306_displayPages(0, SSD1306_PAGES - 1);
+	ssd1306_displayPages(0, SSD1306_MAX_PAGE_IDX);
 
 	while (1) { }
 }
