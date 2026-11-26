@@ -30,10 +30,14 @@ uint8_t SSD1306_DATA(uint8_t *data, int length) {
 }
 
 int main(void) {
-	static const char *const items[] = { "START", "SETTINGS", "ABOUT", "EXIT" };
-	T_SSD1306_Menu menu = {
+	static const char *const items[] = {
+		"START", "SETTINGS", "ABOUT", "DISPLAY", "SOUND",
+		"NETWORK", "TOOLS", "STATUS", "HELP", "EXIT",
+	};
+	T_Menu menu = {
 		.items = items,
-		.count = sizeof(items) / sizeof(items[0]),
+		.total_count = sizeof(items) / sizeof(items[0]),
+		.visible_count = SSD1306_PAGES,
 		.position = 0,
 	};
 
@@ -47,7 +51,7 @@ int main(void) {
 	ssd1306_display_menu(&menu);
 	for (;;) {
 		Delay_Ms(1000);
-		int8_t offset = menu.position == menu.count - 1u
+		int8_t offset = menu.position == menu.total_count - 1u
 			? -(int8_t)menu.position : 1;
 		uint32_t start_ticks = funSysTick32();
 		ssd1306_menu_move(&menu, offset);

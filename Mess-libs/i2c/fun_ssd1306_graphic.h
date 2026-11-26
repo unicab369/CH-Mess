@@ -38,50 +38,80 @@ typedef struct {
 
 typedef struct {
 	const char *const *items;
-	uint8_t count;
+	uint8_t total_count;
+	uint8_t visible_count;
 	uint8_t position;
-} T_SSD1306_Menu;
+} T_Menu;
 
-void ssd1306_display_menu(T_SSD1306_Menu *menu) {
-	if (!menu || !menu->items || !menu->count) return;
-	// This menu shows one item per page, so keep its count within screen capacity.
-	if (menu->count > SSD1306_PAGES) menu->count = SSD1306_PAGES;
-	if (menu->position >= menu->count) menu->position = menu->count - 1u;
-	uint8_t visible_count = menu->count;
-
-	for (uint8_t row = 0; row < visible_count; ++row) {
+static void _render_menu_window(const T_Menu *menu, uint8_t first_item) {
+	for (uint8_t row = 0; row < menu->visible_count; ++row) {
 		char line[SSD1306_STR_SIZE + 1u];
-		const char *item = menu->items[row];
-		line[0] = row == menu->position ? '>' : ' ';
-		line[1] = ' ';
+		uint8_t item_idx = first_item + row;
 		uint8_t pos = 2;
-		while (item && *item && pos < SSD1306_STR_SIZE) line[pos++] = *item++;
+		const char *item = menu->items[item_idx];
+
+		while (item && *item && pos < SSD1306_STR_SIZE)
+			line[pos++] = *item++;
+		line[0] = (item_idx == menu->position) ? '>' : ' ';
+		line[1] = ' ';
 		line[pos] = '\0';
 		ssd1306_render_str_line(line, row, 0, 1);
 	}
-	// Send only the pages occupied by the menu.
-	ssd1306_displayPages(0, visible_count - 1u);
+}
+
+void ssd1306_display_menu(T_Menu *menu) {
+	if (!menu || !menu->items || !menu->total_count) {
+		if (menu) menu->visible_count = 0;
+		return;
+	}
+
+	if (menu->position >= menu->total_count)
+		menu->position = menu->total_count - 1u;
+
+	if (menu->total_count > SSD1306_PAGES)
+		menu->visible_count = SSD1306_PAGES;
+	else
+		menu->visible_count = menu->total_count;
+
+	// Keep the selected item visible when the menu is longer than the screen.
+	uint8_t first_item = (menu->position >= menu->visible_count)
+						? menu->position - menu->visible_count + 1u : 0;
+	_render_menu_window(menu, first_item);
+	ssd1306_displayPages(0, menu->visible_count - 1u);
 }
 
 // Move by an item offset; the position stays within the menu bounds.
-void ssd1306_menu_move(T_SSD1306_Menu *menu, int8_t offset) {
+void ssd1306_menu_move(T_Menu *menu, int8_t offset) {
 	// Ignore invalid menus and menus that are already at an invalid position.
-	if (!menu || !menu->items || !menu->count || menu->position >= menu->count)
-		return;
+	if (!menu || !menu->visible_count) return;
 
 	// Apply the offset and clamp selection to the first or last item.
 	uint8_t old_position = menu->position;
 	int16_t new_position = (int16_t)old_position + offset;
 	if (new_position < 0) new_position = 0;
-	if (new_position >= menu->count) new_position = menu->count - 1u;
+	if (new_position >= menu->total_count)
+		new_position = menu->total_count - 1u;
 	if (new_position == old_position) return;
 	menu->position = (uint8_t)new_position;
 
-	// The item text is already displayed; update only the old and new marker glyphs.
-	memcpy(frame_buffer[old_position], FONT_7x5[' ' - 32u], 5u);
-	memcpy(frame_buffer[menu->position], FONT_7x5['>' - 32u], 5u);
-	ssd1306_displayArea(old_position, old_position, 0, 5);
-	ssd1306_displayArea(menu->position, menu->position, 0, 5);
+	uint8_t old_first_item = (old_position >= menu->visible_count)
+							? old_position - menu->visible_count + 1u : 0;
+	uint8_t first_item = (menu->position >= menu->visible_count)
+							? menu->position - menu->visible_count + 1u : 0;
+
+	if (first_item != old_first_item) {
+		// Scrolling exposes new item text, so redraw and send the visible window.
+		_render_menu_window(menu, first_item);
+		ssd1306_displayPages(0, menu->visible_count - 1u);
+	} else {
+		// The item text is already displayed; update only the old and new marker glyphs.
+		uint8_t old_row = old_position - first_item;
+		uint8_t new_row = menu->position - first_item;
+		memcpy(frame_buffer[old_row], FONT_7x5[' ' - 32u], 5u);
+		memcpy(frame_buffer[new_row], FONT_7x5['>' - 32u], 5u);
+		ssd1306_displayArea(old_row, old_row, 0, 5);
+		ssd1306_displayArea(new_row, new_row, 0, 5);
+	}
 }
 
 void ssd1306_reset_progress(
