@@ -69,6 +69,7 @@ static void _update_menu_cursor(
 	uint8_t new_page = new_position % SSD1306_PAGES;
 	memcpy(frame_buffer[old_page], FONT_7x5[' ' - 32u], 5u);
 	memcpy(frame_buffer[new_page], FONT_7x5['>' - 32u], 5u);
+
 	if (old_page != full_page)
 		ssd1306_displayArea(old_page, old_page, 0, 5);
 	if (new_page != full_page && new_page != old_page)
@@ -93,8 +94,8 @@ void ssd1306_display_menu(T_Menu *menu) {
 	uint8_t first_item = (menu->position >= menu->visible_count)
 						? menu->position - menu->visible_count + 1u : 0;
 	uint8_t first_page = first_item % SSD1306_PAGES;
-	SSD1306_CMD(0x40u | (first_page << 3));
 	_render_menu_window(menu, first_item, first_page, menu->visible_count);
+	SSD1306_CMD(0x40u | (first_page << 3));
 	ssd1306_displayPages(0, menu->visible_count - 1u);
 }
 
@@ -120,6 +121,7 @@ void ssd1306_menu_move(T_Menu *menu, int8_t offset) {
 
 	if (first_item != old_first_item) {
 		int16_t item_offset = (int16_t)first_item - old_first_item;
+
 		if (item_offset == 1 || item_offset == -1) {
 			// Rotate the display start line and redraw only the recycled menu page.
 			uint8_t exposed_item = item_offset > 0
