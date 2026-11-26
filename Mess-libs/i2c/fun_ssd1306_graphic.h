@@ -133,15 +133,10 @@ void ssd1306_menu_move(T_Menu *menu, int8_t offset) {
 			return;
 		}
 
-		uint8_t exposed_row = 0;
-		if (window_step > 0) {
-			++scroll_page;
-			if (scroll_page == visible_count) scroll_page = 0;
-			exposed_row = visible_count - 1u;
-		} else {
-			if (!scroll_page) scroll_page = visible_count;
-			--scroll_page;
-		}
+		uint8_t moving_down = window_step > 0;
+		uint8_t exposed_row = moving_down ? visible_count - 1u : 0;
+		scroll_page += moving_down ? 1u : visible_count - 1u;
+		if (scroll_page >= visible_count) scroll_page -= visible_count;
 		menu->scroll_page = scroll_page;
 		exposed_page = scroll_page + exposed_row;
 		if (exposed_page >= visible_count) exposed_page -= visible_count;
