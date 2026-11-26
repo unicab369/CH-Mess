@@ -39,15 +39,16 @@ int main(void) {
 	ssd1306_setup();
 	const uint8_t x = 12, y = 8, height = 8, width = 104;
 	const uint8_t y_bar_x = 60, y_bar_y = 24, y_bar_height = 32, y_bar_width = 8;
+	uint8_t x_progress = 0, y_progress = 0;
 
 	for (;;) {
-		ssd1306_reset_progress(x, y, width, height, DISPLAY_LANDSCAPE);
-		ssd1306_reset_progress(y_bar_x, y_bar_y, y_bar_width, y_bar_height, DISPLAY_PORTRAIT);
+		ssd1306_reset_progress(x, y, width, height, 1, &x_progress);
+		ssd1306_reset_progress(y_bar_x, y_bar_y, y_bar_width, y_bar_height, 0, &y_progress);
 		uint32_t start_ticks = funSysTick32();
 
 		for (uint8_t percent = 0; percent <= 100u; ++percent) {
-			ssd1306_show_percent(x, y, height, width, percent, DISPLAY_LANDSCAPE);
-			ssd1306_show_percent(y_bar_x, y_bar_y, y_bar_height, y_bar_width, percent, DISPLAY_PORTRAIT);
+			ssd1306_show_percent(x, y, height, width, percent, 1, &x_progress);
+			ssd1306_show_percent(y_bar_x, y_bar_y, y_bar_height, y_bar_width, percent, 0, &y_progress);
 			// Delay_Ms(10);
 		}
 		uint32_t elapsed_ticks = (uint32_t)(funSysTick32() - start_ticks);

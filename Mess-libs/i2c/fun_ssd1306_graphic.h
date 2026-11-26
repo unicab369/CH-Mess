@@ -36,24 +36,17 @@ typedef struct {
 	uint8_t swap_axes;
 } T_SSD1306_Plot;
 
-typedef enum {
-	DISPLAY_LANDSCAPE = 0,
-	DISPLAY_PORTRAIT = 1,
-} T_Display_Mode;
-
-static uint8_t _loading_progress[2];
-
 void ssd1306_reset_progress(
 	uint8_t x, uint8_t y, uint8_t width, uint8_t height,
-	T_Display_Mode direction
+	uint8_t is_landscape, uint8_t *progress_state
 ) {
-	if (direction > DISPLAY_PORTRAIT) return;
-	uint8_t progress = _loading_progress[direction];
+	if (!progress_state) return;
+	uint8_t progress = *progress_state;
 	if (!progress) return;
 	uint8_t last_page, col_end;
 	ssd1306_toggle_invert();
 
-	if (direction == DISPLAY_LANDSCAPE) {
+	if (is_landscape) {
 		uint16_t x_end = (uint16_t)x + progress - 1u;
 		for (uint16_t x_pos = x; x_pos <= x_end; ++x_pos)
 			ssd1306_render_verLine((uint8_t)x_pos, y, y + height - 1u, 1);
@@ -69,27 +62,28 @@ void ssd1306_reset_progress(
 
 	ssd1306_toggle_invert();
 	ssd1306_displayArea(y >> 3, last_page, x, col_end);
-	_loading_progress[direction] = 0;
+	*progress_state = 0;
 }
 
 // Add and display only new pixels along the selected axis.
 void ssd1306_show_progress(
 	uint8_t x, uint8_t y, uint8_t height, uint8_t width, uint8_t progress,
-	T_Display_Mode direction
+	uint8_t is_landscape, uint8_t *progress_state
 ) {
 	if (x >= SSD1306_W || y >= SSD1306_H || !height || !width
-		|| direction > DISPLAY_PORTRAIT) return;
+		|| !progress_state) return;
 	uint16_t max_width = SSD1306_W - x;
 	uint16_t max_height = SSD1306_H - y;
 	if (width > max_width) width = max_width;
 	if (height > max_height) height = max_height;
-	uint8_t max_progress = direction == DISPLAY_LANDSCAPE ? width : height;
-	if (progress > max_progress) progress = max_progress;
-	uint8_t previous = _loading_progress[direction];
-	if (progress <= previous) return;
-	_loading_progress[direction] = progress;
 
-	if (direction == DISPLAY_LANDSCAPE) {
+	uint8_t max_progress = is_landscape ? width : height;
+	if (progress > max_progress) progress = max_progress;
+	uint8_t previous = *progress_state;
+	if (progress <= previous) return;
+	*progress_state = progress;
+
+	if (is_landscape) {
 		uint16_t x_start = (uint16_t)x + previous;
 		uint16_t x_end = (uint16_t)x + progress;
 		for (uint16_t x_pos = x_start; x_pos < x_end; ++x_pos)
@@ -107,12 +101,12 @@ void ssd1306_show_progress(
 // Convert a percentage from 0 to 100 into pixel progress on the selected axis.
 void ssd1306_show_percent(
 	uint8_t x, uint8_t y, uint8_t height, uint8_t width, uint8_t percent,
-	T_Display_Mode direction
+	uint8_t is_landscape, uint8_t *progress_state
 ) {
 	if (percent > 100u) percent = 100u;
-	uint8_t span = direction == DISPLAY_LANDSCAPE ? width : height;
+	uint8_t span = is_landscape ? width : height;
 	uint8_t progress = (uint16_t)span * percent / 100u;
-	ssd1306_show_progress(x, y, height, width, progress, direction);
+	ssd1306_show_progress(x, y, height, width, progress, is_landscape, progress_state);
 }
 
 // Draw the same clipped 3x3 marker using the filled rectangle renderer.
