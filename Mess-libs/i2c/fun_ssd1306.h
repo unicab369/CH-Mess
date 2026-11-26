@@ -558,17 +558,16 @@ void ssd1306_render_rect(
 	uint16_t y_end = p0.y + height;
 
 	// Draw rectangle with optional fill
-
-    if (fill) {
+	if (fill) {
 		for (uint16_t x_pos = p0.x; x_pos <= x_end; ++x_pos)
 			ssd1306_render_verLine(x_pos, p0.y, y_end, 1);
-    } else {
-        // Outline only
-        ssd1306_render_horLine(p0.y, p0.x, x_end, 1);     	// Top edge
-        ssd1306_render_horLine(y_end, p0.x, x_end, 1);    	// Bottom edge
-        ssd1306_render_verLine(p0.x, p0.y + 1, y_end - 1, 1); 		// Left edge
-        ssd1306_render_verLine(x_end, p0.y + 1, y_end - 1, 1); 		// Right edge
-    }
+	} else {
+		// Outline only
+		ssd1306_render_horLine(p0.y, p0.x, x_end, 1);
+		ssd1306_render_horLine(y_end, p0.x, x_end, 1); // Bottom edge
+		ssd1306_render_verLine(p0.x, p0.y + 1u, y_end - 1u, 1); // Left edge
+		ssd1306_render_verLine(x_end, p0.y + 1u, y_end - 1u, 1); // Right edge
+	}
 }
 
 // |---|---:|---:|---:|

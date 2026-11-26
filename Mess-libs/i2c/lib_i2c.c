@@ -150,7 +150,7 @@ static inline void i2c_stop()
 static inline i2c_err_t i2c_send_addr_write(const i2c_device_t *dev)
 {
 	i2c_err_t i2c_ret = I2C_OK;
-	
+
 	if(dev->type == I2C_ADDR_7BIT)
 	{
 		// Send the Address and wait for it to finish transmitting

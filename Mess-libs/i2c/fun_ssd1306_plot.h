@@ -1,3 +1,25 @@
+// MIT License
+// Copyright (c) 2026 unicab369
+
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+
 #ifndef _FUN_SSD1306_PLOT_H
 #define _FUN_SSD1306_PLOT_H
 
@@ -13,6 +35,20 @@ typedef struct {
 	uint8_t y_tick_interval;
 	uint8_t swap_axes;
 } T_SSD1306_Plot;
+
+// Draw the filled portion of a loading bar; height and progress are in pixels.
+static inline void ssd1306_render_loading_bar(
+	uint8_t x, uint8_t y, uint8_t height, uint8_t width, uint8_t progress
+) {
+	if (x >= SSD1306_W || y >= SSD1306_H || !height || !width || !progress)
+		return;
+	uint16_t max_width = SSD1306_W - x;
+	uint16_t max_height = SSD1306_H - y;
+	if (width > max_width) width = max_width;
+	if (height > max_height) height = max_height;
+	if (progress > width) progress = width;
+	ssd1306_render_rect((T_Point){ x, y }, progress - 1u, height - 1u, 1);
+}
 
 // Draw the same clipped 3x3 marker using the filled rectangle renderer.
 static inline void ssd1306_render_marker3x3(T_Point point) {
