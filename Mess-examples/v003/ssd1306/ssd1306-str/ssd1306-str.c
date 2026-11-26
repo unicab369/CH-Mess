@@ -65,7 +65,7 @@ static uint32_t time_render_str_scaled(const font_t *font) {
 static uint32_t time_render_str_line(void) {
 	uint32_t start = funSysTick32();
 	for (uint32_t i = 0; i < BENCH_RUNS; ++i) {
-		ssd1306_render_str_line(text_line, 0, 0);
+		ssd1306_render_str_line(text_line, 0, 0, 0);
 		ssd1306_displayArea(0, 0, 0, SSD1306_STR_SIZE * 5u);
 		__asm__ volatile("" ::: "memory");
 	}

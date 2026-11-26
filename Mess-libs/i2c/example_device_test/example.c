@@ -834,7 +834,7 @@ void test_v003Slave() {
 void modI2C_display(const char *str, uint8_t line) {
 	//! validate device before print
 	if (i2c_ping(0x3C) != I2C_OK) return;
-	ssd1306_render_str_line(str, line, 0);
+	ssd1306_render_str_line(str, line, 0, 0);
 	ssd1306_displayArea(line, line, 0, SSD1306_STR_SIZE * 5u);
 }
 
@@ -891,7 +891,7 @@ int main() {
 			ssd1306_setup();
 
 			sprintf(str_output, "Hello Bee2!");
-			ssd1306_render_str_line(str_output, 0, 0);
+			ssd1306_render_str_line(str_output, 0, 0, 0);
 			ssd1306_displayArea(0, 0, 0, SSD1306_STR_SIZE * 5u);
 		}
 

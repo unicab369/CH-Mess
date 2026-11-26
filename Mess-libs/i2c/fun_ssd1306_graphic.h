@@ -109,6 +109,19 @@ void ssd1306_show_percent(
 	ssd1306_show_progress(x, y, height, width, progress, is_landscape, progress_state);
 }
 
+// Draw a clipped 2x2 marker with point as its top-left coordinate.
+void ssd1306_render_marker2x2(uint8_t x, uint8_t y) {
+	if (x >= SSD1306_W || y >= SSD1306_H) return;
+	uint16_t x_next = (uint16_t)x + 1u;
+	uint16_t y_next = (uint16_t)y + 1u;
+	uint8_t x_end = x_next < SSD1306_W ? (uint8_t)x_next : x;
+	uint8_t y_end = y_next < SSD1306_H ? (uint8_t)y_next : y;
+
+	for (uint16_t x_pos = x; x_pos <= x_end; ++x_pos)
+		ssd1306_render_verLine((uint8_t)x_pos, y, y_end, 1);
+}
+
+
 // Draw the same clipped 3x3 marker using the filled rectangle renderer.
 void ssd1306_render_marker3x3(uint8_t x, uint8_t y) {
 	if (x >= SSD1306_W || y >= SSD1306_H) return;
@@ -121,18 +134,6 @@ void ssd1306_render_marker3x3(uint8_t x, uint8_t y) {
 
 	for (uint16_t x = x_min; x <= x_max; ++x)
 		ssd1306_render_verLine((uint8_t)x, y_min, y_max, 1);
-}
-
-// Draw a clipped 2x2 marker with point as its top-left coordinate.
-void ssd1306_render_marker2x2(uint8_t x, uint8_t y) {
-	if (x >= SSD1306_W || y >= SSD1306_H) return;
-	uint16_t x_next = (uint16_t)x + 1u;
-	uint16_t y_next = (uint16_t)y + 1u;
-	uint8_t x_end = x_next < SSD1306_W ? (uint8_t)x_next : x;
-	uint8_t y_end = y_next < SSD1306_H ? (uint8_t)y_next : y;
-
-	for (uint16_t x_pos = x; x_pos <= x_end; ++x_pos)
-		ssd1306_render_verLine((uint8_t)x_pos, y, y_end, 1);
 }
 
 // Convert graph values (x from the y-axis, y above the x-axis) to screen pixels.

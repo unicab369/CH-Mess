@@ -279,26 +279,29 @@ void ssd1306_render_point(uint8_t x, uint8_t y) {
 }
 
 // Copy up to SSD1306_STR_SIZE five-column glyphs into one framebuffer page.
-void ssd1306_render_str_line(const char *str, uint8_t page, uint8_t column) {
+// x is the starting horizontal pixel position.
+// spacing is the number of pixels between characters.
+void ssd1306_render_str_line(
+	const char *str, uint8_t page, uint8_t x, uint8_t spacing
+) {
 	if (page >= SSD1306_PAGES) return;
 
 	for (uint16_t i = 0; i < SSD1306_STR_SIZE; ++i) {
-		uint16_t x = (uint16_t)column + i * 5u;
-		if (x >= SSD1306_W) break;
+		uint16_t char_x = (uint16_t)x + i * (5u + spacing);
+		if (char_x >= SSD1306_W) break;
 		uint8_t char_index = 0;
 
 		if (*str) {
 			uint8_t c = (uint8_t)*str++;
 			if (c >= 32 && c <= 126) char_index = c - 32;
 		}
-		uint8_t width = SSD1306_W - x < 5u ? SSD1306_W - x : 5u;
-		memcpy(&frame_buffer[page][x], FONT_7x5[char_index], width);
+		uint8_t width = SSD1306_W - char_x < 5u ? SSD1306_W - char_x : 5u;
+		memcpy(&frame_buffer[page][char_x], FONT_7x5[char_index], width);
 	}
 }
 
 // SSD1306 8x8 build flash: ssd1306_drawstr 2816 bytes.
 // SSD1306 8x8 build flash: ssd1306_render_str 2812 bytes.
-//! Draw text using one of the four clockwise orientations.
 void ssd1306_render_str(
 	const char *str, uint8_t x, uint8_t y,
 	const font_t *font, uint8_t spacing, orientation_t orientation
@@ -349,7 +352,6 @@ void ssd1306_render_str(
 	}
 }
 
-//! Draw text with each font pixel expanded to a scale-by-scale square.
 // |---|---:|
 // | ssd1306_drawstr_sz | 2,844 bytes |
 // | ssd1306_render_str_scaled | 2,872 bytes |
