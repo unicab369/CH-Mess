@@ -67,13 +67,6 @@ static void _render_menu_window(
 	}
 }
 
-static void _update_menu_cursor(uint8_t old_page, uint8_t new_page) {
-	memcpy(frame_buffer[old_page], FONT_7x5[' ' - 32u], 5u);
-	memcpy(frame_buffer[new_page], FONT_7x5['>' - 32u], 5u);
-	ssd1306_displayArea(old_page, old_page, 0, 5);
-	ssd1306_displayArea(new_page, new_page, 0, 5);
-}
-
 void ssd1306_display_menu(T_Menu *menu) {
 	if (!menu || !menu->items || !menu->total_count) {
 		if (menu) menu->visible_count = 0;
@@ -129,55 +122,49 @@ void ssd1306_menu_move(T_Menu *menu, int8_t offset) {
 							? position - visible_count + 1u : 0;
 	uint8_t scroll_page = menu->scroll_page;
 
-	if (first_item != old_first_item) {
-		int16_t window_step = (int16_t)first_item - old_first_item;
-		if (window_step == 1 || window_step == -1) {
-			uint8_t exposed_row = 0;
-			if (window_step > 0) {
-				++scroll_page;
-				if (scroll_page == visible_count) scroll_page = 0;
-				exposed_row = visible_count - 1u;
-			} else {
-				if (!scroll_page) scroll_page = visible_count;
-				--scroll_page;
-			}
-			menu->scroll_page = scroll_page;
-			_render_menu_window(menu, first_item + exposed_row, exposed_row, 1);
-			uint8_t exposed_page = scroll_page + exposed_row;
-			if (exposed_page >= visible_count)
-				exposed_page -= visible_count;
-			exposed_page += start_page;
-			uint8_t old_page = exposed_page;
-			if (old_position >= first_item && old_position < first_item + visible_count) {
-				old_page = scroll_page + old_position - first_item;
-				if (old_page >= visible_count) old_page -= visible_count;
-				old_page += start_page;
-				memcpy(frame_buffer[old_page], FONT_7x5[' ' - 32u], 5u);
-			}
-			uint8_t new_page = scroll_page + position - first_item;
-			if (new_page >= visible_count) new_page -= visible_count;
-			new_page += start_page;
-			memcpy(frame_buffer[new_page], FONT_7x5['>' - 32u], 5u);
-			SSD1306_CMD(0x40u | (scroll_page << 3));
-			ssd1306_displayArea(exposed_page, exposed_page, 0, SSD1306_W);
-			if (old_page != exposed_page)
-				ssd1306_displayArea(old_page, old_page, 0, 5);
-			if (new_page != exposed_page)
-				ssd1306_displayArea(new_page, new_page, 0, 5);
-		} else {
-			menu->scroll_page = 0;
-			_render_menu_window(menu, first_item, 0, visible_count);
-			SSD1306_CMD(0x40u);
-			ssd1306_displayPages(start_page, start_page + visible_count - 1u);
-		}
-	} else {
-		// The item text is already displayed; update only the old and new marker glyphs.
-		uint8_t old_page = scroll_page + old_position - first_item;
-		uint8_t new_page = scroll_page + position - first_item;
-		if (old_page >= visible_count) old_page -= visible_count;
-		if (new_page >= visible_count) new_page -= visible_count;
-		_update_menu_cursor(start_page + old_page, start_page + new_page);
+	int16_t window_step = (int16_t)first_item - old_first_item;
+	if (window_step > 1 || window_step < -1) {
+		menu->scroll_page = 0;
+		_render_menu_window(menu, first_item, 0, visible_count);
+		SSD1306_CMD(0x40u);
+		ssd1306_displayPages(start_page, start_page + visible_count - 1u);
+		return;
 	}
+
+	uint8_t exposed_page = SSD1306_PAGES;
+	if (window_step) {
+		uint8_t exposed_row = 0;
+		if (window_step > 0) {
+			exposed_page = start_page + scroll_page;
+			++scroll_page;
+			if (scroll_page == visible_count) scroll_page = 0;
+			exposed_row = visible_count - 1u;
+		} else {
+			if (!scroll_page) scroll_page = visible_count;
+			--scroll_page;
+			exposed_page = start_page + scroll_page;
+		}
+		menu->scroll_page = scroll_page;
+		_render_menu_window(menu, first_item + exposed_row, exposed_row, 1);
+		SSD1306_CMD(0x40u | (scroll_page << 3));
+	}
+
+	uint8_t new_page = scroll_page + position - first_item;
+	if (new_page >= visible_count) new_page -= visible_count;
+	new_page += start_page;
+	memcpy(frame_buffer[new_page], FONT_7x5['>' - 32u], 5u);
+	if (old_position >= first_item && old_position < first_item + visible_count) {
+		uint8_t old_page = scroll_page + old_position - first_item;
+		if (old_page >= visible_count) old_page -= visible_count;
+		old_page += start_page;
+		memcpy(frame_buffer[old_page], FONT_7x5[' ' - 32u], 5u);
+		if (old_page != exposed_page)
+			ssd1306_displayArea(old_page, old_page, 0, 5);
+	}
+	if (exposed_page != SSD1306_PAGES)
+		ssd1306_displayArea(exposed_page, exposed_page, 0, SSD1306_W);
+	if (new_page != exposed_page)
+		ssd1306_displayArea(new_page, new_page, 0, 5);
 }
 
 void ssd1306_reset_progress(
