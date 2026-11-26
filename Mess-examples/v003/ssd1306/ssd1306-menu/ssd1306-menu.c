@@ -47,11 +47,11 @@ int main(void) {
 	ssd1306_display_menu(&menu);
 	for (;;) {
 		Delay_Ms(1000);
-		if (menu.position == menu.count - 1u) {
-			menu.position = 0;
-			ssd1306_display_menu(&menu);
-		} else {
-			ssd1306_menu_move(&menu, 1);
-		}
+		int8_t offset = menu.position == menu.count - 1u
+			? -(int8_t)menu.position : 1;
+		uint32_t start_ticks = funSysTick32();
+		ssd1306_menu_move(&menu, offset);
+		uint32_t elapsed_ticks = (uint32_t)(funSysTick32() - start_ticks);
+		printf("Menu move: %lu SysTick ticks\n", (unsigned long)elapsed_ticks);
 	}
 }

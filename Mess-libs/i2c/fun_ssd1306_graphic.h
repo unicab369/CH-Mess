@@ -42,30 +42,22 @@ typedef struct {
 	uint8_t position;
 } T_SSD1306_Menu;
 
-static void _display_menu_item(
-	const T_SSD1306_Menu *menu, uint8_t item_idx, uint8_t row
-) {
-	char line[SSD1306_STR_SIZE + 1u];
-	const char *item = menu->items[item_idx];
-	line[0] = item_idx == menu->position ? '>' : ' ';
-	line[1] = ' ';
-	uint8_t pos = 2;
-	while (item && *item && pos < SSD1306_STR_SIZE) line[pos++] = *item++;
-	line[pos] = '\0';
-	ssd1306_render_str_line(line, row, 0, 1);
-}
-
-void ssd1306_display_menu(const T_SSD1306_Menu *menu) {
-	if (!menu || !menu->items || !menu->count || menu->position >= menu->count) return;
-	// Keep the selected item visible when the menu is longer than the screen.
-	uint8_t first_item = (menu->position >= SSD1306_PAGES) ? menu->position - SSD1306_MAX_PAGE_IDX : 0;
-	uint8_t visible_count = menu->count - first_item;
-	if (visible_count > SSD1306_PAGES) visible_count = SSD1306_PAGES;
+void ssd1306_display_menu(T_SSD1306_Menu *menu) {
+	if (!menu || !menu->items || !menu->count) return;
+	// This menu shows one item per page, so keep its count within screen capacity.
+	if (menu->count > SSD1306_PAGES) menu->count = SSD1306_PAGES;
+	if (menu->position >= menu->count) menu->position = menu->count - 1u;
+	uint8_t visible_count = menu->count;
 
 	for (uint8_t row = 0; row < visible_count; ++row) {
-		uint8_t item_idx = first_item + row;
-		// Render each item on its own page.
-		_display_menu_item(menu, item_idx, row);
+		char line[SSD1306_STR_SIZE + 1u];
+		const char *item = menu->items[row];
+		line[0] = row == menu->position ? '>' : ' ';
+		line[1] = ' ';
+		uint8_t pos = 2;
+		while (item && *item && pos < SSD1306_STR_SIZE) line[pos++] = *item++;
+		line[pos] = '\0';
+		ssd1306_render_str_line(line, row, 0, 1);
 	}
 	// Send only the pages occupied by the menu.
 	ssd1306_displayPages(0, visible_count - 1u);
@@ -74,7 +66,8 @@ void ssd1306_display_menu(const T_SSD1306_Menu *menu) {
 // Move by an item offset; the position stays within the menu bounds.
 void ssd1306_menu_move(T_SSD1306_Menu *menu, int8_t offset) {
 	// Ignore invalid menus and menus that are already at an invalid position.
-	if (!menu || !menu->count || menu->position >= menu->count) return;
+	if (!menu || !menu->items || !menu->count || menu->position >= menu->count)
+		return;
 
 	// Apply the offset and clamp selection to the first or last item.
 	uint8_t old_position = menu->position;
@@ -84,26 +77,11 @@ void ssd1306_menu_move(T_SSD1306_Menu *menu, int8_t offset) {
 	if (new_position == old_position) return;
 	menu->position = (uint8_t)new_position;
 
-	uint8_t old_first_item = (old_position >= SSD1306_PAGES) ? old_position - SSD1306_MAX_PAGE_IDX : 0;
-	uint8_t first_item = (menu->position >= SSD1306_PAGES) ? menu->position - SSD1306_MAX_PAGE_IDX : 0;
-
-	if (first_item != old_first_item) {
-		// The visible window moved, so redraw all menu rows currently on screen.
-		uint8_t visible_count = menu->count - first_item;
-		if (visible_count > SSD1306_PAGES) visible_count = SSD1306_PAGES;
-		for (uint8_t row = 0; row < visible_count; ++row)
-			_display_menu_item(menu, first_item + row, row);
-		ssd1306_displayPages(0, visible_count - 1u);
-		return;
-	}
-
-	// The window stayed put, so redraw only the old and new cursor rows.
-	uint8_t old_row = old_position - first_item;
-	uint8_t new_row = menu->position - first_item;
-	_display_menu_item(menu, old_position, old_row);
-	_display_menu_item(menu, menu->position, new_row);
-	ssd1306_displayPages(old_row, old_row);
-	ssd1306_displayPages(new_row, new_row);
+	// The item text is already displayed; update only the old and new marker glyphs.
+	memcpy(frame_buffer[old_position], FONT_7x5[' ' - 32u], 5u);
+	memcpy(frame_buffer[menu->position], FONT_7x5['>' - 32u], 5u);
+	ssd1306_displayArea(old_position, old_position, 0, 5);
+	ssd1306_displayArea(menu->position, menu->position, 0, 5);
 }
 
 void ssd1306_reset_progress(
