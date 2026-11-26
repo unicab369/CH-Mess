@@ -40,6 +40,7 @@ typedef struct {
 	const char *const *items;
 	uint8_t total_count;
 	uint8_t visible_count;
+	uint8_t start_page;
 	uint8_t position;
 } T_Menu;
 
@@ -49,7 +50,7 @@ static void _render_menu_window(
 	for (uint8_t row = 0; row < row_count; ++row) {
 		char line[SSD1306_STR_SIZE + 1u];
 		uint8_t item_idx = first_item + row;
-		uint8_t page = row;
+		uint8_t page = menu->start_page + row;
 		uint8_t pos = 2;
 		const char *item = menu->items[item_idx];
 
@@ -63,11 +64,11 @@ static void _render_menu_window(
 	}
 }
 
-static void _update_menu_cursor(uint8_t old_row, uint8_t new_row) {
-	memcpy(frame_buffer[old_row], FONT_7x5[' ' - 32u], 5u);
-	memcpy(frame_buffer[new_row], FONT_7x5['>' - 32u], 5u);
-	ssd1306_displayArea(old_row, old_row, 0, 5);
-	ssd1306_displayArea(new_row, new_row, 0, 5);
+static void _update_menu_cursor(uint8_t old_page, uint8_t new_page) {
+	memcpy(frame_buffer[old_page], FONT_7x5[' ' - 32u], 5u);
+	memcpy(frame_buffer[new_page], FONT_7x5['>' - 32u], 5u);
+	ssd1306_displayArea(old_page, old_page, 0, 5);
+	ssd1306_displayArea(new_page, new_page, 0, 5);
 }
 
 void ssd1306_display_menu(T_Menu *menu) {
@@ -79,8 +80,12 @@ void ssd1306_display_menu(T_Menu *menu) {
 	if (menu->position >= menu->total_count)
 		menu->position = menu->total_count - 1u;
 
-	if (menu->visible_count > SSD1306_PAGES)
-		menu->visible_count = SSD1306_PAGES;
+	if (menu->start_page >= SSD1306_PAGES) {
+		menu->visible_count = 0;
+		return;
+	}
+	if (menu->visible_count > SSD1306_PAGES - menu->start_page)
+		menu->visible_count = SSD1306_PAGES - menu->start_page;
 	if (menu->visible_count > menu->total_count)
 		menu->visible_count = menu->total_count;
 	if (!menu->visible_count) return;
@@ -88,11 +93,8 @@ void ssd1306_display_menu(T_Menu *menu) {
 	// Keep the selected item within the visible menu window.
 	uint8_t first_item = (menu->position >= menu->visible_count)
 						? menu->position - menu->visible_count + 1u : 0;
-	memset(frame_buffer, 0, sizeof(frame_buffer));
 	_render_menu_window(menu, first_item, menu->visible_count);
-	// Keep the menu window at the top of the display.
-	SSD1306_CMD(0x40u);
-	ssd1306_displayPages(0, SSD1306_MAX_PAGE_IDX);
+	ssd1306_displayPages(menu->start_page, menu->start_page + menu->visible_count - 1u);
 }
 
 // Move by an item offset; the position stays within the menu bounds.
@@ -117,10 +119,11 @@ void ssd1306_menu_move(T_Menu *menu, int8_t offset) {
 	if (first_item != old_first_item) {
 		// Redraw only the visible menu window when scrolling to another item range.
 		_render_menu_window(menu, first_item, menu->visible_count);
-		ssd1306_displayPages(0, menu->visible_count - 1u);
+		ssd1306_displayPages(menu->start_page, menu->start_page + menu->visible_count - 1u);
 	} else {
 		// The item text is already displayed; update only the old and new marker glyphs.
-		_update_menu_cursor(old_position - first_item, menu->position - first_item);
+		_update_menu_cursor(menu->start_page + old_position - first_item,
+			menu->start_page + menu->position - first_item);
 	}
 }
 

@@ -37,8 +37,9 @@ int main(void) {
 	T_Menu menu = {
 		.items = items,
 		.total_count = sizeof(items) / sizeof(items[0]),
-		.visible_count = SSD1306_PAGES,
+		.start_page = 1,
 		.position = 0,
+		.visible_count = 6, // SSD1306_PAGES,
 	};
 
 	SystemInit();
