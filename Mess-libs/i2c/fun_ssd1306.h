@@ -266,16 +266,16 @@ static inline void ssd1306_toggle_invert(void) {
 	_render_invert ^= 1u;
 }
 
-void ssd1306_render_pixel(T_Point point) {
-	uint8_t *pixel = &frame_buffer[point.y >> 3][point.x];
-	uint8_t mask = (uint8_t)(1u << (point.y & 7u));
+void ssd1306_render_pixel(uint8_t x, uint8_t y) {
+	uint8_t *pixel = &frame_buffer[y >> 3][x];
+	uint8_t mask = (uint8_t)(1u << (y & 7u));
 	if (_render_invert) *pixel ^= mask;
 	else *pixel |= mask;
 }
 
-void ssd1306_render_point(T_Point point) {
-	if (point.x >= SSD1306_W || point.y >= SSD1306_H) return;
-	ssd1306_render_pixel(point);
+void ssd1306_render_point(uint8_t x, uint8_t y) {
+	if (x >= SSD1306_W || y >= SSD1306_H) return;
+	ssd1306_render_pixel(x, y);
 }
 
 // Copy up to SSD1306_STR_SIZE five-column glyphs into one framebuffer page.
@@ -342,7 +342,7 @@ void ssd1306_render_str(
 						break;
 				}
 				if (px < SSD1306_W && py < SSD1306_H)
-					ssd1306_render_pixel((T_Point){ (uint8_t)px, (uint8_t)py });
+					ssd1306_render_pixel((uint8_t)px, (uint8_t)py);
 			}
 		}
 		cursor += font->width + spacing;

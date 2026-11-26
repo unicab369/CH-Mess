@@ -14,7 +14,7 @@ i2c_device_t display = {
 	.regb = 1,
 };
 
-#include "../../../../Mess-libs/i2c/fun_ssd1306_plot.h"
+#include "../../../../Mess-libs/i2c/fun_ssd1306_graphic.h"
 
 uint8_t SSD1306_CMD(uint8_t command) {
 	uint8_t packet[] = { 0x00, command };

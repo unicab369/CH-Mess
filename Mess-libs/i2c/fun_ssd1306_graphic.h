@@ -20,8 +20,8 @@
 // SOFTWARE.
 
 
-#ifndef _FUN_SSD1306_PLOT_H
-#define _FUN_SSD1306_PLOT_H
+#ifndef _FUN_SSD1306_GRAPHIC_H
+#define _FUN_SSD1306_GRAPHIC_H
 
 #include "fun_ssd1306.h"
 
@@ -37,7 +37,7 @@ typedef struct {
 } T_SSD1306_Plot;
 
 // Draw the filled portion of a loading bar; height and progress are in pixels.
-static inline void ssd1306_render_loading_bar(
+static inline void ssd1306_render_loading_progress(
 	uint8_t x, uint8_t y, uint8_t height, uint8_t width, uint8_t progress
 ) {
 	if (x >= SSD1306_W || y >= SSD1306_H || !height || !width || !progress)
@@ -47,44 +47,57 @@ static inline void ssd1306_render_loading_bar(
 	if (width > max_width) width = max_width;
 	if (height > max_height) height = max_height;
 	if (progress > width) progress = width;
-	ssd1306_render_rect((T_Point){ x, y }, progress - 1u, height - 1u, 1);
+	uint16_t x_end = (uint16_t)x + progress;
+	uint8_t y_end = y + height - 1u;
+
+	for (uint16_t x_pos = x; x_pos < x_end; ++x_pos)
+		ssd1306_render_verLine((uint8_t)x_pos, y, y_end, 1);
 }
 
 // Draw the same clipped 3x3 marker using the filled rectangle renderer.
-static inline void ssd1306_render_marker3x3(T_Point point) {
-	uint8_t x_min = point.x ? point.x - 1u : 0;
-	uint8_t y_min = point.y ? point.y - 1u : 0;
-	uint8_t x_max = point.x + 1u < SSD1306_W ? point.x + 1u : SSD1306_W - 1u;
-	uint8_t y_max = point.y + 1u < SSD1306_H ? point.y + 1u : SSD1306_H - 1u;
-	ssd1306_render_rect((T_Point){ x_min, y_min }, x_max - x_min, y_max - y_min, 1);
+static inline void ssd1306_render_marker3x3(uint8_t x, uint8_t y) {
+	if (x >= SSD1306_W || y >= SSD1306_H) return;
+	uint8_t x_min = x ? x - 1u : 0;
+	uint8_t y_min = y ? y - 1u : 0;
+	uint16_t x_next = (uint16_t)x + 1u;
+	uint16_t y_next = (uint16_t)y + 1u;
+	uint8_t x_max = x_next < SSD1306_W ? (uint8_t)x_next : SSD1306_W - 1u;
+	uint8_t y_max = y_next < SSD1306_H ? (uint8_t)y_next : SSD1306_H - 1u;
+
+	for (uint16_t x = x_min; x <= x_max; ++x)
+		ssd1306_render_verLine((uint8_t)x, y_min, y_max, 1);
 }
 
 // Draw a clipped 2x2 marker with point as its top-left coordinate.
-static inline void ssd1306_render_marker2x2(T_Point point) {
-	if (point.x >= SSD1306_W || point.y >= SSD1306_H) return;
-	uint8_t width = point.x + 1u < SSD1306_W ? 1u : 0u;
-	uint8_t height = point.y + 1u < SSD1306_H ? 1u : 0u;
-	ssd1306_render_rect(point, width, height, 1);
+static inline void ssd1306_render_marker2x2(uint8_t x, uint8_t y) {
+	if (x >= SSD1306_W || y >= SSD1306_H) return;
+	uint16_t x_next = (uint16_t)x + 1u;
+	uint16_t y_next = (uint16_t)y + 1u;
+	uint8_t x_end = x_next < SSD1306_W ? (uint8_t)x_next : x;
+	uint8_t y_end = y_next < SSD1306_H ? (uint8_t)y_next : y;
+
+	for (uint16_t x_pos = x; x_pos <= x_end; ++x_pos)
+		ssd1306_render_verLine((uint8_t)x_pos, y, y_end, 1);
 }
 
 // Convert graph values (x from the y-axis, y above the x-axis) to screen pixels.
 static inline uint8_t ssd1306_plot_to_screen(
-	const T_SSD1306_Plot *plot, T_Point value, T_Point *screen_point
+	const T_SSD1306_Plot *plot, uint8_t x, uint8_t y, uint8_t *screen_x, uint8_t *screen_y
 ) {
-	if (!plot || !screen_point || plot->x_max <= plot->origin.x
+	if (!plot || !screen_x || !screen_y || plot->x_max <= plot->origin.x
 		|| plot->y_max <= plot->origin.y
 		|| plot->x_max >= SSD1306_W || plot->y_max >= SSD1306_H
 		|| (plot->swap_axes
-			? (value.y > plot->x_max - plot->origin.x || value.x > plot->y_max - plot->origin.y)
-			: (value.x > plot->x_max - plot->origin.x || value.y > plot->y_max - plot->origin.y))
+			? (y > plot->x_max - plot->origin.x || x > plot->y_max - plot->origin.y)
+			: (x > plot->x_max - plot->origin.x || y > plot->y_max - plot->origin.y))
 	) return 0;
 
 	if (plot->swap_axes) {
-		screen_point->x = plot->origin.x + value.y;
-		screen_point->y = plot->y_max - value.x;
+		*screen_x = plot->origin.x + y;
+		*screen_y = plot->y_max - x;
 	} else {
-		screen_point->x = plot->origin.x + value.x;
-		screen_point->y = plot->y_max - value.y;
+		*screen_x = plot->origin.x + x;
+		*screen_y = plot->y_max - y;
 	}
 	return 1;
 }
@@ -95,15 +108,15 @@ static inline void ssd1306_render_graph_markers(
 ) {
 	if (!plot || !points) return;
 	for (uint8_t i = 0; i < length; ++i) {
-		T_Point screen_point;
-		if (!ssd1306_plot_to_screen(plot, points[i], &screen_point))
+		uint8_t screen_x, screen_y;
+		if (!ssd1306_plot_to_screen(plot, points[i].x, points[i].y, &screen_x, &screen_y))
 			continue;
 		if (dot_size <= 1u)
-			ssd1306_render_point(screen_point);
+			ssd1306_render_point(screen_x, screen_y);
 		else if (dot_size == 2u)
-			ssd1306_render_marker2x2(screen_point);
+			ssd1306_render_marker2x2(screen_x, screen_y);
 		else
-			ssd1306_render_marker3x3(screen_point);
+			ssd1306_render_marker3x3(screen_x, screen_y);
 	}
 }
 
@@ -114,12 +127,12 @@ static inline void ssd1306_render_graph_line(
 ) {
 	if (!plot || !points || length < 2u) return;
 	for (uint8_t i = 1; i < length; ++i) {
-		T_Point screen_p0, screen_p1;
+		uint8_t x0, y0, x1, y1;
 
-		if (ssd1306_plot_to_screen(plot, points[i - 1u], &screen_p0)
-			&& ssd1306_plot_to_screen(plot, points[i], &screen_p1)
+		if (ssd1306_plot_to_screen(plot, points[i - 1u].x, points[i - 1u].y, &x0, &y0)
+			&& ssd1306_plot_to_screen(plot, points[i].x, points[i].y, &x1, &y1)
 		) {
-			ssd1306_render_line(screen_p0, screen_p1, thickness);
+			ssd1306_render_line((T_Point){ x0, y0 }, (T_Point){ x1, y1 }, thickness);
 		}
 	}
 }
@@ -132,28 +145,29 @@ static inline void ssd1306_render_graph_bars(
 
 	if (plot->swap_axes) {
 		for (uint8_t i = 0; i < length; ++i) {
-			T_Point screen_point;
-			if (!ssd1306_plot_to_screen(plot, points[i], &screen_point))
+			uint8_t screen_x, screen_y;
+			if (!ssd1306_plot_to_screen(plot, points[i].x, points[i].y, &screen_x, &screen_y))
 				continue;
 
-			uint16_t width = screen_point.x - plot->origin.x + 1u;
+			uint16_t width = screen_x - plot->origin.x + 1u;
 			uint16_t height = bar_width;
-			uint16_t plot_height = (uint16_t)plot->y_max - screen_point.y + 1u;
+			uint16_t plot_height = (uint16_t)plot->y_max - screen_y + 1u;
 			if (height > plot_height) height = plot_height;
-			T_Point bar_origin = { plot->origin.x, screen_point.y };
+			T_Point bar_origin = { plot->origin.x, screen_y };
 			ssd1306_render_rect(bar_origin, (uint8_t)(width - 1u), (uint8_t)(height - 1u), 1);
 		}
 	} else {
 		for (uint8_t i = 0; i < length; ++i) {
-			T_Point screen_point;
-			if (!ssd1306_plot_to_screen(plot, points[i], &screen_point))
+			uint8_t screen_x, screen_y;
+			if (!ssd1306_plot_to_screen(plot, points[i].x, points[i].y, &screen_x, &screen_y))
 				continue;
 
 			uint16_t width = bar_width;
-			uint16_t plot_width = (uint16_t)plot->x_max - screen_point.x + 1u;
+			uint16_t plot_width = (uint16_t)plot->x_max - screen_x + 1u;
 			if (width > plot_width) width = plot_width;
-			uint8_t height = plot->y_max - screen_point.y + 1u;
-			ssd1306_render_rect(screen_point, (uint8_t)(width - 1u), (uint8_t)(height - 1u), 1);
+			uint8_t height = plot->y_max - screen_y + 1u;
+			ssd1306_render_rect((T_Point){ screen_x, screen_y },
+				(uint8_t)(width - 1u), (uint8_t)(height - 1u), 1);
 		}
 	}
 }
@@ -164,15 +178,15 @@ static inline void ssd1306_render_graph_fill(
 ) {
 	if (!plot || !points || length < 2u) return;
 	for (uint8_t i = 1; i < length; ++i) {
-		T_Point p0, p1;
-		if (!ssd1306_plot_to_screen(plot, points[i - 1u], &p0)
-			|| !ssd1306_plot_to_screen(plot, points[i], &p1)
+		uint8_t x0, y0, x1, y1;
+		if (!ssd1306_plot_to_screen(plot, points[i - 1u].x, points[i - 1u].y, &x0, &y0)
+			|| !ssd1306_plot_to_screen(plot, points[i].x, points[i].y, &x1, &y1)
 		) continue;
 
 		T_Point segment[4] = {
-			p0, p1,
-			{ p1.x, plot->y_max },
-			{ p0.x, plot->y_max },
+			{ x0, y0 }, { x1, y1 },
+			{ x1, plot->y_max },
+			{ x0, plot->y_max },
 		};
 		ssd1306_render_solid_poly(segment, 4);
 	}
@@ -221,13 +235,13 @@ static inline uint8_t ssd1306_render_plot_layout(T_SSD1306_Plot *plot) {
 	if (h_tick)
 		for (uint16_t x = (uint16_t)plot->origin.x + h_tick;
 			x < right; x += h_tick) {
-			ssd1306_render_point((T_Point){ (uint8_t)x, (uint8_t)(bottom + 1u) });
-			ssd1306_render_point((T_Point){ (uint8_t)x, (uint8_t)(bottom + 2u) });
+			ssd1306_render_point((uint8_t)x, (uint8_t)(bottom + 1u));
+			ssd1306_render_point((uint8_t)x, (uint8_t)(bottom + 2u));
 		}
 	if (v_tick) {
 		for (uint16_t y = plot->origin.y; y <= bottom; y += v_tick) {
-			ssd1306_render_point((T_Point){ (uint8_t)(plot->origin.x - 1u), (uint8_t)y });
-			ssd1306_render_point((T_Point){ (uint8_t)(plot->origin.x - 2u), (uint8_t)y });
+			ssd1306_render_point((uint8_t)(plot->origin.x - 1u), (uint8_t)y);
+			ssd1306_render_point((uint8_t)(plot->origin.x - 2u), (uint8_t)y);
 		}
 	}
 	return 1;

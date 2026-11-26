@@ -1,7 +1,7 @@
 # CH32V003 SSD1306 loading bar
 
 This example animates a filled loading bar on an SSD1306 I2C display. Set
-`ssd1306_render_loading_bar()` takes a start point, height, full width, and
+`ssd1306_render_loading_progress()` takes a start point, height, full width, and
 filled width, all measured in pixels.
 
 The bar is drawn with `ssd1306_render_rect()` and displayed through the

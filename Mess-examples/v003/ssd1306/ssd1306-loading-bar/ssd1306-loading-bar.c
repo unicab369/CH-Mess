@@ -14,7 +14,7 @@ i2c_device_t display = {
 	.regb = 1,
 };
 
-#include "../../../../Mess-libs/i2c/fun_ssd1306_plot.h"
+#include "../../../../Mess-libs/i2c/fun_ssd1306_graphic.h"
 
 uint8_t SSD1306_CMD(uint8_t command) {
 	uint8_t packet[] = { 0x00, command };
@@ -40,7 +40,7 @@ int main(void) {
 	for (;;) {
 		for (uint16_t width = 0; width <= 104u; ++width) {
 			memset(frame_buffer, 0, sizeof(frame_buffer));
-			ssd1306_render_loading_bar(12, 28, 8, 104, (uint8_t)width);
+			ssd1306_render_loading_progress(12, 28, 8, 104, (uint8_t)width);
 			ssd1306_displayPages(0, SSD1306_MAX_PAGE_IDX);
 			Delay_Ms(25);
 		}
