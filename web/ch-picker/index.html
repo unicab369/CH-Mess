@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101a1b">
+  <title>CH32 Chip Picker</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <h1>CH32 Chip Picker</h1>
+    </header>
+
+    <section class="catalog" aria-label="CH32 chip table">
+      <div class="toolbar">
+        <label class="search-wrap">
+          <span class="sr-only">Search chips</span>
+          <svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="8.8" cy="8.8" r="5.8"></circle><path d="m13.2 13.2 4 4"></path></svg>
+          <input id="search" type="search" placeholder="Search part, package, feature…" autocomplete="off">
+          <kbd>/</kbd>
+        </label>
+        <details class="column-picker" id="column-picker">
+          <summary>Columns <span aria-hidden="true">⌄</span></summary>
+          <div class="column-menu" id="column-menu"></div>
+        </details>
+        <label class="filter-wrap">
+          <span class="sr-only">Filter by package</span>
+          <select id="package-filter"><option value="">All packages</option></select>
+        </label>
+      </div>
+
+      <div class="table-frame" tabindex="0" aria-label="Scrollable chip comparison table">
+        <table>
+          <thead><tr id="table-head"></tr></thead>
+          <tbody id="table-body"><tr><td class="message" colspan="18">Loading chip data…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="catalog-bottom">
+        <div class="result-count" id="result-count" aria-live="polite">Loading chips…</div>
+      </div>
+    </section>
+    <footer>Chip data is loaded from <code>chips.csv</code>.</footer>
+  </main>
+  <script id="embedded-chip-csv" type="text/plain">
+#,Part No.,Freq,Flash,SRAM,VDD MIN,VDD MAX,GPIO,SPI,IIC,UART,RTC,IIS,CAN,USB2.0,Features,Package,Price
+54,V303 VCT6,144MHz,256K,64K,2.5,3.3,80,3,2,8,1,2,1,H / D,,LQFP_100,
+60,V307 VCT6,144MHz,256K,64K,2.5,3.3,80,3,2,8,1,2,2,OTG,,LQFP_100,
+42,V203 K6T6,144MHz,32K,10K,2.5,3.3,26,1,1,2,1,,1,D,,LQFP_32,
+47,V203 K8T6,144MHz,64K,20K,2.5,3.3,26,1,1,2,1,,1,D,,LQFP_32,
+25,X035 C8T6,48MHz,62K,20K,3.3,5,46,1,1,4,,,-,H / D,,LQFP_48,
+32,V103 C6T6,80MHz,32K,10K,3.3,5,37,1,1,2,1,,-,H / D,,LQFP_48,
+33,V103 C8T6,80MHz,64K,20K,3.3,5,37,2,2,3,1,,-,H / D,,LQFP_48,
+39,L103 C8T6,96MHz,64K,20K,3.3,3.3,37,2,2,4,1,,FD*1,H / D,,LQFP_48,
+43,V203 C6T6,144MHz,32K,10K,2.5,3.3,37,1,1,2,1,,1,D + H / D,,LQFP_48,
+48,V203 C8T6,144MHz,64K,20K,2.5,3.3,37,2,2,4,1,,1,D + H / D,,LQFP_48,
+51,V303 CBT6,144MHz,128K,32K,2.5,3.3,37,2,2,3,1,,1,H / D,,LQFP_48,
+24,X035 R8T6,48MHz,62K,20K,3.3,5,60,1,1,4,,,-,H / D,,LQFP_64M,
+34,V103 R8T6,80MHz,64K,20K,3.3,5,51,2,2,3,1,,-,H / D,,LQFP_64M,
+50,V203 RBT6,144MHz,128K,64K,2.5,3.3,51,2,2,4,1,,1,D + H / D,,LQFP_64M,
+52,V303 RBT6,144MHz,128K,32K,2.5,3.3,51,2,2,3,1,,1,H / D,,LQFP_64M,
+53,V303 RCT6,144MHz,256K,64K,2.5,3.3,51,3,2,8,1,2,1,H / D,,LQFP_64M,
+57,V305 RBT6,144MHz,128K,32K,2.5,3.3,51,3,2,5,1,2,2,OTG,,LQFP_64M,
+58,V307 RCT6,144MHz,256K,64K,2.5,3.3,51,3,2,8,1,2,2,OTG,,LQFP_64M,
+65,V208 RBT6,144MHz,128K,64K,2.5,3.3,49,2,2,4,1,,1,D + H / D,,LQFP_64M,
+62,V317 VCT6,146MHz,256K,64K,2.5,3.3,48,3/2,2,8,1,,2,H/D,,LQFP_F100,
+2,V002 D4U6,48MHz,16K,4K,2.5,5,11,,1,1,,,-,-,,QFN_12,
+12,V005 D6U6,48MHz,32K,6K,2.5,5,11,,1,2,,,-,-,,QFN_12,
+16,V006 D8U7,48MHz,32K,6K,2.5,5,11,1,,,,,,,,QFN_12,
+4,V002 F4U6,48MHz,16K,4K,2.5,5,18,1,1,1,,,-,-,,QFN_20,
+8,V003 F4U6,48MHz,16K,2K,3.3,5,18,1,1,1,,,-,-,,QFN_20,
+11,V004 F6U1,48MHz,32K,6K,2.5,5,18,1,1,1,,,-,-,,QFN_20,
+14,V005 F6U6,48MHz,32K,6K,2.5,5,18,1,1,2,,,-,-,,QFN_20,
+18,V006 F8U6,48MHz,62K,8K,2.5,5,18,1,1,2,,,-,-,,QFN_20,
+19,V006 F4U6,48MHz,62K,8K,2.5,5,18,1,1,1,,,-,-,,QFN_20,
+28,X035 F8U6,48MHz,62K,20K,3.3,5,19,1,1,3,,,-,D,,QFN_20,
+36,L103 F8U6,96MHz,64K,20K,3.3,3.3,19,2,2,4,1,,FD*1,H / D,,QFN_20,
+45,V203 F8U6,144MHz,64K,20K,2.5,3.3,19,1,0,2,1,,-,D,,QFN_20,
+26,X035 G8U6,48MHz,62K,20K,3.3,5,27,1,1,4,,,-,H / D,,QFN_28,
+41,V203 G6U6,144MHz,32K,10K,2.5,3.3,24,1,1,2,1,,1,D,,QFN_28,
+56,V305 GBU6,144MHz,128K,32K,2.5,3.3,24,3,2,5,1,2,2,-,,QFN_28,
+63,V208 GBU6,144MHz,128K,64K,2.5,3.3,21,1,1,2,1,,1,D + H / D,,QFN_28,
+21,V006 K8U6,48MHz,62K,8K,2.5,5,21,1,1,2,,,-,-,,QFN_32,
+23,V007 K8U6,48MHz,62K,8K,,,31,1,1,2,,,-,-,,QFN_32,
+38,L103 K8U6,96MHz,64K,20K,3.3,3.3,31,1,1,4,1,,FD*1,H / D,,QFN_32,
+64,V208 CBU6,144MHz,128K,64K,2.5,3.3,37,2,2,4,1,,1,D + H / D,,QFN_48,
+31,V103 C8U6,80MHz,64K,20K,3.3,5,37,2,2,3,1,,-,H / D,,QFN_48x7,
+49,V203 C8U6,144MHz,64K,20K,2.5,3.3,37,2,2,4,1,,1,D + H / D,,QFN_48x7,
+59,V307 WCU6,144MHz,256K,64K,2.5,3.3,54,3,2,8,1,2,2,OTG,,QFN_68,
+61,V317 WCU6,145MHz,256K,64K,2.5,3.3,70,3/2,2,8,1,,2,H/D,,QFN_68,
+66,V208 WBU6,144MHz,128K,64K,2.5,3.3,53,2,2,4,1,,1,D + H / D,,QFN_68,
+15,V005 E6R6,48MHz,32K,6K,2.5,5,22,1,1,2,,,-,-,,QSOP_24,
+20,V006 E8R6,48MHz,62K,8K,2.5,5,22,1,1,2,,,-,-,,QSOP_24,
+22,V007 E8R6,48MHz,62K,8K,,,22,1,1,2,,,-,-,,QSOP_24,
+27,X035 G8R6,48MHz,62K,20K,3.3,5,26,1,1,4,,,-,H / D,,QSOP_28,
+37,L103 G8R6,96MHz,64K,20K,3.3,3.3,26,2,2,4,1,,FD*1,H / D,,QSOP_28,
+46,V203 G8R6,144MHz,64K,20K,2.5,3.3,24,1,1,2,1,,1,D + H / D,,QSOP_28,
+3,V002 A4M6,48MHz,16K,4K,2.5,5,14,1,1,1,,,-,-,,SOP_16,
+7,V003 A4M6,48MHz,16K,2K,3.3,5,14,,1,1,,,-,-,,SOP_16,
+1,V002 J4M6,48MHz,16K,4K,2.5,5,6,,1,1,,,-,-,,SOP_8,
+6,V003 J4M6,48MHz,16K,2K,3.3,5,6,,1,1,,,-,-,,SOP_8,
+5,V002 F4P6,48MHz,16K,4K,2.5,5,18,1,1,1,,,-,-,,TSSOP_20,
+9,V003 F4P6,48MHz,16K,2K,3.3,5,18,1,1,1,,,-,-,,TSSOP_20,
+10,V004 F6P1,48MHz,32K,6K,2.5,5,18,1,1,1,,,-,-,,TSSOP_20,
+13,V005 F6P6,48MHz,32K,6K,2.5,5,18,1,1,2,,,-,-,,TSSOP_20,
+17,V006 F8P6,48MHz,62K,8K,2.5,5,18,1,1,2,,,-,-,,TSSOP_20,
+29,X035 F7P6,48MHz,48K,20K,3.3,5,18,1,1,3,,,-,D,,TSSOP_20,
+30,X033 F8P6,48MHz,62K,20K,3.3,5,18,1,1,4,,,-,D,,TSSOP_20,
+35,L103 F8P6,96MHz,64K,20K,3.3,3.3,16,1,1,4,1,,FD*1,D,,TSSOP_20,
+40,V203 F6P6,144MHz,32K,10K,2.5,3.3,16,1,1,1,1,,1,D,,TSSOP_20,
+44,V203 F8P6,144MHz,64K,20K,2.5,3.3,17,1,1,2,1,,-,H / D,,TSSOP_20,
+55,V305 FBP6,144MHz,128K,32K,2.5,3.3,17,1,2,2,1,1,1,-,,TSSOP_20,
+  </script>
+  <script src="app.js" defer></script>
+</body>
+</html>
