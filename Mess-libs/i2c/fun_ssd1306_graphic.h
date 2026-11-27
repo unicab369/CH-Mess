@@ -101,7 +101,7 @@ void ssd1306_display_menu(T_Menu *menu) {
 
 // Move by an item offset; the position stays within the menu bounds.
 void ssd1306_menu_move(T_Menu *menu, int8_t offset) {
-	// Ignore invalid menus and menus that are already at an invalid position.
+	// A menu with no visible rows has nothing to update.
 	if (!menu || !menu->visible_count) return;
 	uint8_t visible_count = menu->visible_count;
 	uint8_t start_page = menu->start_page;
@@ -116,6 +116,7 @@ void ssd1306_menu_move(T_Menu *menu, int8_t offset) {
 	uint8_t position = (uint8_t)new_position;
 	menu->position = position;
 
+	// Find the first visible item before and after moving the selection.
 	uint8_t old_first_item = (old_position >= visible_count)
 							? old_position - visible_count + 1u : 0;
 	uint8_t first_item = (position >= visible_count)
@@ -123,8 +124,10 @@ void ssd1306_menu_move(T_Menu *menu, int8_t offset) {
 	uint8_t scroll_page = menu->scroll_page;
 	int16_t window_step = (int16_t)first_item - old_first_item;
 
+	// SSD1306_PAGES means no full page needs updating when only the cursor moves.
 	uint8_t exposed_page = SSD1306_PAGES;
 	if (window_step) {
+		// A jump skips rows, so redraw the complete window and reset its start line.
 		if (window_step > 1 || window_step < -1) {
 			menu->scroll_page = 0;
 			_render_menu_window(menu, first_item, 0, visible_count);
@@ -133,6 +136,7 @@ void ssd1306_menu_move(T_Menu *menu, int8_t offset) {
 			return;
 		}
 
+		// Rotate the menu pages by one and draw the row entering the window.
 		uint8_t moving_down = window_step > 0;
 		uint8_t exposed_row = moving_down ? visible_count - 1u : 0;
 		scroll_page += moving_down ? 1u : visible_count - 1u;
@@ -145,11 +149,13 @@ void ssd1306_menu_move(T_Menu *menu, int8_t offset) {
 		SSD1306_CMD(0x40u | (scroll_page << 3));
 	}
 
+	// Mark the selected item on its physical display page.
 	uint8_t new_page = scroll_page + position - first_item;
 	if (new_page >= visible_count) new_page -= visible_count;
 	new_page += start_page;
 	memcpy(frame_buffer[new_page], FONT_7x5['>' - 32u], 5u);
 
+	// Clear the old marker if that item remains visible after scrolling.
 	if (old_position >= first_item && old_position < first_item + visible_count) {
 		uint8_t old_page = scroll_page + old_position - first_item;
 		if (old_page >= visible_count) old_page -= visible_count;
@@ -159,6 +165,7 @@ void ssd1306_menu_move(T_Menu *menu, int8_t offset) {
 			ssd1306_displayArea(old_page, old_page, 0, 5);
 	}
 
+	// Send the new row once; the other pages only need their marker bytes updated.
 	if (exposed_page != SSD1306_PAGES)
 		ssd1306_displayArea(exposed_page, exposed_page, 0, SSD1306_W);
 	if (new_page != exposed_page)
