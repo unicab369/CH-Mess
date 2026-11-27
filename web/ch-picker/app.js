@@ -14,10 +14,10 @@ const columnMenu = document.querySelector('#column-menu');
 const familyButtons = document.querySelectorAll('[data-dataset]');
 
 const datasets = {
-  CH32V: { file: './chips.csv', embedded: '#embedded-ch32v-csv' },
-  CH32X: { file: './chips-ch32x.csv', embedded: '#embedded-ch32x-csv' },
-  CH32L: { file: './chips-ch32l.csv', embedded: '#embedded-ch32l-csv' },
-  CH5xx: { file: './chips-ch5xx.csv', embedded: '#embedded-ch5xx-csv' }
+  CH32V: '#embedded-ch32v-csv',
+  CH32X: '#embedded-ch32x-csv',
+  CH32L: '#embedded-ch32l-csv',
+  CH5xx: '#embedded-ch5xx-csv'
 };
 
 let chips = [];
@@ -218,18 +218,8 @@ function showError(message) {
 
 async function loadChips(datasetName = activeDataset) {
   try {
-    const dataset = datasets[datasetName];
-    let csvText;
-    if (location.protocol === 'file:') {
-      // Browsers block fetch() of sibling files from file:// pages, so the CSV
-      // is embedded in index.html as a standalone-file fallback.
-      csvText = document.querySelector(dataset.embedded)?.textContent;
-      if (!csvText?.trim()) throw new Error(`Embedded ${datasetName} data is missing.`);
-    } else {
-      const response = await fetch(dataset.file);
-      if (!response.ok) throw new Error(`CSV request failed (${response.status}).`);
-      csvText = await response.text();
-    }
+    const csvText = document.querySelector(datasets[datasetName])?.textContent;
+    if (!csvText?.trim()) throw new Error(`Embedded ${datasetName} data is missing.`);
     const records = parseCSV(csvText);
     const header = records.shift();
     if (!header || header.length !== columns.length) throw new Error(`The ${datasetName} CSV should contain ${columns.length} columns.`);
