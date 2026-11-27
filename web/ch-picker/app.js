@@ -1,6 +1,6 @@
 const columns = [
   '#', 'Part No.', 'Freq', 'Flash', 'SRAM', 'VDD MIN', 'VDD MAX', 'GPIO',
-  'SPI', 'IIC', 'UART', 'RTC', 'IIS', 'CAN', 'USB2.0', 'Features', 'Package', 'Price'
+  'SPI', 'IIC', 'UART', 'RTC', 'IIS', 'CAN', 'USB2.0', 'Features', 'Package'
 ];
 
 const head = document.querySelector('#table-head');
@@ -8,17 +8,25 @@ const body = document.querySelector('#table-body');
 const search = document.querySelector('#search');
 const packageFilter = document.querySelector('#package-filter');
 const resultCount = document.querySelector('#result-count');
-const tableFrame = document.querySelector('.table-frame');
 const table = document.querySelector('table');
 const columnPicker = document.querySelector('#column-picker');
 const columnMenu = document.querySelector('#column-menu');
+const familyButtons = document.querySelectorAll('[data-dataset]');
+
+const datasets = {
+  CH32V: { file: './chips.csv', embedded: '#embedded-ch32v-csv' },
+  CH32X: { file: './chips-ch32x.csv', embedded: '#embedded-ch32x-csv' },
+  CH32L: { file: './chips-ch32l.csv', embedded: '#embedded-ch32l-csv' },
+  CH5xx: { file: './chips-ch5xx.csv', embedded: '#embedded-ch5xx-csv' }
+};
 
 let chips = [];
-let sortColumn = 0;
+let activeDataset = 'CH32V';
+let sortColumn = null;
 let sortDirection = 1;
-const defaultVisibleColumns = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 16, 17]);
+const defaultVisibleColumns = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 16]);
 const visibleColumns = new Set(defaultVisibleColumns);
-const columnWidths = [38, 82, 62, 52, 52, 62, 62, 56, 54, 54, 54, 54, 54, 54, 96, 72, 100, 78];
+const columnWidths = [38, 82, 62, 70, 52, 62, 62, 56, 54, 54, 54, 54, 54, 54, 96, 72, 100];
 
 function parseCSV(text) {
   const rows = [];
@@ -152,7 +160,7 @@ function render() {
     return matchesText && matchesPackage;
   });
 
-  filtered.sort((a, b) => {
+  if (sortColumn !== null) filtered.sort((a, b) => {
     const left = a[sortColumn] || '';
     const right = b[sortColumn] || '';
     const leftNumber = Number.parseFloat(left.replace(/[^\d.]/g, ''));
@@ -174,11 +182,11 @@ function render() {
     body.append(row);
   } else {
     const fragment = document.createDocumentFragment();
-    filtered.forEach((chip) => {
+    filtered.forEach((chip, rowIndex) => {
       const row = document.createElement('tr');
       chip.forEach((value, index) => {
         const cell = document.createElement('td');
-        cell.textContent = value;
+        cell.textContent = index === 0 ? String(rowIndex + 1) : value;
         if (index === 0) cell.className = 'chip-id';
         row.append(cell);
       });
@@ -208,25 +216,28 @@ function showError(message) {
   body.append(row);
 }
 
-async function loadChips() {
+async function loadChips(datasetName = activeDataset) {
   try {
+    const dataset = datasets[datasetName];
     let csvText;
     if (location.protocol === 'file:') {
       // Browsers block fetch() of sibling files from file:// pages, so the CSV
       // is embedded in index.html as a standalone-file fallback.
-      csvText = document.querySelector('#embedded-chip-csv')?.textContent;
-      if (!csvText) throw new Error('Embedded chip data is missing.');
+      csvText = document.querySelector(dataset.embedded)?.textContent;
+      if (!csvText?.trim()) throw new Error(`Embedded ${datasetName} data is missing.`);
     } else {
-      const response = await fetch('./chips.csv');
+      const response = await fetch(dataset.file);
       if (!response.ok) throw new Error(`CSV request failed (${response.status}).`);
       csvText = await response.text();
     }
     const records = parseCSV(csvText);
     const header = records.shift();
-    if (!header || header.length !== columns.length) throw new Error('The CSV header should contain 17 columns.');
-    chips = records.filter((record) => record.length === columns.length);
-    if (!chips.length) throw new Error('The CSV does not contain any chip rows.');
+    if (!header || header.length !== columns.length) throw new Error(`The ${datasetName} CSV should contain ${columns.length} columns.`);
+    chips = records.filter((record) => record.length === columns.length)
+      .map((record) => ['', ...record.slice(1)]);
+    if (!chips.length) throw new Error(`The ${datasetName} CSV does not contain any chip rows.`);
 
+    packageFilter.replaceChildren(new Option('All packages', ''));
     [...new Set(chips.map((chip) => chip[16]).filter(Boolean))].sort().forEach((item) => {
       const option = document.createElement('option');
       option.value = item;
@@ -237,12 +248,28 @@ async function loadChips() {
     buildColumnPicker();
     render();
   } catch (error) {
-    showError(`${error.message} Run a local web server to load chips.csv.`);
+    showError(`${error.message} Run a local web server or open the bundled HTML file.`);
   }
+}
+
+function switchDataset(datasetName) {
+  if (datasetName === activeDataset) return;
+  activeDataset = datasetName;
+  familyButtons.forEach((button) => {
+    const active = button.dataset.dataset === datasetName;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', String(active));
+  });
+  search.value = '';
+  packageFilter.value = '';
+  sortColumn = null;
+  sortDirection = 1;
+  loadChips(datasetName);
 }
 
 search.addEventListener('input', render);
 packageFilter.addEventListener('change', render);
+familyButtons.forEach((button) => button.addEventListener('click', () => switchDataset(button.dataset.dataset)));
 document.addEventListener('keydown', (event) => {
   if (event.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
     event.preventDefault();
